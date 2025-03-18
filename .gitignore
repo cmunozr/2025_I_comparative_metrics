@@ -47,3 +47,14 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+#
+
+/data
+/data_test
+/documents
+/HMSC
+model_test_swedishBirds_abundance_thin_100_samples_1000.Rdata
+spp.csv
+vert.txt
+2025_I_comparative_metrics.Rproj
