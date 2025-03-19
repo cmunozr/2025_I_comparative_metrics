@@ -1,3 +1,4 @@
+library(dplyr)
 
 spp_names <- openxlsx::int2col(1:586)
 
@@ -16,7 +17,7 @@ traits_test$kipps.median <- runif(586, min = 1, max = 6)
 traits_test$mass <- runif(586, min = 1, max = 6)
 rownames(traits_test) <- spp_names
 
-mpre_test_list <- rep(list(mpred_test), 100)
+mpre_test_list <- rep(list(mpred_test), 500)
 # 1000 capas de 586 columnas y 10824 filas, Error: cannot allocate vector of size 23.6 Gb
 
 filas <- nrow(mpre_test_list[[1]])
@@ -34,5 +35,10 @@ for (i in 1:n_matrices) {
 }
 
 logic_arraytest <- arraytest
-storage.mode(logic_arraytest ) <- "integer"
+storage.mode(logic_arraytest ) <- "logical"
 
+binary_arraytest <- arraytest
+storage.mode(binary_arraytest ) <- "integer"
+
+rm("mpre_test_list", "mpred_test", "columnas", "filas", "n_matrices", "spp", "spp_names", "i")
+gc()

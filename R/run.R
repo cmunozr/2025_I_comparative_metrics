@@ -37,32 +37,48 @@ tm_RaoQ <- Sys.time()-tm
 
 #--------------------------------------
 
+try(
+  {
+    # Richness
+    tm <- Sys.time()
+    a <- species_richness(pred.object = arraytest)
+    tm_richness2 <- Sys.time()-tm
+    
+    # geom abundance
+    tm <- Sys.time()
+    b <- geom_mean_abun(arraytest, a)
+    tm_geom2<- Sys.time()-tm
+    
+    # Pre processing
+    tm <- Sys.time()
+    traits_processed2 <- dbFD_preprocess_traits(x = traits_test, a = logic_arraytest[,,1])
+    tm_traits2<- Sys.time()-tm
+    
+    # CAMBIA SI USAMOS OTRA MATRIZ?
+    
+    # Functional richness
+    tm <- Sys.time()
+    fr <- functional_richness(pred.object = logic_arraytest, trait.processed.object = traits_processed2, stand.FRic = F, parallel = T)
+    tm_fr2 <- Sys.time()-tm
+    
+    #	Community-weighted mean (CWM)
+    tm <- Sys.time()
+    CWM <- functcomp_parallel(pred.object = binary_arraytest, trait.processed.object = traits_processed2, cwm.type = "dom", parallel = TRUE)
+    tm_CWM2 <- Sys.time()-tm
+    
+    # RaoQ
+    tm <- Sys.time()
+    RaoQ <- divc_parallel(array_data = logic_arraytest, trait.processed.object = traits_processed2, scale = FALSE, parallel = TRUE)
+    tm_RaoQ2 <- Sys.time()-tm  
+    
+  }
+)
 
-# Richness
-tm <- Sys.time()
-a <- species_richness(pred.object = logic_arraytest)
-tm_richness2 <- Sys.time()-tm
+dim(b)
 
-# geom abundance
-tm <- Sys.time()
-b <- geom_mean_abun(pred.object = arraytest, richness = a)
-tm_geom2 <- Sys.time()-tm
-
-traits_processed_test <- dbFD_preprocess_traits(x = traits_processed_test, a = arraytest, calc.FDiv = F, calc.FGR = F)
-# pre procesar los rasgos toma 11 segundos en una potencial matriz de 10824 sitios por 586 especies
-
-tm <- Sys.time()
-fr <- functional_richness(pred.object = logic_arraytest, trait.object = traits_processed_test, stand.FRic = F, parallel = T)
-tm_fr2 <- Sys.time() - tm
-
-##	Community-weighted mean (CWM)
-
-tm <- Sys.time()
-CWM <- apply(X = arraytest, MARGIN = 3, FUN = function(X){FD::functcomp(x = traits_processed_test, a = X, CWM.type = "dom")})
-tm_CWM2 <- Sys.time()-tm
-
-# RaoQ
-
-tm <- Sys.time()
-RaoQ <- divc(array_data = logic_arraytest, trait.processed.object = traits_processed_test, scale = FALSE, parallel = TRUE)
-tm_RaoQ <- Sys.time()-tm
+# 10824 X 586 X 100
+# tm_richness2: Time difference of 27.49811 secs
+# tm_geom2: Time difference of 32.85858 secs
+# tm_fr2: Time difference of 11.22873 mins
+# tm_CWM2: Time difference of 10.45529 mins
+# tm_RaoQ2: Time difference of 22.97023 mins

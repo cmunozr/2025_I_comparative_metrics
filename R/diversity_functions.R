@@ -218,7 +218,7 @@ divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FAL
     return(results)
   }
   
-  dis <- traits_processed$x.dist
+  dis <- trait.processed.object$x.dist
   
   if (parallel) {
     num_cores <- parallel::detectCores() - 2
