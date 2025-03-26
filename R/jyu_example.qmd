@@ -1,0 +1,482 @@
+---
+title: "Quantitative biodiversity modelling"
+subtitle: "Project 1: compare metrics"
+author: 
+  - name: "Carlos Muñoz"
+    email: carlos_jair.munoz@cec.lu.se
+    affiliations: 
+      - ref: CEC
+
+affiliations:
+  - id: CEC
+    name: Centre for Environmental and Climate Science, Lund University
+    department: Centre for Environmental and Climate Science 
+    address: Kontaktvägen 10
+    city: Lund
+    postal-code: 22362
+    url: https://www.cec.lu.se/home
+   
+format:
+  html:
+    theme: cosmo # try other themes from https://quarto.org/docs/output-formats/html-themes.html
+    toc: true # this will enable Table of Contents
+    code-fold: false #try changing it and see what happens
+    embed-resources: true # this is so your file would embed all images. 
+  pdf: default
+  docx: default
+execute: 
+  echo: true    #use to show/hide R-code in the report
+  cache: false
+number-sections: true #sectioner can be automatically numbered
+title-block-banner: true
+---
+
+## Introduction
+
+
+## Objective
+
+To compare biodiversity metrics using quantitative models to assess how accurately they reflect actual biodiversity states, trends and effectiveness in different biodiversity change scenarios.
+
+
+## Define models
+
+### Data
+
+```{r, setup}
+knitr::opts_knit$set(root.dir = "c:/Users/Carlos Munoz/Documents/Ph.D/6_courses/2025_I_comparative_metrics/")
+```
+
+```{r}
+library(Hmsc)
+library(tidyverse)
+library(data.table)
+library(terra)
+library(sf)
+library(maps)
+library(ape)
+```
+
+The summer and winter point count routes (“punktrutterna”) are two of several schemes within the Swedish Bird Survey (see below), run by the Department of Biology at Lund University. The point count routes were initiated in 1975 as a standardised method for detecting and reporting changes in the abundance of birds and their distributions in Sweden over time. The point count routes can be surveyed in summer and/or winter.
+
+The surveys are initiated and carried out by volunteer ornithologists who use standardised methods to count birds along routes of their own choice. In this analysis we going to work with the summer point count routes. Where the bird diversity in Sweden is on its peak.
+
+```{r}
+model <- "test_swedishBirds"
+modeltype <- "abundance"
+```
+
+
+```{r}
+event <- fread("data_test/swedish_bird_gbif/event.txt") |> 
+  as.data.frame()|> 
+  filter(eventDate >= 2000) # match info from forest data
+
+occurr <- fread("data_test/swedish_bird_gbif/occurrence.txt") |> 
+  as.data.frame()
+
+```
+
+There are `r nrow(event)` observation events on the dataset with `r nrow(occurr)` occurrence data.
+
+```{r}
+eventOccurr <- right_join(occurr, event, by = "id") |> 
+  mutate(year_ = year(as.Date(eventDate)))
+
+sampleDesing <- eventOccurr |> 
+  select(decimalLongitude, decimalLatitude, verbatimLocality, year_) |>
+  distinct() |> 
+  as.data.frame() 
+
+nsampleUnits <- unique(sampleDesing$verbatimLocality) |> 
+  length()
+
+```
+
+The number of unique sites surveyed from 2000 during the summer is `r nsampleUnits`.
+
+```{r}
+
+swe <- st_as_sf(map(database = "world", regions = "sweden", plot = FALSE, fill = TRUE)) |> 
+  st_transform(crs = "EPSG:4326")
+
+coordSampleUnits <- sampleDesing |> 
+  st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = "EPSG:4326")
+
+ggplot() +
+  geom_sf(data = swe) +
+  geom_sf(data = coordSampleUnits)
+
+
+```
+
+#### Species data
+
+```{r}
+Y <- eventOccurr |> 
+  select(verbatimLocality, year_, scientificName, individualCount) |>
+  pivot_wider(id_cols = c(verbatimLocality, year_), names_from = scientificName, values_from = individualCount,
+              values_fn = sum, values_fill = 0) |> 
+  select(-year_) |> 
+  as.data.frame()
+
+# row.names(Y) <- paste0(Y$verbatimLocality, Y$year_)
+
+# commonsp <- colSums(Y[,-1]) |> 
+#   sort(decreasing = T) |> 
+#   names() |> 
+#   head(20)
+# 
+# species name for phylogenetic tree downloaded from
+# https://birdtree.org/subsets/
+# write.csv(commonsp, "spp.csv", row.names = F)
+#   
+# Y <- Y |> 
+#   select(all_of(commonsp))
+# 
+# Y <- Y[, order(colnames(Y))]
+  
+```
+
+#### Covariates
+
+
+
+```{r}
+
+lsuZips <- list.files("data/covariates/slu_forest/", pattern = ".zip", recursive = T, full.names = T)
+lsuZipsNames <- paste0("lsu_20", str_split(lsuZips, pattern = "/", simplify = T)[,4])
+
+for(i in 1:length(lsuZips)){
+  i <- 1
+  files_in_zip <- unzip(lsuZips[i], list = TRUE)$Name
+  zip_tif <- grep("*_P_.*\\.tif$", files_in_zip, value = T)[1]
+  rBin <- rast(paste0("/vsizip/", lsuZips[i], "/", zip_tif)) >= 0
+  
+  coordSampleUnits.rbin <- coordSampleUnits |> 
+    st_transform(crs=crs(rBin)) 
+  
+  if(lsuZipsNames == "2015"){
+    
+  }
+  
+  
+  |> 
+    terra::extract(x = rBin) |> 
+    rename(Klass = as.factor(iconv(Klass, from = "latin1", to = "UTF-8"))) |> 
+    select(-ID)
+}
+
+names(lsu_list) <- paste0("lsu_20", str_split(lsu_zips, pattern = "/", simplify = T)[,4])
+
+
+
+```
+
+
+
+```{r}
+lcSE <- rast(
+  "data/covariates/NMD/18/nmd2018bas_ogeneraliserad_v1_1.tif"
+  )
+
+
+
+# habitat <- model.matrix(~ Klass - 1, data = habitat) |> 
+#   as.data.frame() |> 
+#   select(-Klass)
+
+
+worldClim <- c("data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_5.tif",
+               "data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_10.tif") |> 
+  rast()
+
+clim <- sampleUnits |> 
+  st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = "EPSG:4326") |> 
+  st_transform(crs=crs(worldClim)) |> 
+  terra::extract(x = worldClim)
+
+clim <- clim |> 
+  mutate(wc2.1_30s_bio_5 = 
+           ifelse(is.na(wc2.1_30s_bio_5), mean(wc2.1_30s_bio_5, na.rm = TRUE), 
+                  wc2.1_30s_bio_5),
+         wc2.1_30s_bio_10 = 
+           ifelse(is.na(wc2.1_30s_bio_10), mean(wc2.1_30s_bio_10, na.rm = TRUE), 
+                  wc2.1_30s_bio_10)
+         ) |> 
+  select(-ID)
+
+XData <- bind_cols(habitat, clim) |> 
+  as.data.frame()
+
+row.names(XData) <- paste0(sampleUnits$verbatimLocality, sampleUnits$y)
+
+```
+
+#### Phylogenetic
+
+```{r}
+
+Trees <- ape::read.nexus("data_test/tree-pruner/output.nex")
+phyloTree <- Trees[[2]]
+
+# edge_lengths_list <- lapply(Trees, function(t) t$edge.length)
+# avg_branches <- rowMeans(do.call(cbind, edge_lengths_list), na.rm = TRUE)
+# phyloTree$edge.length <- avg_branches
+
+phyloTree$tip.label <- phyloTree$tip.label |> 
+  str_replace(pattern = "_", " ")
+
+```
+
+#### Traits
+
+```{r}
+tr1 <- fread("data_test/ELEData/ELEData/TraitData/AVONET_Raw_Data.csv") |> 
+  filter(Species2_eBird %in% commonsp) |> 
+  select(Species2_eBird, Wing.Length, Kipps.Distance) |> 
+  group_by(Species2_eBird) |> 
+  summarise(wing.median = median(Wing.Length, na.rm = T), 
+            kipps.median = median(Kipps.Distance, na.rm = T)) |> 
+  mutate(scientificName = Species2_eBird) |> 
+  select(-Species2_eBird)
+
+tr2 <- fread("data_test/migrant_mass.csv") |> 
+  mutate(scientificName = x) |> 
+  select(-x)
+
+TrData <- full_join(tr1, tr2, by = "scientificName") |>  
+  mutate(mass = log1p(mass), wing.median = log1p(wing.median), kipps.median = log1p(kipps.median)) |> 
+  as.data.frame()
+
+row.names(TrData) <- TrData$scientificName 
+ 
+TrData <- select(TrData, -scientificName)
+
+```
+
+#### Study desing
+
+```{r}
+
+studyDesign <- sampleUnits |> 
+  select(verbatimLocality, year_) |> 
+  mutate(verbatimLocality = as.factor(verbatimLocality), year_ = as.factor(year_))
+
+row.names(studyDesign) <- paste0(studyDesign$verbatimLocality, studyDesign$y)
+```
+
+#### Random efects
+
+Los efectos aleatorios de tipo espacial no se pueden lograr con el swedish bird survey porque los eventos de muestreo no tienen dato unico de coordenada. Ademas, el nombre de la ruta cambia si cambia el observador (dicen que son raras las veces que ha sucedido, hasta ahora). Desde 2015 solicitan coordenadas, parece que solo con esos datos se podria trabajar con efectos aleatorios. La pregunta es: **Necesito utilizar los efectos aleatorios en mi estudio? Como se identifica?**
+
+```{r}
+# routes <- levels(studyDesign[,1])
+# nroutes <-  length(routes)
+# xy <-  matrix(0,nrow=nroutes,ncol=2)
+# for(i in 1:nroutes){
+#  rows <- studyDesign[,1]==routes[[i]]
+#  xy[i,1] <-  mean(sampleUnits[rows,]$decimalLongitude)
+#  xy[i,2] <-  mean(sampleUnits[rows,]$decimalLatitude)
+# }
+# colnames(xy) <-  c("x","y")
+# sRL <- xy
+# rownames(sRL) <- routes
+# rL <-  HmscRandomLevel(sData = sRL)
+# rL$nfMin <-5
+# rL$nfMax <-10
+
+```
+
+Clean Environment
+
+```{r}
+toKeep <- c("XData", "XFormula", "TrData", "TrFormula", "phyloTree", "Y", "RL", "studyDesign",
+            "sampleUnits")
+rm(list = setdiff(ls(), toKeep))
+gc()
+
+```
+
+```{r}
+XFormula <- ~ Klass + poly(wc2.1_30s_bio_5, degree = 2) + poly(wc2.1_30s_bio_10, degree = 2)
+```
+
+```{r}
+TrFormula <- ~ migrant + wing.median + kipps.median + mass
+
+```
+
+```{r}
+m = Hmsc(Y = Y,
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson")
+```
+
+
+## Fit Model
+
+```{r}
+thin <- 100
+samples <- 1000
+nChains <- 4
+set.seed(1)
+
+# ptm <-  proc.time()
+
+# 10 hours computing, small amount of time using CPU
+# user 26.28 system 17.94 ellapsed 38139.97
+
+#m <- sampleMcmc(m, samples = samples, thin = thin, adaptNf = rep(ceiling(0.4*samples*thin),1),
+# transient = ceiling(0.5*samples*thin), nChains = nChains, nParallel = nChains)
+
+#computational.time <-  proc.time()-ptm
+
+# filename <-  file.path(getwd(),paste("model_",as.character(model),"_",
+#                                      modeltype,"_thin_",...=as.character(thin),
+#                                      "_samples_",as.character(samples),".Rdata",sep=""))
+
+#save(m,file=filename,computational.time)
+
+load("model_test_swedishBirds_abundance_thin_100_samples_1000.Rdata")
+
+```
+
+
+```{r}
+mpost <- convertToCodaObject(m, spNamesNumbers = c(T,F), covNamesNumbers = c(T,F))
+
+```
+
+## Evaluate Convergence
+
+Efective size sample and gelman diagnostic for convergence of each parameter
+
+```{r}
+# size effect of fixed effect
+
+es.beta <- effectiveSize(mpost$Beta)
+ge.beta <- gelman.diag(mpost$Beta,multivariate=FALSE)$psrf
+
+es.gamma <-effectiveSize(mpost$Gamma)
+ge.gamma <- gelman.diag(mpost$Gamma,multivariate=FALSE)$psrf
+
+es.rho <- effectiveSize(mpost$Rho)
+ge.rho <- gelman.diag(mpost$Rho,multivariate=FALSE)$psrf
+
+es.V <- effectiveSize(mpost$V)
+ge.V <- gelman.diag(mpost$V,multivariate=FALSE)$psrf
+ 
+```
+
+
+```{r}
+data.frame("ESS" = c(es.beta, es.gamma, es.rho, es.V), 
+           "value" = c(rep("beta", length(es.beta)), rep("gamma", length(es.gamma)), 
+                       rep("rho", length(es.rho)), rep("V", length(es.V)))) |> 
+  ggplot() + 
+  geom_boxplot(mapping = aes(x = value, y = ESS))
+  
+```
+
+## Compute model fit
+
+## Show model fit
+
+## Show parameter estimates
+
+## Make predictions
+
+```{r}
+# is a quite heavy object
+
+# Abundance
+tm <- Sys.time()
+predY <-  computePredictedValues(m, expected=FALSE)
+rownames(predY) <- NULL
+storage.mode(predY) <- "integer"
+(Sys.time()-tm)
+
+
+# presence/abscence
+logic_predY <- predY > 0
+storage.mode(logic_predY) <- "logical"
+(Sys.time()-tm)
+
+# binary
+binary.predY <- logic_predY*1 
+storage.mode(binary.predY) <- "integer"
+```
+
+```{r}
+MF <-  evaluateModelFit(hM=m, predY=predY)
+```
+
+## Predicting in forestry scenarios
+
+```{r}
+Gradient <- constructGradient(m, focalVariable = "wc2.1_30s_bio_5", 
+                              non.focalVariables = list(Klass = list (3, "Åkermark" ) ) )
+
+XData$Klass |> unique()
+
+
+# [1] Åkermark                                           Temporärt ej skog (utanför våtmark)                Tallskog (utanför våtmark)                        
+#  [4] Sjö och vattendrag                                 Hav                                                Lövblandad barrskog (utanför våtmark)             
+#  [7] Granskog (utanför våtmark)                         Barrblandskog (utanför våtmark)                    Ädellövskog (utanför våtmark)                     
+# [10] Triviallövskog (utanför våtmark)                   Exploaterad mark, väg/järnväg                      Övrig öppen mark med vegetation                   
+# [13] Triviallövskog (på våtmark)                        Triviallövskog med ädellövinslag (utanför våtmark) Tallskog (på våtmark)                             
+# [16] Övrig öppen mark utan vegetation                   Öppen våtmark                                      Barrblandskog (på våtmark)                        
+# [19] Granskog (på våtmark)                              Lövblandad barrskog (på våtmark)
+
+# Arable land
+# Temporarily non-forest (outside wetland)
+# Pine forest (outside wetland)
+# Lake and watercourse
+# Sea
+# Mixed deciduous and coniferous forest (outside wetland)
+# Spruce forest (outside wetland)
+# Mixed coniferous forest (outside wetland)
+# Noble deciduous forest (outside wetland)
+# Trivial deciduous forest (outside wetland)
+# Exploited land, road/railway
+# Other open land with vegetation
+# Trivial deciduous forest (in wetland)
+# Trivial deciduous forest with noble deciduous elements (outside wetland)
+# Pine forest (in wetland)
+# Other open land without vegetation
+# Open wetland
+# Mixed coniferous forest (in wetland)
+# Spruce forest (in wetland)
+# Mixed deciduous and coniferous forest (in wetland)
+
+predY <- predict(m, XData = Gradient$XDataNew, studyDesign = Gradient$studyDesignNew,
+                 ranLevels = Gradient$rLNew, expected = FALSE)
+plotGradient(m, Gradient, pred = predY, measure = "S",las = 1, showData = TRUE, main = 'Speciesrichness(measure="S")')
+```
+### Accesing posterior in Hmsc
+
+```{r}
+posterior <- m$postList |> 
+  poolMcmcChains()
+
+```
+
+
+###### useful
+
+```{r}
+lsu_zips <- list.files("data/covariates/slu_forest/", pattern = ".zip", recursive = T, full.names = T)
+lsu_list <- list()
+
+for(i in 1:length(lsu_zips)){
+  files_in_zip <- unzip(lsu_zips[i], list = TRUE)$Name
+  zip_tif <- grep("*_P_.*\\.tif$", files_in_zip, value = T)[1]
+  lsu_list[[i]] <- rast(paste0("/vsizip/", lsu_zips[i], "/", zip_tif)) >= 0
+}
+
+names(lsu_list) <- paste0("lsu_20", str_split(lsu_zips, pattern = "/", simplify = T)[,4])
+```
+

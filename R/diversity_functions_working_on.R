@@ -9,7 +9,7 @@ library(betapart)
 
 a <- betapart.core(logic_predY[1:100,,1]*1)
 
-beta.pair(x = logic_predY[,,1]*1, index.family = "sorensen")
+beta.pair(x = binary_arraytest[,,1], index.family = "sorensen")
 
 
 

@@ -59,7 +59,7 @@ geom_mean_abun <- function(pred.object = predY, richness = a){
 
 ##	Functional richness 
 
-functional_richness <- function(pred.object, trait.processed.object, stand.FRic, parallel = T) {
+functional_richness <- function(pred.object, trait.processed.object, stand.FRic, parallel = T, free.cores = 2) {
   
   # time process array with 100 matrix of 10824 rows x 20 cols: Parallel = 7.814091 mins, No Parallel = 20.49533 mins
   # time process array with 100 matrix of 10824 rows x 586 cols: Parallel = 12.7466 mins
@@ -153,7 +153,7 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic,
   
   if(parallel){
     
-    num_cores <- detectCores()-2
+    num_cores <- detectCores(logical = F) - free.cores
     
     if(.Platform$OS.type == "windows"){
       
@@ -179,7 +179,7 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic,
 
 ##  Rao’s quadratic entropy coefficient (RaoQ)   
 
-divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FALSE, parallel = FALSE) {
+divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FALSE, parallel = FALSE, free.cores = 2) {
   
   if (!requireNamespace("FD", quietly = TRUE)) install.packages("FD")
   library(FD)
@@ -221,7 +221,7 @@ divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FAL
   dis <- trait.processed.object$x.dist
   
   if (parallel) {
-    num_cores <- parallel::detectCores() - 2
+    num_cores <- parallel::detectCores(logical = F) - free.cores
     if (.Platform$OS.type == "windows") {
       cl <- parallel::makeCluster(num_cores)
       #parallel::clusterExport(cl, c("array_data", "dis", "scale"))
@@ -248,7 +248,7 @@ divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FAL
 
 ## CWM: community weighted mean
 
-functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "dom", parallel = FALSE) {
+functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "dom", parallel = FALSE, free.cores = 2) {
   
   if (!requireNamespace("FD", quietly = TRUE)) install.packages("FD")
   if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
@@ -264,7 +264,8 @@ functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "
   trait_lists <- lapply(1:num_traits, function(x) matrix(NA, nrow = num_sites, ncol = num_pred))
   
   process_matrix <- function(i) {
-    trait_weightead <- FD::functcomp(x = trait_nt, a = pred.object[,,i], CWM.type = cwm.type)
+    # trait_weightead <- FD::functcomp(x = trait_nt, a = pred.object[,,i], CWM.type = cwm.type)
+    return("ok")
   }
   
   for(nt in 1:num_traits){
@@ -272,7 +273,7 @@ functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "
     trait_nt <- traits |> select(all_of(nt))
     
     if (parallel) {
-      num_cores <- detectCores() - 2
+      num_cores <- detectCores(logical = F) - free.cores
       if (.Platform$OS.type == "windows") {
         cl <- makeCluster(num_cores)
         # clusterExport(cl, c("trait_nt", "pred.object", "cwm.type"), envir = environment())
@@ -805,4 +806,3 @@ dbFD_preprocess_traits <- function (x, a, w, w.abun = TRUE, stand.x = TRUE, ord 
   
   return(res)
 }
-
