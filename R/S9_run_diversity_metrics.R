@@ -2,7 +2,7 @@
 
 # Richness
 tm <- Sys.time()
-a <- species_richness()
+a <- species_richness(pred.object = logic_predY)
 tm_richness <- Sys.time()-tm
 # 14.18454 secs
 
@@ -68,6 +68,13 @@ tm_CWM2 <- Sys.time()-tm
 tm <- Sys.time()
 RaoQ <- divc_parallel(array_data = logic_arraytest, trait.processed.object = traits_processed2, scale = FALSE, parallel = TRUE)
 tm_RaoQ2 <- Sys.time()-tm  
+
+# no groups
+tm <- Sys.time()
+betas <- beta_diversity(pred.object = arraytest, group.each.rows = NULL)
+tm_betas <- Sys.time()-tm  
+
+# groups
     
 # 10824 X 586 X 100
 # tm_richness2: Time difference of 27.49811 secs
@@ -75,3 +82,4 @@ tm_RaoQ2 <- Sys.time()-tm
 # tm_fr2: Time difference of 11.22873 mins
 # tm_CWM2: Time difference of 10.45529 mins
 # tm_RaoQ2: Time difference of 22.97023 mins
+# tm_betas: 

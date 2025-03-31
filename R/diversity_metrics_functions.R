@@ -17,6 +17,8 @@
 
 # From ecology 
 
+#------------
+
 ##	Species richness
 ## Using apply 2 min, vectorized for 15 sec
 
@@ -36,7 +38,12 @@ species_richness <- function(pred.object = logic_predY){
   return(m_res)
 }
 
+#--------------------
+
 ##	Sorensen similarity
+
+
+#-------------------
 
 ##	Geometric mean abundance
 
@@ -56,6 +63,8 @@ geom_mean_abun <- function(pred.object = predY, richness = a){
   return(m_res)
   
 }
+
+#------------------
 
 ##	Functional richness 
 
@@ -177,6 +186,8 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic,
   return(m.res)
 }
 
+#-----------------------------
+
 ##  Rao’s quadratic entropy coefficient (RaoQ)   
 
 divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FALSE, parallel = FALSE, free.cores = 2) {
@@ -294,6 +305,106 @@ functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "
     
   return(trait_lists)
 }
+
+#-----------------------------
+
+##	Beta: https://onlinelibrary-wiley-com.ludwig.lub.lu.se/doi/full/10.1111/ele.12141
+##  VarY the variation in species composition among sites in the geographical region of interest
+## LCBD contributions of individual sampling units to the overall beta diversity
+## SCBD contributions of individual species to the overall beta diversity
+## Agrupamiento no espacial
+## Agrupamiento espacial(?)
+## Paralleling
+
+# final_varY_df: sample, group, varY (BDTotal for the group)
+# final_LCDB_df: sample, group, site_global_idx, LCDB (within the group)
+# final_SCDB_df: sample, group, species_idx, SCDB (within the group)
+
+beta_diversity <- function(pred.object = arraytest, group.each.rows = NULL){
+  dm <- dim(pred.object)
+  N_samples <- dm[3]
+  N_sites_total <- dm[1]
+  N_species <- dm[2]
+  
+  # Determine number of groups
+  if(!is.null(group.each.rows) && group.each.rows > 0 && group.each.rows < N_sites_total){
+    groups <- ceiling(N_sites_total / group.each.rows)
+  } else {
+    groups <- 1
+    group.each.rows <- N_sites_total # Ensure full range if groups=1
+  }
+  message(sprintf("Processing with %d group(s)", groups))
+  
+  varY_list <- vector("list", N_samples * groups)
+  LCDB_list <- vector("list", N_samples * groups)
+  SCDB_list <- vector("list", N_samples * groups)
+  
+  list_idx <- 1 # Index for storing results
+  
+  
+  for(i in 1:N_samples) { 
+    
+    for(g in 1:groups) {
+      
+      # Site indices for current group
+      r0 <- (g - 1) * group.each.rows + 1
+      r1 <- min(g * group.each.rows, N_sites_total)
+      current_site_indices <- r0:r1
+      n_group_sites <- length(current_site_indices)
+      
+      # Extract group submatrix
+      Y_group <- pred.object[current_site_indices, , i, drop = FALSE] 
+      
+      # Calculations for the group
+      rsums <- rowSums(Y_group)
+      denom <- ifelse(rsums == 0, 1, rsums) # Avoid division by zero
+      hellinger_transf <- sqrt(Y_group / denom) 
+      
+      # Explicitly index rows to set to zero
+      rows_to_zero <- which(rsums == 0)
+      if (length(rows_to_zero) > 0) {
+        hellinger_transf[rows_to_zero, ] <- 0 
+      }
+      
+      # Calculate based on group's centroid
+      col_means_H_group <- colMeans(hellinger_transf) 
+      squared_deviations_site <- sweep(hellinger_transf, MARGIN = 2, STATS = col_means_H_group, FUN = "-")^2
+      SS <- sum(squared_deviations_site) # Group's SSTotal
+      
+      varY_group <- if (n_group_sites > 1) SS / (n_group_sites - 1) else NA
+      
+      # Group's LCBD & SCBD - handle SS=0 case
+      if (SS > 1e-12) { # Use tolerance for floating point
+        LCDB_group <- rowSums(squared_deviations_site) / SS 
+        SCDB_group <- colSums(squared_deviations_site) / SS 
+      } else {
+        LCDB_group <- rep(NA, n_group_sites)
+        SCDB_group <- rep(NA, N_species)
+      }
+      
+      varY_list[[list_idx]] <- tibble(sample = i, group = g, varY = varY_group)
+      LCDB_list[[list_idx]] <- tibble(sample = i, group = g, site_global_idx = current_site_indices, LCDB = LCDB_group)
+      SCDB_list[[list_idx]] <- tibble(sample = i, group = g, species_idx = 1:N_species, SCDB = SCDB_group)
+      
+      list_idx <- list_idx + 1 # Increment list index
+      
+    } 
+    
+    # Progress message
+    if (i %% 100 == 0 || i == N_samples) {
+      cat("Processed sample:", i, "/", N_samples, "\n")
+    }
+    
+  }
+  
+  varY <- dplyr::bind_rows(varY_list) |> as.data.frame()
+  LCDB <- dplyr::bind_rows(LCDB_list) |> as.data.frame()
+  SCDB <- dplyr::bind_rows(SCDB_list) |> as.data.frame()
+  
+  return(list("varY" = varY, "LCDB" = LCDB, "SCDB" = SCDB))
+  
+}
+
 
 #-----------------------------
 

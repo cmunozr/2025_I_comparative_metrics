@@ -1,8 +1,8 @@
 library(dplyr)
 
-n.spp <- 40
-n.sites <- 1000
-samples <- 1000
+n.spp <- 586
+n.sites <- 10824
+samples <- 100
   
 spp_names <- openxlsx::int2col(1:n.spp)
 
@@ -51,9 +51,9 @@ for (i in 1:n_matrices) {
 logic_arraytest <- arraytest > 0
 storage.mode(logic_arraytest ) <- "logical"
 
-binary_arraytest <- arraytest
+binary_arraytest <- logic_arraytest * 1
 storage.mode(binary_arraytest ) <- "integer"
 
-rm("mpre_test_list", "mpred_test", "columnas", "filas", "n_matrices", "spp", "spp_names", "i")
+rm("mpre_test_list", "mpred_test", "columnas", "filas", "n_matrices", "spp", "spp_names", "i", "n.spp", "samples", "n.sites", "r_lognormPoi")
 gc()
 
