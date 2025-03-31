@@ -478,5 +478,3 @@ for(i in 1:length(lsu_zips)){
 }
 
 names(lsu_list) <- paste0("lsu_20", str_split(lsu_zips, pattern = "/", simplify = T)[,4])
-```
-

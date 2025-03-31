@@ -1,0 +1,538 @@
+---
+title: "Quantitative biodiversity modelling for finance and companies"
+subtitle: "Project 1: compare metrics"
+author: 
+  - name: "Carlos Muñoz"
+    email: carlos_jair.munoz@cec.lu.se
+    affiliations: 
+      - ref: CEC
+
+affiliations:
+  - id: CEC
+    name: Centre for Environmental and Climate Science, Lund University
+    department: Centre for Environmental and Climate Science 
+    address: Kontaktvägen 10
+    city: Lund
+    postal-code: 22362
+    url: https://www.cec.lu.se/home
+   
+format:
+  html:
+    theme: cosmo # try other themes from https://quarto.org/docs/output-formats/html-themes.html
+    toc: true # this will enable Table of Contents
+    code-fold: false #try changing it and see what happens
+    embed-resources: true # this is so your file would embed all images. 
+    output-dir: "../quarto_reports/"  
+  pdf: default
+  docx: default
+
+execute: 
+  echo: true    #use to show/hide R-code in the report
+  cache: false
+number-sections: true #sectioner can be automatically numbered
+title-block-banner: true
+---
+
+## Introduction
+
+### General framework
+
+-   Biodiversity is declining at an alarming rate, faster than ever in human history (Barnosky et al., 2011; Ceballos et al., 2015).
+-   Economic activity is at the core of the biodiversity crisis, but biodiversity loss also represents a significant physical threat, reputational and regulatory risk to business and financial activities.
+-   BIOPATH (Sweden) seeks to develop innovative approaches to integrate biodiversity considerations into financial and business decision-making to halt and reverse biodiversity loss.
+
+### Biodiversity metrics
+
+-   Biodiversity databases are the foundation for effective management strategies, but data alone isn't enough to stop biodiversity loss. We need to turn this data into useful information. This means using some way of biodiversity measurement to move activities from harming nature to being neutral or even positive.
+-   Burgess and colleagues (2024) identified 573 metrics developed to inform decision-making related to biodiversity.
+-   What metrics should be used?
+
+#### A Tension
+
+-   Business Perspective: Need for accessible, cost-effective and standardized. Importance of simplicity.
+-   Natural scientific Perspective:Reflect ecological complexity.Capture multiple dimensions.
+-   Maybe a set instead of only one silver bullet
+
+### Challenge
+
+-   The heart of the matter with biodiversity state metrics is how biodiversity change is interpreted and, consequently, how choices are made may be significantly impacted by the selection and response of biodiversity measures (Silvestro et al., 2023). It is critical to understand how different measures respond to changes, which metrics are particularly sensitive to early signals of biodiversity loss, and which metrics respond to changes consistently.
+-   How transparently, efficiently, and credibly these measures capture the state and changes on multiple dimensions of biodiversity?
+
+## Objective
+
+To compare biodiversity metrics using quantitative models to assess how accurately they reflect biodiversity states and trends in different biodiversity change scenarios.
+
+-   Birds as focal study taxon
+-   Biodiversity change because change of habitat: forestry management scenarios
+
+**THERE IS A NOTORIOUS GAP ABOUT WHY TO USE BIRDS AND WHY FOREST**
+
+## Rol of Hmsc
+
+An Hmsc model provides predictions at the species-community level. This enables the spatial representation of biodiversity to analyse and evaluate biodiversity metrics’ performance and variation through environmental and spatial gradients while counting for uncertainties.
+
+## Data
+
+```{r, setup}
+knitr::opts_knit$set(root.dir = "c:/Users/Carlos Munoz/Documents/Ph.D/6_courses/2025_I_comparative_metrics/")
+```
+
+```{r}
+#| message: false
+#| warning: false
+
+library(Hmsc)
+library(tidyverse)
+library(data.table)
+library(terra)
+library(sf)
+library(maps)
+library(ape)
+library(taxize)
+library(remotes)
+library(phytools)
+library(openxlsx)
+library(tidyterra)
+```
+
+```{r}
+transform_Y_to_abunCpres <- function(data) {
+  data %>% mutate(across(everything(), ~ ifelse(. == 0, NA, scale(log(.)))))
+}
+```
+
+
+```{r}
+set.seed(84987)
+```
+
+"The summer and winter point count routes (“punktrutterna”) are two of several schemes within the Swedish Bird Survey (see below), run by the Department of Biology at Lund University. The point count routes were initiated in 1975 as a standardised method for detecting and reporting changes in the abundance of birds and their distributions in Sweden over time. The point count routes can be surveyed in summer and/or winter. The surveys are initiated and carried out by volunteer ornithologists who use standardised methods to count birds along routes of their own choice. In this analysis we going to work with the summer point count routes. Where the bird diversity in Sweden is on its peak." GBIF page of the SBS.
+
+```{r}
+all_event <- fread("data_test/swedish_bird_gbif/event.txt") |> 
+  as.data.frame()
+
+yearLimMin <- 2000
+yearLimMax <- 2010
+
+event <- all_event |>
+  filter(eventDate >= yearLimMin, eventDate <= yearLimMax) # match info from forest data
+
+occurr <- fread("data_test/swedish_bird_gbif/occurrence.txt") |> 
+  as.data.frame() |> 
+  filter(taxonRank != "genus") |> 
+  mutate(scientificName = ifelse(scientificName == "Corvus corone", "Corvus cornix", scientificName))  # corone 1 observation, so drop it
+
+#----------------
+# ONLY FOR RARIFIED DATA
+
+occurr <- occurr[!(occurr$scientificName %in% c("Anser indicus", "Falco vespertinus")), ]
+```
+
+There are `r nrow(all_event)` observation events on the data set and `r nrow(occurr)` occurrence data.
+
+```{r}
+eventOccurr <- right_join(occurr, event, by = "id") |> 
+  mutate(year_ = year(as.Date(eventDate)))
+
+localityYear <- eventOccurr |>
+  select(decimalLongitude, decimalLatitude, verbatimLocality, year_) |>
+  distinct() |>
+  group_by(decimalLongitude, decimalLatitude) |>
+  mutate(group = paste0("group", cur_group_id())) |>
+  ungroup()
+
+```
+
+The number of events from `r yearLimMin`to `r yearLimMin`is `r nrow(event)` with `r nrow(eventOccurr)` occurrence data. The number of unique localities surveyed in this time during the summer (using the name of the locality in the dataset) is `r length(unique(localityYear$verbatimLocality))`. However, according to unique coordinates are `r length(unique(paste0(localityYear$decimalLongitude, ";", localityYear$decimalLatitude)))`. **In that way, there are coordinates in which there are more than one locality**.
+
+```{r}
+
+swe <- st_as_sf(map(database = "world", regions = "sweden", plot = FALSE, fill = TRUE)) |> 
+  st_transform(crs = "EPSG:3006")
+
+coordSampleUnits <- localityYear |> 
+  st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = "EPSG:4326")
+
+ggplot() +
+  geom_sf(data = swe) +
+  geom_sf(data = st_transform(coordSampleUnits, "EPSG:3006"))
+
+```
+
+### Species data
+
+```{r}
+Y <- eventOccurr |> 
+  select(verbatimLocality, year_, scientificName, individualCount) |>
+  pivot_wider(id_cols = c(verbatimLocality, year_), names_from = scientificName, values_from = individualCount,
+              values_fn = sum, values_fill = 0) |> 
+  select(-year_, -verbatimLocality) |> 
+  as.data.frame()
+
+# row.names(Y) <- paste0(Y$verbatimLocality, Y$year_)
+
+# commonsp <- colSums(Y[,-1]) |> 
+#   sort(decreasing = T) |> 
+#   names() |> 
+#   head(20)
+# 
+# species name for phylogenetic tree downloaded from
+# https://birdtree.org/subsets/
+# write.csv(commonsp, "spp.csv", row.names = F)
+#   
+# Y <- Y |> 
+#   select(all_of(commonsp))
+ 
+Y <- Y[, order(colnames(Y))]
+
+```
+
+```{r}
+P <-  colMeans(Y > 0)
+range(P) |> round(4)
+hist(P, xlab = "Species prevalence (P)",xlim=c(0,1))
+```
+
+Most species exhibit low prevalence, clustering towards the rare end of the spectrum, while a few species show a significantly higher prevalence, indicating they are common across the sampled areas, even an species is occurring in the `r max(P)` of sites (`r names(which(P == max(P)))`).
+
+### Covariates
+
+#### Forest
+
+"Three national maps containing information about Sweden’s woodlands and forests are already available. These maps include data collected in 2000, 2005 and 2010, each with cells of 25 x 25 metres. Up until 2010, the maps were based solely on satellite images from Landsat and SPOT. The 2015 SLU Forest Map contains a number of raster maps created by co-processing field inventories from Sweden’s National Forest Inventory (SLU), surface models from the Land Survey’s stereo-matched aerial photographs, and satellite images from Sentinel-2. The 2015 expansion of the SLU Forest Map was limited to areas where high-resolution images were available." SLU Web
+
+![Coverage of national forest maps by year](images/coverage_SLU.png)
+
+```{r}
+lsuZips <- list.files("data/covariates/slu_forest/", pattern = ".zip", recursive = T, full.names = T)
+lsuZipsSplit <- str_split(lsuZips, pattern = "/", simplify = T)
+
+lsuList <- list()
+
+for(i in 1:length(lsuZips)){
+
+  files_in_zip <- unzip(lsuZips[i], list = TRUE)$Name
+  zip_tif <- grep("*_P_.*\\.tif$", files_in_zip, value = T)[1]
+  r <- rast(paste0("/vsizip/", lsuZips[i], "/", zip_tif))
+  
+  lsuList[[i]] <- coordSampleUnits |> 
+    st_transform(crs=crs(r)) |> 
+    terra::extract(x = r) |> 
+    select(all_of(names(r)))
+}
+
+forestInfo <- do.call("cbind", lsuList) |>
+  apply(2, function(X){!is.na(X)*1}) |>
+  as.data.frame() |>
+  (\(df) {
+    colnames(df) <- paste0("20", lsuZipsSplit[,4])
+    df
+  })() |> 
+  mutate("year_" = localityYear$year_)
+```
+
+Rules to assign forest presence. When a observation is in the same year, keep the value of the layer year. However, when an observations is in an intermediate year:
+
+- if layer year 1 is presence of forest and layer year 2 is presence of forest: keep all intermediate years as presence
+- if layer year 1 is absence of forest and layer year 2 is presence of forest: keep all intermediate years as absence
+- if layer year 1 and year 2 are different: use probability weighted by value of layer year 1. Having in mind that a growth of forest in 5 years is more difficult. So, when year 1 is presence the next one is more probable to be presence than a previous absence change to presence.
+
+```{r}
+classify_forest <- function(df, year_cols) {
+  result <- integer(nrow(df))
+  for (i in 1:nrow(df)) {
+    year <- df$year_[i]
+    if (year %in% as.integer(year_cols)) {
+      result[i] <- df[i, as.character(year)]
+    } else {
+      prev_year <- max(as.integer(year_cols[as.integer(year_cols) < year]))
+      next_year <- min(as.integer(year_cols[as.integer(year_cols) > year]))
+      if (!is.infinite(prev_year) && !is.infinite(next_year)) {
+        prev_val <- df[i, as.character(prev_year)]
+        next_val <- df[i, as.character(next_year)]
+        if (prev_val == next_val) {
+          result[i] <- prev_val
+        } else {
+          years_diff <- next_year - prev_year
+          year_pos <- year - prev_year
+          prob_forest <- prev_val * (1 - (year_pos / years_diff))
+          result[i] <- ifelse(runif(1) < prob_forest, 1, 0)
+        }
+      } else if (!is.infinite(prev_year)) {
+        result[i] <- df[i, as.character(prev_year)]
+      } else if (!is.infinite(next_year)) {
+        result[i] <- df[i, as.character(next_year)]
+      } else {
+        result[i] <- NA
+      }
+    }
+  }
+  return(data.frame("forest" = result))
+}
+
+forestByYear <- classify_forest(df = forestInfo, year_cols = c(2000, 2005, 2010))
+
+```
+
+```{r}
+
+bin_forest_2000 <- rast("data/covariates/slu_forest/00/Sweref99TM/Sweref99TM/BIN_AGE_XX_P_00.tif")
+
+ggplot() +
+  geom_spatraster(data = bin_forest_2000, na.rm = T) +
+  geom_sf(data = swe, na.rm = T, fill = NA) +
+  geom_sf(data = coordSampleUnits)
+  
+
+```
+
+**Potentially there are other sources of information, however I need to make a process of data harmonization between CLC and SLU forest data.**
+
+### Climate
+
+Keep stable or vary between years (?). My main concern is about "land" use.
+
+```{r}
+#| warning: false
+
+worldClim <- rast(c("data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_5.tif",
+               "data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_10.tif"))
+  
+
+clim <- coordSampleUnits |> 
+  st_transform(crs=crs(worldClim)) |> 
+  terra::extract(x = worldClim) |> 
+  select(-ID)
+
+#-------------------------------
+# ONLY FOR RARIFIED DATA
+
+seaData <- !(is.na(clim$wc2.1_30s_bio_5))
+
+Y <- filter(Y, seaData)
+# after apply this,two species have 0 abundance in all sites. This is because %¤%¤&"/#(/")Data
+localityYear <- filter(localityYear, seaData) 
+coordSampleUnits <- filter(coordSampleUnits, seaData)
+clim <- filter(clim, seaData)
+forestInfo <- filter(forestInfo, seaData)
+forestByYear <- filter(forestByYear, seaData)
+#-----------------------------
+
+XData <- bind_cols(forestByYear, clim) |> 
+  as.data.frame()
+
+row.names(XData) <- paste0(localityYear$verbatimLocality, ":", localityYear$year_)
+
+```
+
+### Phylogenetic
+
+First, we have to resolve names used in the phylogeny database and the bird survey.(BirdTree database)\[https://birdtree.org/\] The database come froms: (Jetz, W., G. H. Thomas, J. B. Joy, K. Hartmann, and A. O. Mooers. 2012. The global diversity of birds in space and time. Nature 491:444-448)\[https://www-nature-com.ludwig.lub.lu.se/articles/nature11631\]. There is no API, so write and retrieve manually. The species list from the database were web scrapping.
+
+```{r}
+
+birdTreeSpp <- read.csv("data/bird_tree/birdTree_spp.csv")
+sppY <- colnames(Y)
+
+sppResolved <- data.frame("scientificName" = NA, "bird_tree" = NA)
+
+run <- F
+
+if(run){
+
+  for(i in 1:length(sppY)){
+    spp.i <- sppY[i]
+    
+    isMissingSppTree <- !(spp.i %in% birdTreeSpp$species)
+      
+    if(isMissingSppTree){
+        
+      if(spp.i == "Corvus cornix"){
+        
+        synSppY.i <- "Corvus corone"
+          
+        }else if(spp.i == "Loxia bifasciata"){
+          synSppY.i <- "Loxia leucoptera"
+    
+        }else if(spp.i == "Curruca cantillans"){
+          synSppY.i <- "Sylvia cantillans"
+    
+        }else{
+          
+        synSppY.i <- synonyms(spp.i, db = "nbn", rec_only = T, accepted = F, rank = "species", ask = F) |> 
+          map_df(~ .x)
+        
+        if(ncol(synSppY.i) == 1 | ncol(synSppY.i) == 0){
+          synSppY.i <- NA
+        }else{
+          synSppY.i <-  synSppY.i |> 
+            select(nameString) |> 
+            pull()
+          synSppY.i <- (synSppY.i[synSppY.i %in% birdTreeSpp$species]) |> 
+            unique()
+        }
+    
+        }
+      }else{
+        synSppY.i <- spp.i
+      }
+     sppResolved[i,"scientificName"] <- spp.i
+     sppResolved[i,"bird_tree"] <- synSppY.i
+  }
+  
+  write.csv(sppResolved, "data/bird_tree/taxonomical_synonyms_birdtree.csv", row.names = F)
+}else{
+  
+  sppResolved <- read.csv("data/bird_tree/taxonomical_synonyms_birdtree.csv")
+
+}
+
+
+# tree-pruner-c94be97a-6fd4-4e7b-8426-21eff1f46b1f # 1000
+# tree-pruner-7e55700d-ce41-4b06-8264-cef418f554e1 # 100
+
+Trees <- ape::read.nexus("data/bird_tree/tree-pruner_n100/output.nex")
+
+## MISSING. Consensus method (?)
+
+
+phyloTree <- Trees[[sample(1:100, 1)]]
+
+#----------------
+# ONLY FOR RARIFIED DATA
+phyloTree <- drop.tip(phyloTree, c("Anser_indicus", "Falco_vespertinus"))
+#----------------
+
+phyloTree$tip.label <- phyloTree$tip.label |> 
+  str_replace(pattern = "_", " ")
+
+phyloTree$tip.label <- sppResolved$scientificName[match(phyloTree$tip.label, sppResolved$bird_tree)]
+
+
+```
+
+### Traits
+
+```{r}
+tr1 <- read.xlsx("data/traits/AVONET/TraitData/AVONET3_BirdTree.xlsx", sheet = 2) |> 
+  rename(bird_tree = Species3) |> 
+  right_join(sppResolved, by = "bird_tree" ) |>  
+  select(scientificName, Mass, Habitat, Habitat.Density, Trophic.Niche, Primary.Lifestyle, Migration)
+ 
+TrData <- tr1 |>  
+  as.data.frame()
+
+row.names(TrData) <- TrData$scientificName 
+ 
+TrData <- select(TrData, -scientificName)
+
+TrData <- TrData[order(row.names(TrData)), ]
+
+```
+
+## Set up the model
+
+### Study desing
+
+```{r}
+studyDesign <- localityYear |> 
+  select(verbatimLocality, year_, group) |> 
+  mutate(across(everything(), as.factor)) |> 
+  as.data.frame()
+
+row.names(studyDesign) <- paste0(studyDesign$verbatimLocality, ":", studyDesign$year_)
+
+
+xy <- localityYear |> 
+  select(-c(verbatimLocality, year_)) |> 
+  distinct() |> 
+  as.data.frame()
+
+row.names(xy) <- paste0(xy$group)
+xy <- xy |> 
+  select(-group)
+```
+
+### Random efects
+
+```{r}
+
+rL.group = HmscRandomLevel(sData = xy, longlat = TRUE)
+rL.locality <-  HmscRandomLevel(units = levels(studyDesign$verbatimLocality))
+rL.year <- HmscRandomLevel(units = levels(studyDesign$year_))
+
+```
+
+Clean Environment
+
+```{r}
+toKeep <- c("model", "modeltype","XData", "XFormula", "TrData", "TrFormula", "phyloTree", "Y", "rL.group", "rL.locality", "rL.year", "studyDesign",
+            "sampleUnits", "transform_Y_to_abunCpres")
+rm(list = setdiff(ls(), toKeep))
+gc()
+
+```
+
+```{r}
+XFormula <- ~ forest + poly(wc2.1_30s_bio_5, degree = 2) #+ poly(wc2.1_30s_bio_10, degree = 2) High correlated
+```
+
+```{r}
+TrFormula <- ~ log(Mass) + Habitat +  Trophic.Niche + Habitat.Density + Primary.Lifestyle #+ Migration
+
+```
+
+### Define model
+
+
+```{r}
+m.pa = Hmsc(Y = 1*(Y>0),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "probit", 
+ studyDesign = studyDesign, ranLevels = list("verbatimLocality" = rL.locality, "year_" = rL.year, "group" = rL.group)
+ )
+
+m.abu = Hmsc(Y = Y,
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson", 
+ studyDesign = studyDesign, ranLevels = list("verbatimLocality" = rL.locality, "year_" = rL.year)
+ )
+
+m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson", 
+ studyDesign = studyDesign, ranLevels = list("verbatimLocality" = rL.locality, "year_" = rL.year)
+ )
+```
+
+
+```{r}
+
+model <- "test_swedishBirds"
+modeltype <- c("presenceAbscence", "abundance", "abuCpres")
+
+dir.create("models", showWarnings = F)
+models <-  list(m.pa, m.abu, m.abuCpres)
+names(models) <- paste0(model, "_", modeltype)
+save(models, file = file.path("models", "unfitted_models.RData"))
+
+sampleMcmc(m.pa, samples=2)
+```
+
+```{r}
+# Yx <- Y |> 
+#   pivot_longer(
+#     cols = everything(), # Pivotear todas las columnas excepto "id"
+#     names_to = "especie",
+#     values_to = "abundancia"
+#   ) |> 
+#   filter(abundancia != 0) |> 
+```
+
