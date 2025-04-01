@@ -6,13 +6,115 @@
 
 # Metrics in management
 
-##  STARTt threat abatement component of STAR
 ##  MSA, mean species abundance
+
+mean_species_abundance <- function(pred.object.baseline, pred.object.scenario, richness.baseline, group.each.rows = NULL){
+  
+  if (!identical(dim(pred.object.baseline), dim(pred.object.scenario))) {
+    stop("Dimensions of 'pred.object.baseline' and 'pred.object.scenario' must be identical.")
+  }
+  
+  if (!identical(dim(pred.object.baseline)[c(1,3)], dim(richness.baseline))) {
+    stop("Dimensions of 'richness.baseline' [sites, samples] do not match site/sample dimensions of prediction arrays.")
+  }
+  
+  # ratio of abundance between posterior predictions (AI/AR)
+  change_abundance <- (pred.object.scenario / pred.object.baseline)
+  
+  # handle Inf and NaN
+  change_abundance <- ifelse(is.infinite(change_abundance) | is.nan(change_abundance), NA, change_abundance)
+  
+  # Truncated to 1
+  change_abundance <- ifelse(change_abundance > 1 & !is.na(change_abundance), 1, change_abundance)
+  
+  dm <- dim(change_abundance)
+
+  msa <-  matrix(nrow = dm[1], ncol = dm[3])
+  
+  # Sum ratios of change on sites of each replicate of the posterior
+  for(i in 1:dm[3]){
+    msa[ , i] <- change_abundance[,,i] |> 
+      rowSums()
+  }
+  
+  # Divide the sum of ratios between the number of species per site (richness previously calculated)
+  msa <- mean(msa, na.rm = T)
+  
+  rm("change_abundance")
+  
+  return(msa)
+  
+  ###### MISSING mean agruped
+  
+}
+
+#------------------------
+
 ##  PDF, potentially disappeared fraction
-##  cSAR, countryside species–area relationship
-##  BII, Biodiversity Intactness Index     
-##  Average fraction of protected geographic range in Critically endangered and Endangered  species. 
-##  BIM Biodiversity Impact Metric   : MSA/rare species
+
+potentially_disappeared_fraction <- function(richness.baseline, richness.scenario, group.each.rows = NULL) {
+  
+  if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+  library(dplyr)
+  
+  if (!identical(dim(richness.baseline), dim(richness.scenario))) {
+    stop("Dimensions of 'richness.baseline' and 'richness.scenario' must be identical.")
+  }
+  
+  N_sites_total <- nrow(richness.baseline)
+  N_posterior <- ncol(richness.baseline)
+  
+  # Determine number of groups based on rows (sites)
+  if (!is.null(group.each.rows) && group.each.rows > 0 && group.each.rows < N_sites_total) {
+    groups <- ceiling(N_sites_total / group.each.rows)
+    group.each.rows <- as.integer(group.each.rows)
+  } else {
+    groups <- 1
+    group.each.rows <- N_sites_total
+  }
+  
+  results_list <- vector("list", groups)
+  
+  for (g in 1:groups) {
+    
+    # Calculate site indices for the current group
+    r0 <- (g - 1) * group.each.rows + 1
+    r1 <- min(g * group.each.rows, N_sites_total)
+    current_site_indices <- r0:r1
+    n_group_sites <- length(current_site_indices)
+    
+    # Extract sub matrices for the current group of sites
+    baseline_group <- richness.baseline[current_site_indices, , drop = FALSE]
+    scenario_group <- richness.scenario[current_site_indices, , drop = FALSE]
+    
+    # Calculate column sums (total richness per replicate) within the group
+    b_group <- colSums(baseline_group)
+    s_group <- colSums(scenario_group)
+    
+    # Calculate PDF
+    # Handle division by zero
+    pdf_group <- numeric(N_posterior)
+    valid_b <- b_group > 1e-12 
+    
+    pdf_group[valid_b] <- 1 - (s_group[valid_b] / b_group[valid_b])
+    pdf_group[!valid_b] <- NA # Set PDF to NA where baseline is effectively zero
+    
+    results_list[[g]] <- tibble(
+      group = g,
+      replicate_idx = 1:N_posterior,
+      pdf = pdf_group,
+      baseline_sum_group = b_group, # Include sums for context
+      scenario_sum_group = s_group  # Include sums for context
+    )
+    
+  } # End group loop
+  
+  m.res <- dplyr::bind_rows(results_list)
+  
+  return(m.res)
+}
+
+##  STARTt threat abatement component of STAR
 
 
 # From ecology 
@@ -20,7 +122,6 @@
 #------------
 
 ##	Species richness
-## Using apply 2 min, vectorized for 15 sec
 
 species_richness <- function(pred.object = logic_predY){
   
@@ -37,11 +138,6 @@ species_richness <- function(pred.object = logic_predY){
   
   return(m_res)
 }
-
-#--------------------
-
-##	Sorensen similarity
-
 
 #-------------------
 
@@ -61,6 +157,31 @@ geom_mean_abun <- function(pred.object = predY, richness = a){
       round(3)
   }
   return(m_res)
+  
+}
+
+#-----------------
+
+sorensen_smilarity <- function(pred.object.baseline, pred.object.scenario){
+  
+  if (!identical(dim(pred.object.baseline), dim(pred.object.scenario))) {
+    stop("Dimensions of 'pred.object.baseline' and 'pred.object.scenario' must be identical.")
+  }
+  
+  sum_abs_dif <- (pred.object.scenario - pred.object.baseline) |> 
+    abs() |> 
+    apply(3, rowSums)
+  
+  total_abundance <- (pred.object.scenario + pred.object.baseline) |> 
+    abs() |> 
+    apply(3, rowSums)
+  
+  # handle Inf and NaN
+  relative_abundance <- sum_abs_dif/total_abundance
+  
+  relative_abundance <- ifelse(is.infinite(relative_abundance) | is.nan(relative_abundance), NA, relative_abundance)
+  
+  return(1 - relative_abundance)
   
 }
 
@@ -314,13 +435,18 @@ functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "
 ## SCBD contributions of individual species to the overall beta diversity
 ## Agrupamiento no espacial
 ## Agrupamiento espacial(?)
-## Paralleling
+## Paralleling (?)
 
+# value
 # final_varY_df: sample, group, varY (BDTotal for the group)
 # final_LCDB_df: sample, group, site_global_idx, LCDB (within the group)
 # final_SCDB_df: sample, group, species_idx, SCDB (within the group)
 
 beta_diversity <- function(pred.object = arraytest, group.each.rows = NULL){
+
+  if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+  library(dplyr)
+  
   dm <- dim(pred.object)
   N_samples <- dm[3]
   N_sites_total <- dm[1]
@@ -333,8 +459,7 @@ beta_diversity <- function(pred.object = arraytest, group.each.rows = NULL){
     groups <- 1
     group.each.rows <- N_sites_total # Ensure full range if groups=1
   }
-  message(sprintf("Processing with %d group(s)", groups))
-  
+
   varY_list <- vector("list", N_samples * groups)
   LCDB_list <- vector("list", N_samples * groups)
   SCDB_list <- vector("list", N_samples * groups)
@@ -390,11 +515,6 @@ beta_diversity <- function(pred.object = arraytest, group.each.rows = NULL){
       
     } 
     
-    # Progress message
-    if (i %% 100 == 0 || i == N_samples) {
-      cat("Processed sample:", i, "/", N_samples, "\n")
-    }
-    
   }
   
   varY <- dplyr::bind_rows(varY_list) |> as.data.frame()
@@ -404,7 +524,6 @@ beta_diversity <- function(pred.object = arraytest, group.each.rows = NULL){
   return(list("varY" = varY, "LCDB" = LCDB, "SCDB" = SCDB))
   
 }
-
 
 #-----------------------------
 

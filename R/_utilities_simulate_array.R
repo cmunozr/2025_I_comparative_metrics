@@ -1,7 +1,7 @@
 library(dplyr)
 
 n.spp <- 586
-n.sites <- 10824
+n.sites <- 1000
 samples <- 100
   
 spp_names <- openxlsx::int2col(1:n.spp)
@@ -43,6 +43,8 @@ arraytest <- array(NA, dim = c(filas, columnas, n_matrices),
                   dimnames = list(rownames(mpre_test_list[[1]]),
                                   colnames(mpre_test_list[[1]]),
                                   paste0(1:n_matrices)))
+
+# arraytest2 <- ifelse(arraytest >= 5, arraytest - 5, arraytest)
 
 for (i in 1:n_matrices) {
   arraytest[,,i] <- mpre_test_list[[i]]
