@@ -103,7 +103,7 @@ transform_Y_to_abunCpres <- function(data) {
 
 
 ```{r}
-set.seed(84987)
+set.seed(11072024)
 ```
 
 "The summer and winter point count routes (“punktrutterna”) are two of several schemes within the Swedish Bird Survey (see below), run by the Department of Biology at Lund University. The point count routes were initiated in 1975 as a standardised method for detecting and reporting changes in the abundance of birds and their distributions in Sweden over time. The point count routes can be surveyed in summer and/or winter. The surveys are initiated and carried out by volunteer ornithologists who use standardised methods to count birds along routes of their own choice. In this analysis we going to work with the summer point count routes. Where the bird diversity in Sweden is on its peak." GBIF page of the SBS.

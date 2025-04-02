@@ -40,6 +40,7 @@ tm_RaoQ <- Sys.time()-tm
 # Richness
 tm <- Sys.time()
 a <- species_richness(pred.object = logic_arraytest)
+a2 <- species_richness(pred.object = logic_arraytest2)
 tm_richness2 <- Sys.time()-tm
     
 # geom abundance
