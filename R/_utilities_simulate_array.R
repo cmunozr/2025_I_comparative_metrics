@@ -48,7 +48,7 @@ gc()
 #-------
 # reduction of abundance
 
-reduce_abundance <- function(array.abundance, reduction.factor = 0.5, max.reduction = 8) {
+reduce_abundance <- function(array.abundance, reduction.factor = 0.2, max.reduction = 8) {
 
   reduced_array <- array.abundance
   filas <- dim(array.abundance)[1]

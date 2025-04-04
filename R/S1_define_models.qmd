@@ -297,7 +297,7 @@ Keep stable or vary between years (?). My main concern is about "land" use.
 #| warning: false
 
 worldClim <- rast(c("data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_5.tif",
-               "data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_10.tif"))
+               "data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_18.tif"))
   
 
 clim <- coordSampleUnits |> 
@@ -454,7 +454,7 @@ xy <- xy |>
   select(-group)
 ```
 
-### Random efects
+### Random effects
 
 ```{r}
 
@@ -475,7 +475,7 @@ gc()
 ```
 
 ```{r}
-XFormula <- ~ forest + poly(wc2.1_30s_bio_5, degree = 2) #+ poly(wc2.1_30s_bio_10, degree = 2) High correlated
+XFormula <- ~ forest + poly(wc2.1_30s_bio_5, degree = 2) + poly(wc2.1_30s_bio_18, degree = 2) #High correlated
 ```
 
 ```{r}
@@ -516,10 +516,10 @@ m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
 ```{r}
 
 model <- "test_swedishBirds"
-modeltype <- c("presenceAbscence", "abundance", "abuCpres")
+modeltype <- c("abundance", "presenceAbscence", "abuCpres")
 
 dir.create("models", showWarnings = F)
-models <-  list(m.pa, m.abu, m.abuCpres)
+models <-  list(m.abu, m.pa, m.abuCpres)
 names(models) <- paste0(model, "_", modeltype)
 save(models, file = file.path("models", "unfitted_models.RData"))
 
