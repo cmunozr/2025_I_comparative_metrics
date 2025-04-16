@@ -96,6 +96,12 @@ library(tidyterra)
 ```
 
 ```{r}
+options("GDAL_DATA" = Sys.getenv("GDAL_DATA")) # Ensure GDAL_DATA is set if needed
+options("OSR_USE_NON_DEPRECATED" = "NO")
+```
+
+
+```{r}
 transform_Y_to_abunCpres <- function(data) {
   data %>% mutate(across(everything(), ~ ifelse(. == 0, NA, scale(log(.)))))
 }
@@ -109,65 +115,150 @@ set.seed(11072024)
 "The summer and winter point count routes (“punktrutterna”) are two of several schemes within the Swedish Bird Survey (see below), run by the Department of Biology at Lund University. The point count routes were initiated in 1975 as a standardised method for detecting and reporting changes in the abundance of birds and their distributions in Sweden over time. The point count routes can be surveyed in summer and/or winter. The surveys are initiated and carried out by volunteer ornithologists who use standardised methods to count birds along routes of their own choice. In this analysis we going to work with the summer point count routes. Where the bird diversity in Sweden is on its peak." GBIF page of the SBS.
 
 ```{r}
-all_event <- fread("data_test/swedish_bird_gbif/event.txt") |> 
-  as.data.frame()
+# species data (names and keys)
+spp <- read.xlsx("data/sbs/public_eurolist.xlsx", sheet = 1)
 
-yearLimMin <- 2000
-yearLimMax <- 2010
+# counts by sampling (spp key, and counts in points and lines)
 
-event <- all_event |>
-  filter(eventDate >= yearLimMin, eventDate <= yearLimMax) # match info from forest data
+occurr <- read.xlsx("data/sbs/public_totalstandard_250410.xlsx", sheet = 1) 
 
-occurr <- fread("data_test/swedish_bird_gbif/occurrence.txt") |> 
-  as.data.frame() |> 
-  filter(taxonRank != "genus") |> 
-  mutate(scientificName = ifelse(scientificName == "Corvus corone", "Corvus cornix", scientificName))  # corone 1 observation, so drop it
+# coordinates (keys)
+coords <- read.xlsx("data/sbs/KoordinaterPkt.xlsx", cols = 1:4) |> 
+  mutate(punkt = rep(seq(1,15,2), length(unique(karta))))
+
+```
+
+There are `r nrow(spp)` species observed in the data set and `r nrow(occurr)` occurrence data in apparently `r nrow(coords)`.
+
+```{r}
+# transforming raw data
+
+## calculating coordinate information for lines
+## Line information is taken as the mid point between adjacent points
+
+calculate_line_midpoints <- function(data) {
+  n_points <- nrow(data)
+
+  if (n_points < 1) {
+    return(data.frame(karta = character(0), punkt = character(0), rt90_o = numeric(0), rt90_n = numeric(0)))
+  }
+
+  midpoints_list <- lapply(1:n_points, function(i) {
+    current_point <- data[i, ]
+    next_index <- ifelse(i == n_points, 1, i + 1)
+    next_point <- data[next_index, ]
+
+    rt90_o <- (current_point$rt90_o + next_point$rt90_o) / 2
+    rt90_n <- (current_point$rt90_n + next_point$rt90_n) / 2
+    punktl <- paste0(i)
+    karta <- current_point$karta # karta will be the same for all points in the group
+
+    return(data.frame(karta = karta, punkt = punktl, rt90_o = rt90_o, rt90_n = rt90_n))
+  })
+
+  midpoints <- bind_rows(midpoints_list) |> 
+  mutate(punkt = rep(seq(2,16,2), length(unique(karta))))
+  
+  return(midpoints)
+}
+
+coords_lines <- split(coords, f = coords$karta) |> 
+  lapply(calculate_line_midpoints) |> 
+  bind_rows()
+
+coords <- bind_rows(coords, coords_lines)
+
+coords$punkt <- as.double(coords$punkt)
+
+```
+
+
+```{r}
+## filtering
+
+years <- c(2000, 2005, 2010, 2015)
+
+spp <- spp |> 
+  filter(taxon_rank == "species", class == "Aves")  
+
+occurr <- occurr |> 
+  mutate(datum = as_date(datum)) |> 
+  filter(yr %in% years)
+occurr <- occurr[which(occurr$art %in% spp$art), ]
+
+coords <- coords[which(coords$karta %in% occurr$karta), ]
+
+## reshaping
+
+occurr <- occurr |> 
+  pivot_longer(cols = starts_with("p") | starts_with("l"), names_to = "punkt", values_to = "count")
+
+## joining
+
+occurrSpp <- select(.data = spp, c(art, latin)) |> 
+  full_join(occurr, by = "art") |>
+  filter(punkt != "pkind" , punkt != "lind", !is.na(punkt))
+
+occurrSpp$punkt |> unique()
+
+occurrSppCoord <-  occurrSpp |>
+  mutate(
+    punkt = case_when(
+      startsWith(punkt, "p") ~ as.numeric(sub("p", "", punkt)) * 2 - 1,
+      startsWith(punkt, "l") ~ as.numeric(sub("l", "", punkt)) * 2,
+      TRUE ~ as.numeric(punkt)
+    )
+  ) |> 
+  full_join(coords, by = c("karta", "punkt"))
+  
+rm(coords, coords_lines, occurr, occurrSpp, spp)
+```
+
+
+```{r}
+
+localityYear <- occurrSppCoord |>
+  select(karta, punkt, yr, rt90_o, rt90_n) |>
+  distinct() |>
+  group_by(karta, punkt) |>
+  mutate(sampleUnit = paste0(karta,":", punkt)) |>
+  ungroup()
 
 #----------------
 # ONLY FOR RARIFIED DATA
 
-occurr <- occurr[!(occurr$scientificName %in% c("Anser indicus", "Falco vespertinus")), ]
-```
+# occurr <- occurr[!(occurr$scientificName %in% c("Anser indicus", "Falco vespertinus")), ]
 
-There are `r nrow(all_event)` observation events on the data set and `r nrow(occurr)` occurrence data.
-
-```{r}
-eventOccurr <- right_join(occurr, event, by = "id") |> 
-  mutate(year_ = year(as.Date(eventDate)))
-
-localityYear <- eventOccurr |>
-  select(decimalLongitude, decimalLatitude, verbatimLocality, year_) |>
-  distinct() |>
-  group_by(decimalLongitude, decimalLatitude) |>
-  mutate(group = paste0("group", cur_group_id())) |>
-  ungroup()
+##  mutate(latin = ifelse(latin == "Corvus corone", "Corvus cornix", latin))
 
 ```
 
-The number of events from `r yearLimMin`to `r yearLimMin`is `r nrow(event)` with `r nrow(eventOccurr)` occurrence data. The number of unique localities surveyed in this time during the summer (using the name of the locality in the dataset) is `r length(unique(localityYear$verbatimLocality))`. However, according to unique coordinates are `r length(unique(paste0(localityYear$decimalLongitude, ";", localityYear$decimalLatitude)))`. **In that way, there are coordinates in which there are more than one locality**.
+From `r min(years)`to `r max(years)` (`r max(years) - min(years)` years), the number of 2x2 km squares sampled was `r length(unique(localityYear$karta))` and `r length(unique(localityYear$sampleUnit))` sampling units and according to unique coordinates `r length(unique(paste0(localityYear$rt90_o, ";", localityYear$rt90_n)))`). It were counted a total number of visits of `r nrow(localityYear)` (year, square, unit). . **In that way, there are units or big squares that werent visited all the years**.
 
 ```{r}
 
 swe <- st_as_sf(map(database = "world", regions = "sweden", plot = FALSE, fill = TRUE)) |> 
-  st_transform(crs = "EPSG:3006")
+  st_transform("EPSG:2400")
 
 coordSampleUnits <- localityYear |> 
-  st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = "EPSG:4326")
+  st_as_sf(coords = c("rt90_o", "rt90_n"), crs = "EPSG:2400") 
+
+# coordSampleUnits |> st_transform("EPSG:4326") |> write_sf("coordSampleUnits.shp", delete_layer = T)
 
 ggplot() +
   geom_sf(data = swe) +
-  geom_sf(data = st_transform(coordSampleUnits, "EPSG:3006"))
+  geom_sf(data = coordSampleUnits)
 
 ```
 
 ### Species data
 
 ```{r}
-Y <- eventOccurr |> 
-  select(verbatimLocality, year_, scientificName, individualCount) |>
-  pivot_wider(id_cols = c(verbatimLocality, year_), names_from = scientificName, values_from = individualCount,
+Y <- occurrSppCoord |> 
+  select(karta, punkt, yr, latin, count) |>
+  pivot_wider(id_cols = c(karta, punkt, yr), names_from = latin, values_from = count,
               values_fn = sum, values_fill = 0) |> 
-  select(-year_, -verbatimLocality) |> 
+  select(-yr, -punkt, -karta) |> 
   as.data.frame()
 
 # row.names(Y) <- paste0(Y$verbatimLocality, Y$year_)
@@ -210,85 +301,201 @@ lsuZipsSplit <- str_split(lsuZips, pattern = "/", simplify = T)
 
 lsuList <- list()
 
-for(i in 1:length(lsuZips)){
+run <- F
 
-  files_in_zip <- unzip(lsuZips[i], list = TRUE)$Name
-  zip_tif <- grep("*_P_.*\\.tif$", files_in_zip, value = T)[1]
-  r <- rast(paste0("/vsizip/", lsuZips[i], "/", zip_tif))
+if(run){
   
-  lsuList[[i]] <- coordSampleUnits |> 
-    st_transform(crs=crs(r)) |> 
-    terra::extract(x = r) |> 
-    select(all_of(names(r)))
+  for(i in 1:length(lsuZips)){
+    # i <- 4
+    files_in_zip <- unzip(lsuZips[i], list = TRUE)$Name
+    zip_tif <- grep("*_P_.*\\.tif$", files_in_zip, value = T)
+    
+    lsutmp <- list()
+    
+    for(a in 1:length(zip_tif)){
+      # a  <- 2
+      r <- rast(paste0("/vsizip/", lsuZips[i], "/", zip_tif)[a])
+      
+      # # Create a new temp raster
+      r2 <- r
+      
+      #rescale temp raster to new resolution
+      res(r2) <- 100 
+      # 
+      # Resample the raster to 100m x 100m using mean aggregation
+      r_resampled <- resample(r, r2, method = "average")
+      
+      lsutmp[[a]] <- coordSampleUnits |> 
+        st_transform(crs=crs(r)) |> 
+        terra::extract(x = r_resampled) |> 
+        select(all_of(names(r)))
+    }
+    
+    lsuList[[i]] <- bind_cols(lsutmp)
+    
+  }
+  
+  save(lsuList, file = file.path("data", "covariates", "slu_forest", "extracted_data.RData"))
+}else{
+  load(file = file.path("data", "covariates", "slu_forest", "extracted_data_100m.RData"))
 }
 
-forestInfo <- do.call("cbind", lsuList) |>
-  apply(2, function(X){!is.na(X)*1}) |>
-  as.data.frame() |>
-  (\(df) {
-    colnames(df) <- paste0("20", lsuZipsSplit[,4])
-    df
-  })() |> 
-  mutate("year_" = localityYear$year_)
+names(lsuList) <- years
 ```
 
-Rules to assign forest presence. When a observation is in the same year, keep the value of the layer year. However, when an observations is in an intermediate year:
-
-- if layer year 1 is presence of forest and layer year 2 is presence of forest: keep all intermediate years as presence
-- if layer year 1 is absence of forest and layer year 2 is presence of forest: keep all intermediate years as absence
-- if layer year 1 and year 2 are different: use probability weighted by value of layer year 1. Having in mind that a growth of forest in 5 years is more difficult. So, when year 1 is presence the next one is more probable to be presence than a previous absence change to presence.
 
 ```{r}
-classify_forest <- function(df, year_cols) {
-  result <- integer(nrow(df))
-  for (i in 1:nrow(df)) {
-    year <- df$year_[i]
-    if (year %in% as.integer(year_cols)) {
-      result[i] <- df[i, as.character(year)]
-    } else {
-      prev_year <- max(as.integer(year_cols[as.integer(year_cols) < year]))
-      next_year <- min(as.integer(year_cols[as.integer(year_cols) > year]))
-      if (!is.infinite(prev_year) && !is.infinite(next_year)) {
-        prev_val <- df[i, as.character(prev_year)]
-        next_val <- df[i, as.character(next_year)]
-        if (prev_val == next_val) {
-          result[i] <- prev_val
-        } else {
-          years_diff <- next_year - prev_year
-          year_pos <- year - prev_year
-          prob_forest <- prev_val * (1 - (year_pos / years_diff))
-          result[i] <- ifelse(runif(1) < prob_forest, 1, 0)
-        }
-      } else if (!is.infinite(prev_year)) {
-        result[i] <- df[i, as.character(prev_year)]
-      } else if (!is.infinite(next_year)) {
-        result[i] <- df[i, as.character(next_year)]
-      } else {
-        result[i] <- NA
-      }
+get_forest_info <- function(locality.df, forest.list, years) {
+  result <- list()
+  for (i in 1:length(years)) {
+    year_i <- as.character(years[i])
+    index <- which(locality.df$yr == year_i)
+    if (year_i %in% names(forest.list)) {
+      info_i <- forest.list[[year_i]]
+      colnames(info_i) <- sub(pattern = "_[0-9]{2}", replacement = "", colnames(info_i) )
+      df <- info_i[index, ] |> 
+        mutate(index = index, yr = year_i)
+      result[[i]] <- df
     }
   }
-  return(data.frame("forest" = result))
+  result <- bind_rows(result)
+  result <- result[order(result$index), ] |>
+    relocate(index, yr, last_col())
+  
+  return(result)
 }
 
-forestByYear <- classify_forest(df = forestInfo, year_cols = c(2000, 2005, 2010))
+forestInfo <- get_forest_info(locality.df = localityYear, forest.list = lsuList, years = years) |> 
+  filter(yr != 2015) |> ########## Watchout!!!!!!!!!!!!
+  select(-DIAMETER_XX_P, -BASALAREA_XX_P, ) |> 
+  filter(if_any(-c(index, yr), ~ !is.na(.))) 
 
+forestInfo[is.na(forestInfo) ] <- 0 ########## Watchout!!!!!!!!!!!!
+
+table(forestInfo$yr)
+
+```
+
+
+```{r}
+forestInfo_long <- forestInfo |> 
+  select(-c(index, yr)) |> 
+  pivot_longer(cols = c(1:11))
+
+# Calculate NA and zero counts per variable
+na_zero_summary <- forestInfo_long |> 
+  group_by(name) |> 
+  summarise(
+    n_na = sum(is.na(value)),
+    n_zero = sum(value == 0, na.rm = TRUE), # na.rm = TRUE to ignore NA in the comparison
+    total_n = n()
+  ) |> 
+  mutate(
+    label = paste0("NA: ", n_na, "\nZero: ", n_zero)
+  )
+
+ggplot(forestInfo_long, aes(value)) +
+  geom_density() +
+  facet_wrap(~name, scales = "free") +
+  geom_text(data = na_zero_summary,
+            aes(x = Inf, y = Inf, label = label),
+            hjust = 1.1, vjust = 1.1, size = 3)
 ```
 
 ```{r}
+# transforming forest info
 
-bin_forest_2000 <- rast("data/covariates/slu_forest/00/Sweref99TM/Sweref99TM/BIN_AGE_XX_P_00.tif")
+forestInfo$BEECHVOL_XX_P <- (forestInfo$BEECHVOL_XX_P > 0) * 1
+forestInfo$BIRCHVOL_XX_P <- (forestInfo$BIRCHVOL_XX_P > 0) * 1
+forestInfo$CONTORTAVOL_XX_P <- (forestInfo$CONTORTAVOL_XX_P > 0) * 1
+forestInfo$DECIDUOUSVOL_XX_P <- (forestInfo$DECIDUOUSVOL_XX_P > 0) * 1
+forestInfo$OAKVOL_XX_P <- (forestInfo$OAKVOL_XX_P > 0) * 1
+forestInfo$PINEVOL_XX_P <- (forestInfo$PINEVOL_XX_P > 0) * 1
+forestInfo$SPRUCEVOL_XX_P <- (forestInfo$SPRUCEVOL_XX_P > 0) * 1
+```
 
-ggplot() +
-  geom_spatraster(data = bin_forest_2000, na.rm = T) +
-  geom_sf(data = swe, na.rm = T, fill = NA) +
-  geom_sf(data = coordSampleUnits)
-  
+
+```{r}
+forestInfo_long <- forestInfo |> 
+  select(-c(index, yr)) |> 
+  pivot_longer(cols = c(1:11))
+
+# Calculate NA and zero counts per variable
+na_zero_summary <- forestInfo_long |> 
+  group_by(name) |> 
+  summarise(
+    n_na = sum(is.na(value)),
+    n_zero = sum(value == 0, na.rm = TRUE), # na.rm = TRUE to ignore NA in the comparison
+    total_n = n()
+  ) |> 
+  mutate(
+    label = paste0("NA: ", n_na, "\nZero: ", n_zero)
+  )
+
+ggplot(forestInfo_long, aes(value)) +
+  geom_density() +
+  facet_wrap(~name, scales = "free") +
+  geom_text(data = na_zero_summary,
+            aes(x = Inf, y = Inf, label = label),
+            hjust = 1.1, vjust = 1.1, size = 3)
+```
+
+
+```{r}
+#------------------------------- # just for proof of concept, I need to investigate why there are data without information even the other variables get me info
+forestData <- forestInfo$index
+
+Y <- Y[forestData, ]
+localityYear <- localityYear[forestData, ] 
+coordSampleUnits <- coordSampleUnits[forestData, ]
 
 ```
 
-**Potentially there are other sources of information, however I need to make a process of data harmonization between CLC and SLU forest data.**
+### LandUse
 
+```{r}
+clc <- rast("data/covariates/NMD/18/nmd2018bas_ogeneraliserad_v1_1.tif")
+clc2 <- clc
+res(clc2) <- 100 
+clc_resampled <- resample(clc, clc2, method = "near")
+
+clcRaw <- coordSampleUnits |> 
+  st_transform(crs=crs(clc)) |> 
+  terra::extract(x = clc_resampled) |> 
+  select(-ID) |> 
+  mutate(Klass = iconv(Klass, from = "ISO-8859-1", to = "UTF-8"))
+  
+clcInfo <- clcRaw |> 
+  mutate(
+    Klass = case_when(
+      Klass %in% c("Exploaterad mark, väg/järnväg", "Åkermark", "Exploaterad mark, 
+                        byggnad", "Exploaterad mark, ej byggnad eller väg/järnväg") ~ "Urb",
+      Klass %in% c("Triviallövskog (utanför våtmark)", "Triviallövskog med ädellövinslag (utanför våtmark)", 
+                        "Lövblandad barrskog (utanför våtmark)", "Ädellövskog (utanför våtmark)",
+                        "Lövblandad barrskog (på våtmark)", "Ädellövskog (på våtmark)", 
+                        "Triviallövskog (på våtmark)", "Triviallövskog med ädellövinslag (på våtmark)") ~ "Br",
+      Klass %in% c("Granskog (utanför våtmark)", "Tallskog (utanför våtmark)", 
+                        "Barrblandskog (utanför våtmark)", "Tallskog (på våtmark)", 
+                        "Granskog (på våtmark)", "Barrblandskog (på våtmark)") ~ "Co",
+      Klass %in% c("Övrig öppen mark med vegetation", "Övrig öppen mark utan vegetation") ~ "Op",
+      Klass == "Hav" ~ "Ma",
+      Klass %in% c("Sjö och vattendrag", "Öppen våtmark", "Temporärt ej skog (på våtmark)", 
+                        "Temporärt ej skog (utanför våtmark)") ~ "We",
+      Klass == "" ~ "", # Keep the empty string as is
+      TRUE ~ NA_character_  # For any other value (shouldn't happen if your data is clean)
+    )
+  )
+
+#------------------------------- # just for proof of concept, I need to investigate why there are sea data/NA
+clcData <- which(clcInfo$Klass != "" & !is.na(clcInfo$Klass))
+
+clcInfo <- clcInfo[clcData, , drop = F]
+Y <- Y[clcData, ]
+localityYear <- localityYear[clcData, ] 
+coordSampleUnits <- coordSampleUnits[clcData, ]
+forestInfo <- forestInfo[clcData, ]
+
+```
 ### Climate
 
 Keep stable or vary between years (?). My main concern is about "land" use.
@@ -299,32 +506,38 @@ Keep stable or vary between years (?). My main concern is about "land" use.
 worldClim <- rast(c("data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_5.tif",
                "data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_18.tif"))
   
-
 clim <- coordSampleUnits |> 
   st_transform(crs=crs(worldClim)) |> 
   terra::extract(x = worldClim) |> 
   select(-ID)
 
-#-------------------------------
-# ONLY FOR RARIFIED DATA
+#------------------------------- # just for proof of concept, I need to investigate why there are sea data/NA
+no_seaData <- which((!is.na(clim$wc2.1_30s_bio_5)))
 
-seaData <- !(is.na(clim$wc2.1_30s_bio_5))
-
-Y <- filter(Y, seaData)
-# after apply this,two species have 0 abundance in all sites. This is because %¤%¤&"/#(/")Data
-localityYear <- filter(localityYear, seaData) 
-coordSampleUnits <- filter(coordSampleUnits, seaData)
-clim <- filter(clim, seaData)
-forestInfo <- filter(forestInfo, seaData)
-forestByYear <- filter(forestByYear, seaData)
+Y <- Y[no_seaData, ]
+localityYear <- localityYear[no_seaData, ] 
+coordSampleUnits <- coordSampleUnits[no_seaData, ]
+clim <- clim[no_seaData, ]
+forestInfo <- forestInfo[no_seaData, ]
+clcInfo <- clcInfo[no_seaData, , drop = F]
 #-----------------------------
 
-XData <- bind_cols(forestByYear, clim) |> 
-  as.data.frame()
+XData <- forestInfo |> 
+  select(-c(index, yr)) |> 
+  bind_cols(clim, clcInfo) |> 
+  as.data.frame() |> 
+  mutate(Klass = as.factor(Klass))
 
-row.names(XData) <- paste0(localityYear$verbatimLocality, ":", localityYear$year_)
+row.names(XData) <- paste0(localityYear$karta, ":", localityYear$yr, ":", localityYear$punkt)
 
 ```
+
+```{r}
+zero_spp <-  which(colSums(Y) == 0)
+
+Y <- Y[ , -zero_spp]
+```
+
 
 ### Phylogenetic
 
@@ -358,6 +571,9 @@ if(run){
         }else if(spp.i == "Curruca cantillans"){
           synSppY.i <- "Sylvia cantillans"
     
+        }else if(spp.i == "Columba livia f. domestica"){
+          synSppY.i <- "Columba livia"
+          
         }else{
           
         synSppY.i <- synonyms(spp.i, db = "nbn", rec_only = T, accepted = F, rank = "species", ask = F) |> 
@@ -389,26 +605,27 @@ if(run){
 }
 
 
-# tree-pruner-c94be97a-6fd4-4e7b-8426-21eff1f46b1f # 1000
-# tree-pruner-7e55700d-ce41-4b06-8264-cef418f554e1 # 100
+# tree-pruner-79dc275b-d443-43a0-ad48-65f64e969c4f # 1000
+# tree-pruner-cc685151-9887-452d-9dc0-01386d287412 # 100 removing NA data
 
-Trees <- ape::read.nexus("data/bird_tree/tree-pruner_n100/output.nex")
+Trees <- ape::read.nexus("data/bird_tree/n100_naRemoved/output.nex")
 
 ## MISSING. Consensus method (?)
 
 
 phyloTree <- Trees[[sample(1:100, 1)]]
 
-#----------------
-# ONLY FOR RARIFIED DATA
-phyloTree <- drop.tip(phyloTree, c("Anser_indicus", "Falco_vespertinus"))
-#----------------
 
 phyloTree$tip.label <- phyloTree$tip.label |> 
   str_replace(pattern = "_", " ")
 
-phyloTree$tip.label <- sppResolved$scientificName[match(phyloTree$tip.label, sppResolved$bird_tree)]
+#----------------
+# remove spp
+# phyloTree <- drop.tip(phyloTree, c("Anser_indicus", "Falco_vespertinus"))
 
+#----------------
+
+phyloTree$tip.label <- sppResolved$scientificName[match(phyloTree$tip.label, sppResolved$bird_tree)]
 
 ```
 
@@ -437,37 +654,52 @@ TrData <- TrData[order(row.names(TrData)), ]
 
 ```{r}
 studyDesign <- localityYear |> 
-  select(verbatimLocality, year_, group) |> 
+  select(karta, yr, sampleUnit) |> 
   mutate(across(everything(), as.factor)) |> 
   as.data.frame()
 
-row.names(studyDesign) <- paste0(studyDesign$verbatimLocality, ":", studyDesign$year_)
+row.names(studyDesign) <- paste0(studyDesign$karta, ":", studyDesign$yr, ":" ,studyDesign$sampleUnit)
 
-
-xy <- localityYear |> 
-  select(-c(verbatimLocality, year_)) |> 
+xy <- coordSampleUnits |> 
+  select(-c(yr, punkt, sampleUnit)) |> 
+  st_transform("EPSG:4326")%>%  
+    mutate(
+    long = sf::st_coordinates(.)[,1],
+    lat = sf::st_coordinates(.)[,2]
+  ) |> 
+  st_drop_geometry() |> 
   distinct() |> 
   as.data.frame()
 
-row.names(xy) <- paste0(xy$group)
-xy <- xy |> 
-  select(-group)
+le <-  levels(studyDesign$karta)
+xy.karta <-  matrix(nrow=length(le), ncol=2)  
+rownames(xy.karta) <-  le
+
+for(i in 1:length(le)){
+  xy.cle <- xy[which(xy$karta == le[i]), c("long", "lat")]
+  xy.karta[le[i],] <- colMeans(xy.cle)
+}
+
+colnames(xy.karta) <-  c("long", "lat")
+
+write.csv(xy.karta, "xy.karta.csv", row.names = F)
+
 ```
 
 ### Random effects
 
 ```{r}
 
-rL.group = HmscRandomLevel(sData = xy, longlat = TRUE)
-rL.locality <-  HmscRandomLevel(units = levels(studyDesign$verbatimLocality))
-rL.year <- HmscRandomLevel(units = levels(studyDesign$year_))
+rL.sampleUnit <- HmscRandomLevel(units = levels(studyDesign$sampleUnit))
+rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE)
+rL.year <- HmscRandomLevel(units = levels(studyDesign$yr))
 
 ```
 
 Clean Environment
 
 ```{r}
-toKeep <- c("model", "modeltype","XData", "XFormula", "TrData", "TrFormula", "phyloTree", "Y", "rL.group", "rL.locality", "rL.year", "studyDesign",
+toKeep <- c("model", "modeltype","XData", "XFormula", "TrData", "TrFormula", "phyloTree", "Y", "rL.sampleUnit", "rL.locality", "rL.year", "studyDesign",
             "sampleUnits", "transform_Y_to_abunCpres")
 rm(list = setdiff(ls(), toKeep))
 gc()
@@ -475,11 +707,15 @@ gc()
 ```
 
 ```{r}
-XFormula <- ~ forest + poly(wc2.1_30s_bio_5, degree = 2) + poly(wc2.1_30s_bio_18, degree = 2) #High correlated
+
+colnames(XData)
+
+XFormula <- ~ Klass + AGE_XX_P + BEECHVOL_XX_P + CONTORTAVOL_XX_P + BIRCHVOL_XX_P + DECIDUOUSVOL_XX_P + HEIGHT_XX_P + OAKVOL_XX_P + PINEVOL_XX_P + SPRUCEVOL_XX_P + TOTALVOL_XX_P + BIOMASS_XX_P + poly(wc2.1_30s_bio_5, degree = 2) + poly(wc2.1_30s_bio_18, degree = 2)
 ```
 
+
 ```{r}
-TrFormula <- ~ log(Mass) + Habitat +  Trophic.Niche + Habitat.Density + Primary.Lifestyle #+ Migration
+TrFormula <- ~ log(Mass) + Habitat +  Trophic.Niche + Habitat.Density + Primary.Lifestyle + Migration
 
 ```
 
@@ -487,20 +723,12 @@ TrFormula <- ~ log(Mass) + Habitat +  Trophic.Niche + Habitat.Density + Primary.
 
 
 ```{r}
-m.pa = Hmsc(Y = 1*(Y>0),
- XData = XData, XFormula = XFormula,
- TrData = TrData, TrFormula = TrFormula,
- phyloTree = phyloTree,
- distr = "probit", 
- studyDesign = studyDesign, ranLevels = list("verbatimLocality" = rL.locality, "year_" = rL.year, "group" = rL.group)
- )
-
 m.abu = Hmsc(Y = Y,
  XData = XData, XFormula = XFormula,
  TrData = TrData, TrFormula = TrFormula,
  phyloTree = phyloTree,
  distr = "lognormal poisson", 
- studyDesign = studyDesign, ranLevels = list("verbatimLocality" = rL.locality, "year_" = rL.year)
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
  )
 
 m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
@@ -508,21 +736,32 @@ m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
  TrData = TrData, TrFormula = TrFormula,
  phyloTree = phyloTree,
  distr = "lognormal poisson", 
- studyDesign = studyDesign, ranLevels = list("verbatimLocality" = rL.locality, "year_" = rL.year)
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
  )
+
+m.pa = Hmsc(Y = 1*(Y>0),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "probit", 
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ )
+
 ```
 
 
 ```{r}
-
-model <- "test_swedishBirds"
-modeltype <- c("abundance", "presenceAbscence", "abuCpres")
+model <- "swedishBirds_forestry"
+modeltype <- c("abundance", "abuCpres", "presenceAbscence")
 
 dir.create("models", showWarnings = F)
-models <-  list(m.abu, m.pa, m.abuCpres)
+models <-  list(m.abu, m.abuCpres, m.pa )
 names(models) <- paste0(model, "_", modeltype)
 save(models, file = file.path("models", "unfitted_models.RData"))
+```
 
+
+```{r}
 sampleMcmc(m.pa, samples=2)
 ```
 

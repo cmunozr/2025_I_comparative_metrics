@@ -75,7 +75,11 @@ forest_plot <- ggplot(plot_data, aes(x = mean, y = locality_id)) +
   theme(
     panel.grid.major.y = element_blank(),
     panel.grid.minor.y = element_blank(),
-    axis.text.y = element_text(size = 8)
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(size = rel(2), face = "bold"), 
+    plot.subtitle = element_text(size = rel(2)),        
+    axis.title.x = element_text(size = rel(2)), 
+    axis.text.x = element_text(size = rel(2))          
   )
 
 forest_plot

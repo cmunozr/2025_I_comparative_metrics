@@ -18,14 +18,14 @@ if (.Platform$OS.type == "windows") {
   samples_list <-  c(5) #, 250, 250) 
   thin_list <- c(1) #, 1, 10)
 } else {
-  samples_list <- c(5, 250, 1000)  # 100,1000, 10000)
-  thin_list <- c(1, 1, 1000) # 100,1000, 10000)
+  samples_list <- c(5,1000)  # 100,1000, 10000)
+  thin_list <- c(1, 1000) # 100,1000, 10000)
 }
 
 # --- Setup Parallel Processing ---¨
 
-if (is.null(nParallel)) nParallel <- nChains
-registerDoParallel(cores = nParallel)
+#if (is.null(nParallel)) nParallel <- nChains
+#registerDoParallel(cores = nParallel)
 
 # --- Main Loop for Fitting Models ---
 
@@ -53,6 +53,7 @@ while (Lst <= length(samples_list)) {
       
       print(paste("Processing model:", model_name, " | Saving to:", basename(filename)))
       start_time <- Sys.time()
+      print(start_time)
       
       m_unfitted <- models[[mi]]
       

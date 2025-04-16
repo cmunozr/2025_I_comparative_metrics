@@ -478,3 +478,42 @@ for(i in 1:length(lsu_zips)){
 }
 
 names(lsu_list) <- paste0("lsu_20", str_split(lsu_zips, pattern = "/", simplify = T)[,4])
+
+#############
+Rules to assign forest presence. When a observation is in the same year, keep the value of the layer year. However, when an observations is in an intermediate year:
+
+- if layer year 1 is presence of forest and layer year 2 is presence of forest: keep all intermediate years as presence
+- if layer year 1 is absence of forest and layer year 2 is presence of forest: keep all intermediate years as absence
+- if layer year 1 and year 2 are different: use probability weighted by value of layer year 1. Having in mind that a growth of forest in 5 years is more difficult. So, when year 1 is presence the next one is more probable to be presence than a previous absence change to presence.
+
+classify_forest <- function(df, year_cols) {
+  result <- integer(nrow(df))
+  for (i in 1:nrow(df)) {
+    year <- df$year_[i]
+    if (year %in% as.integer(year_cols)) {
+      result[i] <- df[i, as.character(year)]
+    } else {
+      prev_year <- max(as.integer(year_cols[as.integer(year_cols) < year]))
+      next_year <- min(as.integer(year_cols[as.integer(year_cols) > year]))
+      if (!is.infinite(prev_year) && !is.infinite(next_year)) {
+        prev_val <- df[i, as.character(prev_year)]
+        next_val <- df[i, as.character(next_year)]
+        if (prev_val == next_val) {
+          result[i] <- prev_val
+        } else {
+          years_diff <- next_year - prev_year
+          year_pos <- year - prev_year
+          prob_forest <- prev_val * (1 - (year_pos / years_diff))
+          result[i] <- ifelse(runif(1) < prob_forest, 1, 0)
+        }
+      } else if (!is.infinite(prev_year)) {
+        result[i] <- df[i, as.character(prev_year)]
+      } else if (!is.infinite(next_year)) {
+        result[i] <- df[i, as.character(next_year)]
+      } else {
+        result[i] <- NA
+      }
+    }
+  }
+  return(data.frame("forest" = result))
+}
