@@ -762,7 +762,7 @@ save(models, file = file.path("models", "unfitted_models.RData"))
 
 
 ```{r}
-sampleMcmc(m.pa, samples=2)
+sampleMcmc(m_unfitted, samples=2)
 ```
 
 ```{r}

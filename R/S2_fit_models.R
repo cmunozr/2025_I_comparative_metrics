@@ -37,6 +37,7 @@ while (Lst <= length(samples_list)) {
   print(paste0("--- Starting: thin = ", thin, ", samples = ", samples, " ---"))
   
   for (mi in 1:nm) {
+    # mi <- 1
     model_name <- names(models)[mi]
     # Define filename for this specific model and parameters
     filename <-  file.path(modelDir, paste0(
@@ -77,8 +78,6 @@ while (Lst <= length(samples_list)) {
       # Save the individual fitted model if sampling was successful
       if (!is.null(m_fitted)) {
         save(m_fitted, file = filename)
-        # Optional: Update the model in the main list in memory
-        models[[mi]] <- m_fitted
         end_time <- Sys.time()
         print(paste("Finished model:", model_name, "| Time:", format(end_time - start_time)))
       } else {
