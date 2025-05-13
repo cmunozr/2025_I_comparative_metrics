@@ -710,7 +710,7 @@ gc()
 
 colnames(XData)
 
-XFormula <- ~ Klass + AGE_XX_P + BEECHVOL_XX_P + CONTORTAVOL_XX_P + BIRCHVOL_XX_P + DECIDUOUSVOL_XX_P + HEIGHT_XX_P + OAKVOL_XX_P + PINEVOL_XX_P + SPRUCEVOL_XX_P + TOTALVOL_XX_P + BIOMASS_XX_P + poly(wc2.1_30s_bio_5, degree = 2) + poly(wc2.1_30s_bio_18, degree = 2)
+XFormula <- ~ Klass + AGE_XX_P + BEECHVOL_XX_P + CONTORTAVOL_XX_P + BIRCHVOL_XX_P + DECIDUOUSVOL_XX_P + round(HEIGHT_XX_P,0) + OAKVOL_XX_P + PINEVOL_XX_P + SPRUCEVOL_XX_P + round(TOTALVOL_XX_P,0) + round(BIOMASS_XX_P,0) + poly(wc2.1_30s_bio_5, degree = 2) + poly(wc2.1_30s_bio_18, degree = 2)
 ```
 
 
@@ -746,6 +746,30 @@ m.pa = Hmsc(Y = 1*(Y>0),
  distr = "probit", 
  studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
  )
+
+```
+
+# small versions for test
+
+```{r}
+m.abu = Hmsc(Y = Y,
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson",
+ studyDesign = studyDesign,
+ ranLevels = list("karta" = rL.locality, "yr" = rL.year)
+ )
+
+model <- "swedishBirds_forestry_small"
+modeltype <- c("abundance_small")
+
+dir.create("models", showWarnings = F)
+models <-  list(m.abu)
+names(models) <- paste0(model, "_", modeltype)
+save(models, file = file.path("models", "unfitted_models_small.RData"))
+
+m.abu$call
 
 ```
 

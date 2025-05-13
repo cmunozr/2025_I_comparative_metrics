@@ -1,0 +1,19 @@
+﻿name;call;thin;samples;run;time;maxMem;Comment
+small;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, distr = ""lognormal poisson"")";1;5;1;1;;
+small+traits;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, TrFormula = TrFormula, 
+    TrData = TrData, distr = ""lognormal poisson"")";1;5;1;27;;
+small+traits+tree;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, TrFormula = TrFormula, 
+    TrData = TrData, phyloTree = phyloTree, distr = ""lognormal poisson"")";1;5;1;198;10,3;
+small+traits+tree-studyDesign;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, 
+    TrFormula = TrFormula, TrData = TrData, phyloTree = phyloTree, 
+    distr = ""lognormal poisson"")";1;5;1;201;11,1;
+small+traits+tree-studyDesign+rlYear;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, 
+    ranLevels = list(yr = rL.year), TrFormula = TrFormula, TrData = TrData, 
+    phyloTree = phyloTree, distr = ""lognormal poisson"")";1;5;1;200,4;10,36;Hmsc random level object with 3 units. Spatial dimensionality is 0 and number of covariates is 0.
+small+traits+tree-studyDesign+rlYear+rlLocality;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, 
+    ranLevels = list(karta = rL.locality, yr = rL.year), TrFormula = TrFormula, 
+    TrData = TrData, phyloTree = phyloTree, distr = ""lognormal poisson"")";1;5;;;27,1;Hmsc random level object with 605 units. Spatial dimensionality is 2 and number of covariates is 0.
+small+traits+tree-studyDesign+rlYear+rlSampleUnit;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, 
+    ranLevels = list(yr = rL.year, sampleUnit = rL.sampleUnit), 
+    TrFormula = TrFormula, TrData = TrData, phyloTree = phyloTree, 
+    distr = ""lognormal poisson"")";1;5;;3744;27,3;Hmsc random level object with 8925 units. Spatial dimensionality is 0 and number of covariates is 0.

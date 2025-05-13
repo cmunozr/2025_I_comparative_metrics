@@ -1,11 +1,16 @@
+# install.packages("devtools") # if not yet installed
+# library(devtools)
+# install_github("hmsc-r/HMSC")
+
+library(Hmsc)
+library(jsonify)
+
 nChains <- 4
 nParallel <- 4 #Default: nParallel = nChains, 1 deactivated
 localDir <-  "C:/Users/Carlos Munoz/Documents/Ph.D/6_courses/2025_I_comparative_metrics"
 modelDir <-  file.path(localDir, "models")
 dir.create(modelDir, recursive = TRUE, showWarnings = F)
 
-library(Hmsc)
-library(doParallel)
 
 unfitted_models_file <- file.path(modelDir, "unfitted_models.RData")
 load(file = unfitted_models_file)
@@ -18,8 +23,8 @@ if (.Platform$OS.type == "windows") {
   samples_list <-  c(1000) #, 250, 250) 
   thin_list <- c(1000) #, 1, 10)
 } else {
-  samples_list <- c(5,1000)  # 100,1000, 10000)
-  thin_list <- c(1, 1000) # 100,1000, 10000)
+  samples_list <- c(5)  # 100,1000, 10000)
+  thin_list <- c(1) # 100,1000, 10000)
 }
 
 # --- Setup Parallel Processing ---¨
@@ -41,11 +46,11 @@ while (Lst <= length(samples_list)) {
     model_name <- names(models)[mi]
     # Define filename for this specific model and parameters
     filename <-  file.path(modelDir, paste0(
-      model_name,
+      model_name, "_GPU",
       "_thin_", as.character(thin),
       "_samples_", as.character(samples),
       "_chains_", as.character(nChains),
-      ".Rdata"
+      ".rds"
     ))
     
     if (file.exists(filename)) {
@@ -67,7 +72,8 @@ while (Lst <= length(samples_list)) {
                    transient = ceiling(0.5 * samples * thin),
                    nChains = nChains,
                    nParallel = nParallel,
-                   verbose = ceiling(samples / 10) # Keep some progress output
+                   verbose = ceiling(samples / 10), # Keep some progress output
+                   engine="HPC"
         )
       }, error = function(e) {
         print(paste("ERROR sampling model:", model_name))
@@ -77,9 +83,21 @@ while (Lst <= length(samples_list)) {
       
       # Save the individual fitted model if sampling was successful
       if (!is.null(m_fitted)) {
-        save(m_fitted, file = filename)
+        saveRDS(to_json(m_fitted), file=filename)
         end_time <- Sys.time()
         print(paste("Finished model:", model_name, "| Time:", format(end_time - start_time)))
+        
+        post_file_path <-  file.path("models/swedishBirds_forestry_abundance_GPU_thin_1000_samples_1000_chains_4_post_file.rds")
+        python_cmd_args <- paste("-m hmsc.run_gibbs_sampler",
+                                 "--input", shQuote("models/swedishBirds_forestry_abundance_GPU_thin_1000_samples_1000_chains_4.rds"),
+                                 "--output", shQuote(post_file_path),
+                                 "--samples", samples,
+                                 "--transient", ceiling(0.5 * samples * thin),
+                                 "--thin", thin,
+                                 "--verbose", ceiling(samples / 10))
+        cat(paste(shQuote("python"), python_cmd_args))
+        
+        
       } else {
         print(paste("Failed model:", model_name, "- File not saved."))
       }
@@ -88,6 +106,8 @@ while (Lst <= length(samples_list)) {
   
   Lst <- Lst + 1
 }
+
+
 
 # --- Cleanup ---
 print("--- Script finished ---")

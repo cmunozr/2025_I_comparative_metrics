@@ -5,14 +5,14 @@ print("library loaded")
 # --- Get Command-Line Arguments ---
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 5) { # Changed to expect 5 arguments
-  stop("Usage: Rscript S2_fit_models.R <output_dir> <unfitted_models_file> <nChains> <nParallel> <model_index>")
+  stop("Usage: Rscript S2_fit_models.R <output_dir> <unfitted_models_file> <nChains> <nParallel>")# <model_index>")
 }
 
 output_dir <- args[1]
 unfitted_models_file <- args[2]
 nChains <- as.numeric(args[3])
 nParallel <- as.numeric(args[4])
-model_index <- as.integer(args[5]) # Get the model index from the arguments
+model_index <- as.integer(1) #args[5]) # Get the model index from the arguments
 
 # --- Create Output Directory (if needed) ---
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
