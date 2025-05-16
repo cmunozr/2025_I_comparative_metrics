@@ -11,6 +11,8 @@ localDir <-  "C:/Users/Carlos Munoz/Documents/Ph.D/6_courses/2025_I_comparative_
 modelDir <-  file.path(localDir, "models")
 dir.create(modelDir, recursive = TRUE, showWarnings = F)
 
+output_cmds_file <- file.path(modelDir, "python_commands_log.txt")
+
 
 unfitted_models_file <- file.path(modelDir, "unfitted_models.RData")
 load(file = unfitted_models_file)
@@ -20,8 +22,8 @@ nm <- 1#length(models)
 # --- Define MCMC Sampling Parameters ---
 
 if (.Platform$OS.type == "windows") {
-  samples_list <-  c(1000) #, 250, 250) 
-  thin_list <- c(1000) #, 1, 10)
+  samples_list <-  c(250, 1000, 1000) #, 250, 250) 
+  thin_list <- c(250, 100, 1000) #, 1, 10)
 } else {
   samples_list <- c(5)  # 100,1000, 10000)
   thin_list <- c(1) # 100,1000, 10000)
@@ -94,8 +96,16 @@ while (Lst <= length(samples_list)) {
                                  "--samples", samples,
                                  "--transient", ceiling(0.5 * samples * thin),
                                  "--thin", thin,
-                                 "--verbose", ceiling(samples / 10))
-        cat(paste(shQuote("python"), python_cmd_args))
+                                 "--verbose", ceiling(samples / 10),
+                                 "--fp 32", 
+                                 "&> nohupasimov.out &")
+        full_python_command <- paste("nohup python", python_cmd_args)
+        
+        # Guardar el comando en el archivo de texto
+        # 'append = TRUE' para añadir a las líneas existentes
+        # 'fill = TRUE' o añadir '\n' para asegurar nueva línea por comando
+        cat(full_python_command, file = output_cmds_file, append = TRUE, sep = "\n")
+        
         
         
       } else {

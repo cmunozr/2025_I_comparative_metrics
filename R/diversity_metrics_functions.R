@@ -7,6 +7,10 @@
 # Metrics in management
 
 ##  MSA, mean species abundance
+## 10.1111/gcb.14848
+## "the calculation of the MSA metric, where IAR denotes individual species' abundance in an undisturbed 
+## reference situation, IAI the abundance of the species in the impacted situation, and IAI/IAR the 
+## truncated abundance ratio, which is calculated only for original species (i.e. occurring in the reference situation)""
 
 mean_species_abundance <- function(pred.object.baseline, pred.object.scenario, richness.baseline, group.each.rows = NULL){
   
@@ -51,6 +55,8 @@ mean_species_abundance <- function(pred.object.baseline, pred.object.scenario, r
 #------------------------
 
 ##  PDF, potentially disappeared fraction
+## 10.1007/s11367-010-0205-2
+## "the species number on the baseline land use type (Sb) divided by and the species number on the occupied land use type i (Si)"
 
 potentially_disappeared_fraction <- function(richness.baseline, richness.scenario, group.each.rows = NULL) {
   
@@ -114,8 +120,21 @@ potentially_disappeared_fraction <- function(richness.baseline, richness.scenari
   return(m.res)
 }
 
-##  STARTt threat abatement component of STAR
+## STARTt threat abatement component of STAR
+## https://doi.org/10.1038/s41559-021-01432-0
 
+
+# STARti = sum((Ps * Ws, Cst)/Ni)
+# Ps = current AOH of species s within location i (as a percentage of the global AOH)
+# Ws = IUCN Red List category weight of species s
+# Cst = relative contribution of threat t to the extinction risk of species s
+# Ni = total number of species at location i
+
+
+
+library(rredlist)
+
+rl_species("Gorilla", "gorilla")
 
 # From ecology 
 
@@ -142,6 +161,7 @@ species_richness <- function(pred.object = logic_predY){
 #-------------------
 
 ##	Geometric mean abundance
+## https://doi.org/10.1016/j.biocon.2016.08.024
 
 geom_mean_abun <- function(pred.object = predY, richness = a){
   
@@ -161,6 +181,9 @@ geom_mean_abun <- function(pred.object = predY, richness = a){
 }
 
 #-----------------
+
+## Sorensen similarity
+## https://doi.org/10.1016/j.biocon.2016.08.024
 
 sorensen_smilarity <- function(pred.object.baseline, pred.object.scenario){
   
@@ -188,6 +211,7 @@ sorensen_smilarity <- function(pred.object.baseline, pred.object.scenario){
 #------------------
 
 ##	Functional richness 
+##  https://doi.org/10.1890/08-2244.1
 
 functional_richness <- function(pred.object, trait.processed.object, stand.FRic, parallel = T, free.cores = 2) {
   
@@ -310,6 +334,7 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic,
 #-----------------------------
 
 ##  Rao’s quadratic entropy coefficient (RaoQ)   
+##  https://doi.org/10.1890/08-2244.1
 
 divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FALSE, parallel = FALSE, free.cores = 2) {
   
@@ -379,6 +404,7 @@ divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FAL
 #----------------------
 
 ## CWM: community weighted mean
+## https://doi.org/10.1890/08-2244.1
 
 functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "dom", parallel = FALSE, free.cores = 2) {
   
@@ -533,7 +559,8 @@ log_zero <- function(x) {
   ifelse(x == 0, 0, log(x))
 }
 
-# preprocess traits take from FD function dbFD
+# preprocess traits. Taken from FD function dbFD (original function quite slowly)
+##  https://doi.org/10.1890/08-2244.1
 
 dbFD_preprocess_traits <- function (x, a, w, w.abun = TRUE, stand.x = TRUE, ord = c("podani", "metric"), 
                                     asym.bin = NULL, corr = "sqrt", calc.FRic = TRUE, m = "max", stand.FRic = FALSE, 
