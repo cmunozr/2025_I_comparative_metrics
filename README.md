@@ -58,7 +58,7 @@ HPC
 
 ## Acknowledgment
 
-* This development is supported by Mistra BIOPATH project – Aligning the Financial System with the Needs of Biodiversity". [Project information](https://www.mistrabiopath.se/)
+* This development is supported by the Mistra BIOPATH project - Aligning the Financial System with the Needs of Biodiversity. [Project information](https://www.mistrabiopath.se/)
 
 ## License
 
