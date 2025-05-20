@@ -1,19 +1,18 @@
-﻿name;call;thin;samples;run;time;maxMem;Comment
-small;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, distr = ""lognormal poisson"")";1;5;1;1;;
+﻿name;call;thin;samples;run;time;maxMem;Comment;
+small;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, distr = ""lognormal poisson"")";1;5;1;1;;;
 small+traits;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, TrFormula = TrFormula, 
-    TrData = TrData, distr = ""lognormal poisson"")";1;5;1;27;;
+    TrData = TrData, distr = ""lognormal poisson"")";1;5;1;27;;;
 small+traits+tree;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, TrFormula = TrFormula, 
-    TrData = TrData, phyloTree = phyloTree, distr = ""lognormal poisson"")";1;5;1;198;10,3;
+    TrData = TrData, phyloTree = phyloTree, distr = ""lognormal poisson"")";1;5;1;198;10,3;;
 small+traits+tree-studyDesign;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, 
     TrFormula = TrFormula, TrData = TrData, phyloTree = phyloTree, 
-    distr = ""lognormal poisson"")";1;5;1;201;11,1;
+    distr = ""lognormal poisson"")";1;5;1;201;11,1;;
 small+traits+tree-studyDesign+rlYear;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, 
     ranLevels = list(yr = rL.year), TrFormula = TrFormula, TrData = TrData, 
-    phyloTree = phyloTree, distr = ""lognormal poisson"")";1;5;1;200,4;10,36;Hmsc random level object with 3 units. Spatial dimensionality is 0 and number of covariates is 0.
-small+traits+tree-studyDesign+rlYear+rlLocality;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, 
-    ranLevels = list(karta = rL.locality, yr = rL.year), TrFormula = TrFormula, 
-    TrData = TrData, phyloTree = phyloTree, distr = ""lognormal poisson"")";1;5;;;27,1;Hmsc random level object with 605 units. Spatial dimensionality is 2 and number of covariates is 0.
-small+traits+tree-studyDesign+rlYear+rlSampleUnit;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, 
-    ranLevels = list(yr = rL.year, sampleUnit = rL.sampleUnit), 
-    TrFormula = TrFormula, TrData = TrData, phyloTree = phyloTree, 
-    distr = ""lognormal poisson"")";1;5;;3744;27,3;Hmsc random level object with 8925 units. Spatial dimensionality is 0 and number of covariates is 0.
+    phyloTree = phyloTree, distr = ""lognormal poisson"")";1;5;1;200,4;10,36;Hmsc random level object with 3 units. Spatial dimensionality is 0 and number of covariates is 0.;
+small+traits+tree-studyDesign+rlYear+rlLocality;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, ranLevels = list(karta = rL.locality, yr = rL.year), TrFormula = TrFormula, TrData = TrData, phyloTree = phyloTree, distr = ""lognormal poisson"")";1;5;1;3500;27,1;Hmsc random level object with 605 units. Spatial dimensionality is 2 and number of covariates is 0.;
+small+traits+tree-studyDesign+rlYear+rlSampleUnit;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, ranLevels = list(yr = rL.year, sampleUnit = rL.sampleUnit), TrFormula = TrFormula, TrData = TrData, phyloTree = phyloTree,  distr = ""lognormal poisson"")";1;5;1;3744;27,3;Hmsc random level object with 8925 units. Spatial dimensionality is 0 and number of covariates is 0.;Let this away
+small+traits+tree-studyDesign+rlYear+rlLocality;"Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, ranLevels = list(karta = rL.locality, yr = rL.year), TrFormula = TrFormula, TrData = TrData, phyloTree = phyloTree, distr = ""lognormal poisson"")";1000;1000;0;432000;25,1;NO FINISHED - Lot ot time -  1000 samples 1000 thin -5000000 burn;
+small+traits+tree-studyDesign+rlYear+rlLocality;"rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8); Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, ranLevels = list(karta = rL.locality, yr = rL.year), TrFormula = TrFormula, TrData = TrData, phyloTree = phyloTree, distr = ""lognormal poisson"", updater=list(GammaEta=FALSE))";1;5;1;8,3;25,1;GPU;
+small+traits+tree-studyDesign+rlYear+rlLocality;"rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8); Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, ranLevels = list(karta = rL.locality, yr = rL.year), TrFormula = TrFormula, TrData = TrData, phyloTree = phyloTree, distr = ""lognormal poisson"", updater=list(GammaEta=FALSE))";1;250;1;1083;26,1;GPU;
+small+traits+tree-studyDesign+rlYear+rlLocality;"rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8); Hmsc(Y = Y, XFormula = XFormula, XData = XData, studyDesign = studyDesign, ranLevels = list(karta = rL.locality, yr = rL.year), TrFormula = TrFormula, TrData = TrData, phyloTree = phyloTree, distr = ""lognormal poisson"", updater=list(GammaEta=FALSE))";;;;;;;

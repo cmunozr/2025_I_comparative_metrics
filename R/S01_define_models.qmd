@@ -682,7 +682,7 @@ for(i in 1:length(le)){
 
 colnames(xy.karta) <-  c("long", "lat")
 
-write.csv(xy.karta, "xy.karta.csv", row.names = F)
+write.csv(xy.karta, "xy.karta.csv", row.names = T)
 
 ```
 
@@ -691,7 +691,7 @@ write.csv(xy.karta, "xy.karta.csv", row.names = F)
 ```{r}
 
 rL.sampleUnit <- HmscRandomLevel(units = levels(studyDesign$sampleUnit))
-rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE)
+rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
 rL.year <- HmscRandomLevel(units = levels(studyDesign$yr))
 
 ```
@@ -761,13 +761,13 @@ m.abu = Hmsc(Y = Y,
  ranLevels = list("karta" = rL.locality, "yr" = rL.year)
  )
 
-model <- "swedishBirds_forestry_small"
-modeltype <- c("abundance_small")
+model <- "swedishBirds_forestry"
+modeltype <- c("abundance_small_ngpp")
 
 dir.create("models", showWarnings = F)
 models <-  list(m.abu)
 names(models) <- paste0(model, "_", modeltype)
-save(models, file = file.path("models", "unfitted_models_small.RData"))
+save(models, file = file.path("models", "unfitted_models_small_NGPP.RData"))
 
 m.abu$call
 
@@ -786,7 +786,7 @@ save(models, file = file.path("models", "unfitted_models.RData"))
 
 
 ```{r}
-sampleMcmc(m_unfitted, samples=2)
+sampleMcmc(m.abu, samples=2)
 ```
 
 ```{r}

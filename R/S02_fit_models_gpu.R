@@ -14,7 +14,7 @@ dir.create(modelDir, recursive = TRUE, showWarnings = F)
 output_cmds_file <- file.path(modelDir, "python_commands_log.txt")
 
 
-unfitted_models_file <- file.path(modelDir, "unfitted_models.RData")
+unfitted_models_file <- file.path(modelDir, "unfitted_models_small_NGPP.RData")
 load(file = unfitted_models_file)
 
 nm <- 1#length(models)
@@ -22,8 +22,8 @@ nm <- 1#length(models)
 # --- Define MCMC Sampling Parameters ---
 
 if (.Platform$OS.type == "windows") {
-  samples_list <-  c(250, 1000, 1000) #, 250, 250) 
-  thin_list <- c(250, 100, 1000) #, 1, 10)
+  samples_list <-  c(5, 250, 250, 1000, 1000) #, 250, 250) 
+  thin_list <- c(1, 1, 250, 100, 1000) #, 1, 10)
 } else {
   samples_list <- c(5)  # 100,1000, 10000)
   thin_list <- c(1) # 100,1000, 10000)
@@ -47,13 +47,13 @@ while (Lst <= length(samples_list)) {
     # mi <- 1
     model_name <- names(models)[mi]
     # Define filename for this specific model and parameters
-    filename <-  file.path(modelDir, paste0(
+    model_sample <- paste0(
       model_name, "_GPU",
       "_thin_", as.character(thin),
       "_samples_", as.character(samples),
-      "_chains_", as.character(nChains),
-      ".rds"
-    ))
+      "_chains_", as.character(nChains)
+    )
+    filename <-  file.path(modelDir, model_sample)
     
     if (file.exists(filename)) {
       print(paste("Skipping (exists):", basename(filename)))
@@ -75,7 +75,8 @@ while (Lst <= length(samples_list)) {
                    nChains = nChains,
                    nParallel = nParallel,
                    verbose = ceiling(samples / 10), # Keep some progress output
-                   engine="HPC"
+                   engine="HPC",
+                   updater=list(GammaEta=FALSE)
         )
       }, error = function(e) {
         print(paste("ERROR sampling model:", model_name))
@@ -85,13 +86,13 @@ while (Lst <= length(samples_list)) {
       
       # Save the individual fitted model if sampling was successful
       if (!is.null(m_fitted)) {
-        saveRDS(to_json(m_fitted), file=filename)
+        saveRDS(to_json(m_fitted), file=paste0(filename, ".rds"))
         end_time <- Sys.time()
         print(paste("Finished model:", model_name, "| Time:", format(end_time - start_time)))
         
-        post_file_path <-  file.path("models/swedishBirds_forestry_abundance_GPU_thin_1000_samples_1000_chains_4_post_file.rds")
+        post_file_path <-  file.path(paste0("models/", model_sample, "_post_file.rds"))
         python_cmd_args <- paste("-m hmsc.run_gibbs_sampler",
-                                 "--input", shQuote("models/swedishBirds_forestry_abundance_GPU_thin_1000_samples_1000_chains_4.rds"),
+                                 "--input", shQuote(paste0("models/", model_sample, ".rds")),
                                  "--output", shQuote(post_file_path),
                                  "--samples", samples,
                                  "--transient", ceiling(0.5 * samples * thin),
