@@ -12,13 +12,13 @@ localDir <- "C:/Users/Carlos Munoz/Documents/Ph.D/6_courses/2025_I_comparative_m
 modelDir <- file.path(localDir, "models")
 dir.create(modelDir, recursive = TRUE, showWarnings = F)
 
-output_cmds_file <- file.path(modelDir, "python_commands_log.txt")
+name_unfitted_models <- "unfitted_models_NGPP"
+unfitted_models_file <- file.path(modelDir, paste0(name_unfitted_models, ".RData"))
+output_cmds_file <- file.path(modelDir, paste0("python_commands_",name_unfitted_models, "log.txt"))
 
-
-unfitted_models_file <- file.path(modelDir, "unfitted_models_NGPP.RData")
 load(file = unfitted_models_file)
 
-nm <- 1 #length(models)
+nm <- length(models)
 
 # --- Define MCMC Sampling Parameters ---
 
@@ -128,9 +128,8 @@ while (Lst <= length(samples_list)) {
               chain_post_file_path <- file.path(current_model_subdir, paste0(model_output_base, "_post_chain", sprintf("%.2d", cInd - 1), "_file.rds"))
               
               # Construct the Python command arguments
-              input_path_for_python <- file.path("models", model_output_base, paste0(model_output_base, ".rds"))
-              #output_path_for_python <- file.path("models", model_output_base, paste0(model_output_base, "_post_chain", sprintf("%.2d", cInd - 1), "_file.rds")) #### MANUAL CHANGE
-              output_path_for_python <- file.path("scratch", "asimov", paste0(model_output_base, "_post_chain", sprintf("%.2d", cInd - 1), "_file.rds")) #### MANUAL CHANGE
+              input_path_for_python <- file.path("scratch", "asimov", "munozcs", "models", model_output_base, paste0(model_output_base, ".rds")) #### MANUAL CHANGE
+              output_path_for_python <- file.path("scratch", "asimov", "munozcs", "models", model_output_base, paste0(model_output_base, "_post_chain", sprintf("%.2d", cInd - 1), "_file.rds")) #### MANUAL CHANGE
               
               chain_cmd_args <- paste("-m hmsc.run_gibbs_sampler",
                                       "--input", shQuote(input_path_for_python), # Initialized model from R
@@ -145,7 +144,7 @@ while (Lst <= length(samples_list)) {
               
               # For the nohup log file path in the command itself, it also needs to be relative
               # to where the nohup command is executed or an absolute path.
-              nohup_log_file_for_cmd <- file.path("models", model_output_base, paste0(model_output_base, "_chain", sprintf("%.2d", cInd - 1), "_nohup.out")) #### MANUAL CHANGE
+              nohup_log_file_for_cmd <- file.path(paste0(model_output_base, "_chain", sprintf("%.2d", cInd - 1), "_nohup.out")) #### MANUAL CHANGE
               
               
               # Combine nohup, python executable, arguments, and output redirection
