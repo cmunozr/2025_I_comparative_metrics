@@ -691,7 +691,6 @@ write.csv(xy.karta, "xy.karta.csv", row.names = T)
 ```{r}
 
 rL.sampleUnit <- HmscRandomLevel(units = levels(studyDesign$sampleUnit))
-rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
 rL.year <- HmscRandomLevel(units = levels(studyDesign$yr))
 
 ```
@@ -700,7 +699,7 @@ Clean Environment
 
 ```{r}
 toKeep <- c("model", "modeltype","XData", "XFormula", "TrData", "TrFormula", "phyloTree", "Y", "rL.sampleUnit", "rL.locality", "rL.year", "studyDesign",
-            "sampleUnits", "transform_Y_to_abunCpres")
+            "sampleUnits", "transform_Y_to_abunCpres", "xy.karta")
 rm(list = setdiff(ls(), toKeep))
 gc()
 
@@ -720,6 +719,10 @@ TrFormula <- ~ log(Mass) + Habitat +  Trophic.Niche + Habitat.Density + Primary.
 ```
 
 ### Define model
+
+```{r}
+rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE)
+```
 
 
 ```{r}
@@ -746,10 +749,25 @@ m.pa = Hmsc(Y = 1*(Y>0),
  distr = "probit", 
  studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
  )
-
 ```
 
-# small versions for test
+
+```{r}
+model <- "sbsF_full"
+modeltype <- c("abu", "aCp", "pa")
+
+dir.create("models", showWarnings = F)
+models <-  list(m.abu, m.abuCpres, m.pa )
+names(models) <- paste0(model, "_", modeltype)
+save(models, file = file.path("models", "unfitted_models_full.RData"))
+```
+
+# To make the process faster: spatial level and temporal level only and NNGP in GPU proccessing
+
+```{r}
+rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
+```
+
 
 ```{r}
 m.abu = Hmsc(Y = Y,
@@ -761,27 +779,37 @@ m.abu = Hmsc(Y = Y,
  ranLevels = list("karta" = rL.locality, "yr" = rL.year)
  )
 
-model <- "swedishBirds_forestry"
-modeltype <- c("abundance_small_ngpp")
+m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson", 
+ studyDesign = studyDesign, 
+ ranLevels = list("karta" = rL.locality, "yr" = rL.year)
+ )
 
-dir.create("models", showWarnings = F)
-models <-  list(m.abu)
-names(models) <- paste0(model, "_", modeltype)
-save(models, file = file.path("models", "unfitted_models_small_NGPP.RData"))
-
-m.abu$call
-
+m.pa = Hmsc(Y = 1*(Y>0),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "probit", 
+ studyDesign = studyDesign, 
+ ranLevels = list("karta" = rL.locality, "yr" = rL.year)
+ )
 ```
 
 
 ```{r}
-model <- "swedishBirds_forestry"
-modeltype <- c("abundance", "abuCpres", "presenceAbscence")
+model <- "sbsF_ngpp_2rl"
+modeltype <- c("abu", "aCp", "pa")
 
 dir.create("models", showWarnings = F)
-models <-  list(m.abu, m.abuCpres, m.pa )
+models <-  list(m.abu, m.abuCpres, m.pa)
 names(models) <- paste0(model, "_", modeltype)
-save(models, file = file.path("models", "unfitted_models.RData"))
+save(models, file = file.path("models", "unfitted_models_NGPP.RData"))
+
+m.abu$call
+
 ```
 
 
