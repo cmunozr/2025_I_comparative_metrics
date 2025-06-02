@@ -365,25 +365,25 @@ get_forest_info <- function(locality.df, forest.list, years) {
   return(result)
 }
 
-forestInfo <- get_forest_info(locality.df = localityYear, forest.list = lsuList, years = years) |> 
+forestRaw <- get_forest_info(locality.df = localityYear, forest.list = lsuList, years = years) |> 
   filter(yr != 2015) |> ########## Watchout!!!!!!!!!!!!
   select(-DIAMETER_XX_P, -BASALAREA_XX_P, ) |> 
   filter(if_any(-c(index, yr), ~ !is.na(.))) 
 
-forestInfo[is.na(forestInfo) ] <- 0 ########## Watchout!!!!!!!!!!!!
+forestRaw[is.na(forestRaw) ] <- 0 ########## Watchout!!!!!!!!!!!!
 
-table(forestInfo$yr)
+table(forestRaw$yr)
 
 ```
 
 
 ```{r}
-forestInfo_long <- forestInfo |> 
+forestRaw_long <- forestRaw |> 
   select(-c(index, yr)) |> 
   pivot_longer(cols = c(1:11))
 
 # Calculate NA and zero counts per variable
-na_zero_summary <- forestInfo_long |> 
+na_zero_summary <- forestRaw_long |> 
   group_by(name) |> 
   summarise(
     n_na = sum(is.na(value)),
@@ -394,7 +394,7 @@ na_zero_summary <- forestInfo_long |>
     label = paste0("NA: ", n_na, "\nZero: ", n_zero)
   )
 
-ggplot(forestInfo_long, aes(value)) +
+ggplot(forestRaw_long, aes(value)) +
   geom_density() +
   facet_wrap(~name, scales = "free") +
   geom_text(data = na_zero_summary,
@@ -404,6 +404,8 @@ ggplot(forestInfo_long, aes(value)) +
 
 ```{r}
 # transforming forest info
+
+forestInfo <- forestRaw
 
 forestInfo$BEECHVOL_XX_P <- (forestInfo$BEECHVOL_XX_P > 0) * 1
 forestInfo$BIRCHVOL_XX_P <- (forestInfo$BIRCHVOL_XX_P > 0) * 1
@@ -807,9 +809,53 @@ dir.create("models", showWarnings = F)
 models <-  list(m.abu, m.abuCpres, m.pa)
 names(models) <- paste0(model, "_", modeltype)
 save(models, file = file.path("models", "unfitted_models_NGPP.RData"))
+```
+
+# Three random levels: spatial, samling unit, and temporal level and NNGP in GPU proccessing
+
+```{r}
+rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
+```
+
+
+```{r}
+m.abu = Hmsc(Y = Y,
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson", 
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ )
+
+m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson", 
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ )
+
+m.pa = Hmsc(Y = 1*(Y>0),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "probit", 
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ )
+
 
 m.abu$call
 
+```
+
+```{r}
+model <- "sbsF_ngpp_3rl"
+modeltype <- c("abu", "aCp", "pa")
+
+dir.create("models", showWarnings = F)
+models <-  list(m.abu, m.abuCpres, m.pa)
+names(models) <- paste0(model, "_", modeltype)
+save(models, file = file.path("models", "unfitted_models_NGPP_3rl.RData"))
 ```
 
 

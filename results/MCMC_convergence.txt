@@ -1,0 +1,63 @@
+MCMC Convergennce statistics
+
+
+./models/sbsF_ngpp_2rl_aCp_GPU_thin_100_samples_1000_chains_4_post.Rdata
+
+
+sbsF_ngpp_2rl_aCp_GPU
+
+
+beta
+
+Min.   :0.9993  
+1st Qu.:1.0104  
+Median :1.0289  
+Mean   :1.0414  
+3rd Qu.:1.0627  
+Max.   :1.2253  
+
+gamma
+
+Min.   :0.9993  
+1st Qu.:1.0006  
+Median :1.0027  
+Mean   :1.0063  
+3rd Qu.:1.0074  
+Max.   :1.1369  
+
+rho
+
+1.002052
+
+omega
+
+
+karta
+
+Min.   :0.9996  
+1st Qu.:1.0053  
+Median :1.0130  
+Mean   :1.0317  
+3rd Qu.:1.0384  
+Max.   :1.2374  
+
+yr
+
+Min.   :0.9993  
+1st Qu.:1.0034  
+Median :1.0182  
+Mean   :1.0330  
+3rd Qu.:1.0414  
+Max.   :1.2643  
+
+alpha
+
+
+
+karta
+
+NaN
+NaN
+NaN
+NaN
+NaN
