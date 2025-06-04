@@ -61,8 +61,7 @@ for(i in 1:length(nm)){
 
 save(models, file = file.path(dir.models, nm_to_save))
 
-
-
+rm(list=ls())
 
 
 

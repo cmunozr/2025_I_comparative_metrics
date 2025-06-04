@@ -7,12 +7,12 @@ library(jsonify)
 
 nChains <- 4
 nParallel <- 4 #Default: nParallel = nChains, 1 deactivated
-gpu_Parallel <- TRUE
+gpu_Parallel <- TRUE ### <<<<<---------------------------------
 localDir <- "C:/Users/Carlos Munoz/Documents/Ph.D/6_courses/2025_I_comparative_metrics"
 modelDir <- file.path(localDir, "models")
 dir.create(modelDir, recursive = TRUE, showWarnings = F)
 
-name_unfitted_models <- "unfitted_models_NGPP"
+name_unfitted_models <- "unfitted_models_NGPP_3rl"
 unfitted_models_file <- file.path(modelDir, paste0(name_unfitted_models, ".RData"))
 output_cmds_file <- file.path(modelDir, paste0("python_commands_",name_unfitted_models, "log.txt"))
 
@@ -23,8 +23,8 @@ nm <- length(models)
 # --- Define MCMC Sampling Parameters ---
 
 if (.Platform$OS.type == "windows") {
-  samples_list <- c(5, 1000, 1000) #, 250, 250)
-  thin_list <- c(1, 100, 1000) #, 1, 10)
+  samples_list <- c(5, 250, 1000, 1000) #, 250, 250)
+  thin_list <- c(1, 1, 100, 1000) #, 1, 10)
 } else {
   samples_list <- c(5) # 100,1000, 10000)
   thin_list <- c(1) # 100,1000, 10000)
@@ -128,8 +128,8 @@ while (Lst <= length(samples_list)) {
               chain_post_file_path <- file.path(current_model_subdir, paste0(model_output_base, "_post_chain", sprintf("%.2d", cInd - 1), "_file.rds"))
               
               # Construct the Python command arguments
-              input_path_for_python <- file.path("scratch", "asimov", "munozcs", "models", model_output_base, paste0(model_output_base, ".rds")) #### MANUAL CHANGE
-              output_path_for_python <- file.path("scratch", "asimov", "munozcs", "models", model_output_base, paste0(model_output_base, "_post_chain", sprintf("%.2d", cInd - 1), "_file.rds")) #### MANUAL CHANGE
+              input_path_for_python <- file.path("/scratch", "asimov", "munozcs", "models", model_output_base, paste0(model_output_base, ".rds")) #### MANUAL CHANGE
+              output_path_for_python <- file.path("/scratch", "asimov", "munozcs", "models", model_output_base, paste0(model_output_base, "_post_chain", sprintf("%.2d", cInd - 1), "_file.rds")) #### MANUAL CHANGE
               
               chain_cmd_args <- paste("-m hmsc.run_gibbs_sampler",
                                       "--input", shQuote(input_path_for_python), # Initialized model from R

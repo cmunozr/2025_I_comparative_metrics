@@ -457,6 +457,7 @@ coordSampleUnits <- coordSampleUnits[forestData, ]
 
 ```{r}
 clc <- rast("data/covariates/NMD/18/nmd2018bas_ogeneraliserad_v1_1.tif")
+coltab(clc) <- NULL
 clc2 <- clc
 res(clc2) <- 100 
 clc_resampled <- resample(clc, clc2, method = "near")
@@ -538,6 +539,34 @@ row.names(XData) <- paste0(localityYear$karta, ":", localityYear$yr, ":", locali
 zero_spp <-  which(colSums(Y) == 0)
 
 Y <- Y[ , -zero_spp]
+```
+
+```{r}
+
+## Heureka inputs
+
+heureka <- T
+
+if(heureka){
+  forestRaw |>
+    rename_with(~ paste0(., "_raw")) |> 
+    slice(clcData) |>    
+    slice(no_seaData) |> 
+    bind_cols(XData) |> 
+    write.csv("slu/input_heureka_forest.csv", row.names = F)
+  
+  coordSampleUnits |> 
+    st_transform("EPSG:3006") %>% 
+    mutate(longSweref99 = sf::st_coordinates(.)[,1], latSweref99 = sf::st_coordinates(.)[,2]) |> 
+    st_transform("EPSG:4326") %>% 
+    mutate(longWGS = sf::st_coordinates(.)[,1], latWGS = sf::st_coordinates(.)[,2]) |>
+    st_drop_geometry() |> 
+    write.csv("slu/input_heureka_coordSampleUnits.csv", row.names = F)
+}
+
+
+
+
 ```
 
 

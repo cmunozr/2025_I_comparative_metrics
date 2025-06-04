@@ -56,6 +56,7 @@ showAlpha = TRUE
 ##################################################################################################
 localDir = "."
 modelDir = file.path(localDir, "models")
+modelFile = "fitted_models_NGPP.RData"
 resultDir = file.path(localDir, "results")
 if (!dir.exists(resultDir)) dir.create(resultDir)
 ##################################################################################################
@@ -73,8 +74,8 @@ library(Hmsc)
 library(colorspace)
 library(vioplot)
 
-samples_list = c(5,250,250,250,250,250)
-thin_list = c(1,1,10,100,1000,10000)
+samples_list = 1000 #c(5,250,250,250,250,250)
+thin_list = 100 #c(1,1,10,100,1000,10000)
 nst = length(thin_list)
 nChains = 4
 
@@ -97,15 +98,14 @@ while(Lst <= nst){
   samples = samples_list[Lst]
   
   
-  filename = file.path(modelDir,paste("models_thin_", as.character(thin),
-                                      "_samples_", as.character(samples),
-                                      "_chains_",as.character(nChains),
-                                      ".Rdata",sep = ""))
+  filename = file.path(modelDir, modelFile)
   if(file.exists(filename)){
     load(filename)
     cat(c("\n",filename,"\n\n"),file=text.file,sep="",append=TRUE)
+    print(models)
     nm = length(models)
     for(j in 1:nm){
+      cat(c("\n", names(models)[j]))
       mpost = convertToCodaObject(models[[j]], spNamesNumbers = c(T,F), covNamesNumbers = c(T,F))
       nr = models[[j]]$nr
       cat(c("\n",names(models)[j],"\n\n"),file=text.file,sep="",append=TRUE)
