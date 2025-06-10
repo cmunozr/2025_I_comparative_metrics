@@ -456,6 +456,7 @@ coordSampleUnits <- coordSampleUnits[forestData, ]
 ### LandUse
 
 ```{r}
+library(terra)
 clc <- rast("data/covariates/NMD/18/nmd2018bas_ogeneraliserad_v1_1.tif")
 coltab(clc) <- NULL
 clc2 <- clc
@@ -664,7 +665,7 @@ phyloTree$tip.label <- sppResolved$scientificName[match(phyloTree$tip.label, spp
 
 ```{r}
 tr1 <- read.xlsx("data/traits/AVONET/TraitData/AVONET3_BirdTree.xlsx", sheet = 2) |> 
-  rename(bird_tree = Species3) |> 
+  rename(bird_tree = Species3) |>
   right_join(sppResolved, by = "bird_tree" ) |>  
   select(scientificName, Mass, Habitat, Habitat.Density, Trophic.Niche, Primary.Lifestyle, Migration)
  
@@ -740,7 +741,9 @@ gc()
 
 colnames(XData)
 
-XFormula <- ~ Klass + AGE_XX_P + BEECHVOL_XX_P + CONTORTAVOL_XX_P + BIRCHVOL_XX_P + DECIDUOUSVOL_XX_P + round(HEIGHT_XX_P,0) + OAKVOL_XX_P + PINEVOL_XX_P + SPRUCEVOL_XX_P + round(TOTALVOL_XX_P,0) + round(BIOMASS_XX_P,0) + poly(wc2.1_30s_bio_5, degree = 2) + poly(wc2.1_30s_bio_18, degree = 2)
+XFormula <- ~ Klass + AGE_XX_P + BEECHVOL_XX_P + CONTORTAVOL_XX_P + BIRCHVOL_XX_P + DECIDUOUSVOL_XX_P + HEIGHT_XX_P + OAKVOL_XX_P + PINEVOL_XX_P + SPRUCEVOL_XX_P + TOTALVOL_XX_P + BIOMASS_XX_P + poly(wc2.1_30s_bio_5, degree = 2) + poly(wc2.1_30s_bio_18, degree = 2)
+
+
 ```
 
 
@@ -750,6 +753,9 @@ TrFormula <- ~ log(Mass) + Habitat +  Trophic.Niche + Habitat.Density + Primary.
 ```
 
 ### Define model
+
+#### Three random levels and full gausian process
+
 
 ```{r}
 rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE)
@@ -793,7 +799,7 @@ names(models) <- paste0(model, "_", modeltype)
 save(models, file = file.path("models", "unfitted_models_full.RData"))
 ```
 
-# To make the process faster: spatial level and temporal level only and NNGP in GPU proccessing
+#### To make the process faster: spatial level and temporal level only and NNGP in GPU proccessing
 
 ```{r}
 rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
@@ -840,7 +846,7 @@ names(models) <- paste0(model, "_", modeltype)
 save(models, file = file.path("models", "unfitted_models_NGPP.RData"))
 ```
 
-# Three random levels: spatial, samling unit, and temporal level and NNGP in GPU proccessing
+#### Three random levels: spatial, samling unit, and temporal level and NNGP in GPU proccessing
 
 ```{r}
 rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
