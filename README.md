@@ -46,7 +46,8 @@ We suggest running the routines step-by-step, following the order of each script
 Local instance
 -   GPU
 -   CPU
-HPC
+Remote instance
+-   HPC
 
 
 ## Authors and contact

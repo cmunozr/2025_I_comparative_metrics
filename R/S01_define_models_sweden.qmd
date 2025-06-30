@@ -1,0 +1,890 @@
+---
+title: "Quantitative biodiversity modelling for finance and companies"
+subtitle: "Project 1: compare metrics"
+author: 
+  - name: "Carlos Muñoz"
+    email: carlos_jair.munoz@cec.lu.se
+    affiliations: 
+      - ref: CEC
+
+affiliations:
+  - id: CEC
+    name: Centre for Environmental and Climate Science, Lund University
+    department: Centre for Environmental and Climate Science 
+    address: Kontaktvägen 10
+    city: Lund
+    postal-code: 22362
+    url: https://www.cec.lu.se/home
+   
+format:
+  html:
+    theme: cosmo # try other themes from https://quarto.org/docs/output-formats/html-themes.html
+    toc: true # this will enable Table of Contents
+    code-fold: false #try changing it and see what happens
+    embed-resources: true # this is so your file would embed all images. 
+    output-dir: "../quarto_reports/"  
+  pdf: default
+  docx: default
+
+execute: 
+  echo: true    #use to show/hide R-code in the report
+  cache: false
+number-sections: true #sectioner can be automatically numbered
+title-block-banner: true
+---
+
+## Introduction
+
+### General framework
+
+-   Biodiversity is declining at an alarming rate, faster than ever in human history (Barnosky et al., 2011; Ceballos et al., 2015).
+-   Economic activity is at the core of the biodiversity crisis, but biodiversity loss also represents a significant physical threat, reputational and regulatory risk to business and financial activities.
+-   BIOPATH (Sweden) seeks to develop innovative approaches to integrate biodiversity considerations into financial and business decision-making to halt and reverse biodiversity loss.
+
+### Biodiversity metrics
+
+-   Biodiversity databases are the foundation for effective management strategies, but data alone isn't enough to stop biodiversity loss. We need to turn this data into useful information. This means using some way of biodiversity measurement to move activities from harming nature to being neutral or even positive.
+-   Burgess and colleagues (2024) identified 573 metrics developed to inform decision-making related to biodiversity.
+-   What metrics should be used?
+
+#### A Tension
+
+-   Business Perspective: Need for accessible, cost-effective and standardized. Importance of simplicity.
+-   Natural scientific Perspective:Reflect ecological complexity.Capture multiple dimensions.
+-   Maybe a set instead of only one silver bullet
+
+### Challenge
+
+-   The heart of the matter with biodiversity state metrics is how biodiversity change is interpreted and, consequently, how choices are made may be significantly impacted by the selection and response of biodiversity measures (Silvestro et al., 2023). It is critical to understand how different measures respond to changes, which metrics are particularly sensitive to early signals of biodiversity loss, and which metrics respond to changes consistently.
+-   How transparently, efficiently, and credibly these measures capture the state and changes on multiple dimensions of biodiversity?
+
+## Objective
+
+To compare biodiversity metrics using quantitative models to assess how accurately they reflect biodiversity states and trends in different biodiversity change scenarios.
+
+-   Birds as focal study taxon
+-   Biodiversity change because change of habitat: forestry management scenarios
+
+**THERE IS A NOTORIOUS GAP ABOUT WHY TO USE BIRDS AND WHY FOREST**
+
+## Rol of Hmsc
+
+An Hmsc model provides predictions at the species-community level. This enables the spatial representation of biodiversity to analyse and evaluate biodiversity metrics’ performance and variation through environmental and spatial gradients while counting for uncertainties.
+
+## Data
+
+```{r, setup}
+knitr::opts_knit$set(root.dir = "c:/Users/Carlos Munoz/Documents/Ph.D/6_courses/2025_I_comparative_metrics/")
+```
+
+```{r}
+#| message: false
+#| warning: false
+
+library(Hmsc)
+library(tidyverse)
+library(data.table)
+library(terra)
+library(sf)
+library(maps)
+library(ape)
+library(taxize)
+library(remotes)
+library(phytools)
+library(openxlsx)
+library(tidyterra)
+```
+
+```{r}
+options("GDAL_DATA" = Sys.getenv("GDAL_DATA")) # Ensure GDAL_DATA is set if needed
+options("OSR_USE_NON_DEPRECATED" = "NO")
+```
+
+
+```{r}
+transform_Y_to_abunCpres <- function(data) {
+  data %>% mutate(across(everything(), ~ ifelse(. == 0, NA, scale(log(.)))))
+}
+```
+
+
+```{r}
+set.seed(11072024)
+```
+
+"The summer and winter point count routes (“punktrutterna”) are two of several schemes within the Swedish Bird Survey (see below), run by the Department of Biology at Lund University. The point count routes were initiated in 1975 as a standardised method for detecting and reporting changes in the abundance of birds and their distributions in Sweden over time. The point count routes can be surveyed in summer and/or winter. The surveys are initiated and carried out by volunteer ornithologists who use standardised methods to count birds along routes of their own choice. In this analysis we going to work with the summer point count routes. Where the bird diversity in Sweden is on its peak." GBIF page of the SBS.
+
+```{r}
+# species data (names and keys)
+spp <- read.xlsx("data/sbs/public_eurolist.xlsx", sheet = 1)
+
+# counts by sampling (spp key, and counts in points and lines)
+
+occurr <- read.xlsx("data/sbs/public_totalstandard_250410.xlsx", sheet = 1) 
+
+# coordinates (keys)
+coords <- read.xlsx("data/sbs/KoordinaterPkt.xlsx", cols = 1:4) |> 
+  mutate(punkt = rep(seq(1,15,2), length(unique(karta))))
+
+```
+
+There are `r nrow(spp)` species observed in the data set and `r nrow(occurr)` occurrence data in apparently `r nrow(coords)`.
+
+```{r}
+# transforming raw data
+
+## calculating coordinate information for lines
+## Line information is taken as the mid point between adjacent points
+
+calculate_line_midpoints <- function(data) {
+  n_points <- nrow(data)
+
+  if (n_points < 1) {
+    return(data.frame(karta = character(0), punkt = character(0), rt90_o = numeric(0), rt90_n = numeric(0)))
+  }
+
+  midpoints_list <- lapply(1:n_points, function(i) {
+    current_point <- data[i, ]
+    next_index <- ifelse(i == n_points, 1, i + 1)
+    next_point <- data[next_index, ]
+
+    rt90_o <- (current_point$rt90_o + next_point$rt90_o) / 2
+    rt90_n <- (current_point$rt90_n + next_point$rt90_n) / 2
+    punktl <- paste0(i)
+    karta <- current_point$karta # karta will be the same for all points in the group
+
+    return(data.frame(karta = karta, punkt = punktl, rt90_o = rt90_o, rt90_n = rt90_n))
+  })
+
+  midpoints <- bind_rows(midpoints_list) |> 
+  mutate(punkt = rep(seq(2,16,2), length(unique(karta))))
+  
+  return(midpoints)
+}
+
+coords_lines <- split(coords, f = coords$karta) |> 
+  lapply(calculate_line_midpoints) |> 
+  bind_rows()
+
+coords <- bind_rows(coords, coords_lines)
+
+coords$punkt <- as.double(coords$punkt)
+
+```
+
+
+```{r}
+## filtering
+
+years <- c(2000, 2005, 2010)
+
+spp <- spp |> 
+  filter(taxon_rank == "species", class == "Aves")  
+
+occurr <- occurr |> 
+  mutate(datum = as_date(datum)) |> 
+  filter(yr %in% years)
+occurr <- occurr[which(occurr$art %in% spp$art), ]
+
+coords <- coords[which(coords$karta %in% occurr$karta), ]
+
+## reshaping
+
+occurr <- occurr |> 
+  pivot_longer(cols = starts_with("p") | starts_with("l"), names_to = "punkt", values_to = "count")
+
+## joining
+
+occurrSpp <- select(.data = spp, c(art, latin)) |> 
+  full_join(occurr, by = "art") |>
+  filter(punkt != "pkind" , punkt != "lind", !is.na(punkt))
+
+occurrSpp$punkt |> unique()
+
+occurrSppCoord <-  occurrSpp |>
+  filter(startsWith(punkt, "p") ) |> 
+  mutate(
+    punkt = case_when(
+      startsWith(punkt, "p") ~ as.numeric(sub("p", "", punkt)) * 2 - 1,
+      startsWith(punkt, "l") ~ as.numeric(sub("l", "", punkt)) * 2,
+      TRUE ~ as.numeric(punkt)
+    )
+  ) |> 
+  full_join(coords, by = c("karta", "punkt"))
+  
+rm(coords, coords_lines, occurr, occurrSpp, spp)
+```
+
+
+```{r}
+
+localityYear <- occurrSppCoord |>
+  select(karta, punkt, yr, rt90_o, rt90_n) |>
+  distinct() |>
+  group_by(karta, punkt) |>
+  mutate(sampleUnit = paste0(karta,":", punkt)) |>
+  ungroup()
+
+```
+
+From `r min(years)`to `r max(years)` (`r max(years) - min(years)` years), the number of 2x2 km squares sampled was `r length(unique(localityYear$karta))` and `r length(unique(localityYear$sampleUnit))` sampling units and according to unique coordinates `r length(unique(paste0(localityYear$rt90_o, ";", localityYear$rt90_n)))`). It were counted a total number of visits of `r nrow(localityYear)` (year, square, unit). . **In that way, there are units or big squares that werent visited all the years**.
+
+```{r}
+
+swe <- st_as_sf(map(database = "world", regions = "sweden", plot = FALSE, fill = TRUE)) |> 
+  st_transform("EPSG:2400")
+
+coordSampleUnits <- localityYear |> 
+  st_as_sf(coords = c("rt90_o", "rt90_n"), crs = "EPSG:2400") 
+
+# coordSampleUnits |> st_transform("EPSG:4326") |> write_sf("coordSampleUnits.shp", delete_layer = T)
+
+ggplot() +
+  geom_sf(data = swe) +
+  geom_sf(data = coordSampleUnits)
+
+```
+
+### Species data
+
+```{r}
+Y <- occurrSppCoord |> 
+  select(karta, punkt, yr, latin, count) |>
+  pivot_wider(id_cols = c(karta, punkt, yr), names_from = latin, values_from = count,
+              values_fn = sum, values_fill = 0) |> 
+  select(-yr, -punkt, -karta) |> 
+  as.data.frame()
+
+Y <- Y[, order(colnames(Y))]
+
+```
+
+```{r}
+P <-  colMeans(Y > 0)
+range(P) |> round(4)
+hist(P, xlab = "Species prevalence (P)",xlim=c(0,1))
+```
+
+Most species exhibit low prevalence, clustering towards the rare end of the spectrum, while a few species show a significantly higher prevalence, indicating they are common across the sampled areas, even an species is occurring in the `r max(P)` of sites (`r names(which(P == max(P)))`).
+
+### Covariates
+
+#### Forest
+
+"Three national maps containing information about Sweden’s woodlands and forests are already available. These maps include data collected in 2000, 2005 and 2010, each with cells of 25 x 25 metres. Up until 2010, the maps were based solely on satellite images from Landsat and SPOT. The 2015 SLU Forest Map contains a number of raster maps created by co-processing field inventories from Sweden’s National Forest Inventory (SLU), surface models from the Land Survey’s stereo-matched aerial photographs, and satellite images from Sentinel-2. The 2015 expansion of the SLU Forest Map was limited to areas where high-resolution images were available." SLU Web
+
+![Coverage of national forest maps by year](images/coverage_SLU.png)
+
+```{r}
+lsuZips <- list.files("data/covariates/slu_forest/", pattern = ".zip", recursive = T, full.names = T)
+lsuZipsSplit <- str_split(lsuZips, pattern = "/", simplify = T)
+
+lsuList <- list()
+
+run <- F
+
+if(run){
+  
+  for(i in 1:length(lsuZips)){
+    # i <- 4
+    files_in_zip <- unzip(lsuZips[i], list = TRUE)$Name
+    zip_tif <- grep("*_P_.*\\.tif$", files_in_zip, value = T)
+    
+    lsutmp <- list()
+    
+    for(a in 1:length(zip_tif)){
+      # a  <- 2
+      r <- rast(paste0("/vsizip/", lsuZips[i], "/", zip_tif)[a])
+      
+      # # Create a new temp raster
+      r2 <- r
+      
+      #rescale temp raster to new resolution
+      res(r2) <- 100 
+      # 
+      # Resample the raster to 100m x 100m using mean aggregation
+      r_resampled <- resample(r, r2, method = "average")
+      
+      lsutmp[[a]] <- coordSampleUnits |> 
+        st_transform(crs=crs(r)) |> 
+        terra::extract(x = r_resampled) |> 
+        select(all_of(names(r)))
+    }
+    
+    lsuList[[i]] <- bind_cols(lsutmp)
+    
+  }
+  
+  save(lsuList, file = file.path("data", "covariates", "slu_forest", "extracted_data.RData"))
+}else{
+  load(file = file.path("data", "covariates", "slu_forest", "extracted_data_100m.RData"))
+}
+
+names(lsuList) <- years
+```
+
+
+```{r}
+get_forest_info <- function(locality.df, forest.list, years) {
+  result <- list()
+  for (i in 1:length(years)) {
+    year_i <- as.character(years[i])
+    index <- which(locality.df$yr == year_i)
+    if (year_i %in% names(forest.list)) {
+      info_i <- forest.list[[year_i]]
+      colnames(info_i) <- sub(pattern = "_[0-9]{2}", replacement = "", colnames(info_i) )
+      df <- info_i[index, ] |> 
+        mutate(index = index, yr = year_i)
+      result[[i]] <- df
+    }
+  }
+  result <- bind_rows(result)
+  result <- result[order(result$index), ] |>
+    relocate(index, yr, last_col())
+  
+  return(result)
+}
+
+forestRaw <- get_forest_info(locality.df = localityYear, forest.list = lsuList, years = years) |> 
+  filter(yr != 2015) |> ########## Watchout!!!!!!!!!!!!
+  select(-DIAMETER_XX_P, -BASALAREA_XX_P, ) |> 
+  filter(if_any(-c(index, yr), ~ !is.na(.))) 
+
+forestRaw[is.na(forestRaw) ] <- 0 ########## Watchout!!!!!!!!!!!!
+
+table(forestRaw$yr)
+
+```
+
+
+```{r}
+forestRaw_long <- forestRaw |> 
+  select(-c(index, yr)) |> 
+  pivot_longer(cols = c(1:11))
+
+# Calculate NA and zero counts per variable
+na_zero_summary <- forestRaw_long |> 
+  group_by(name) |> 
+  summarise(
+    n_na = sum(is.na(value)),
+    n_zero = sum(value == 0, na.rm = TRUE), # na.rm = TRUE to ignore NA in the comparison
+    total_n = n()
+  ) |> 
+  mutate(
+    label = paste0("NA: ", n_na, "\nZero: ", n_zero)
+  )
+
+ggplot(forestRaw_long, aes(value)) +
+  geom_density() +
+  facet_wrap(~name, scales = "free") +
+  geom_text(data = na_zero_summary,
+            aes(x = Inf, y = Inf, label = label),
+            hjust = 1.1, vjust = 1.1, size = 3)
+```
+
+```{r}
+# transforming forest info
+
+forestInfo <- forestRaw
+
+forestInfo$BEECHVOL_XX_P <- (forestInfo$BEECHVOL_XX_P > 0) * 1
+forestInfo$BIRCHVOL_XX_P <- (forestInfo$BIRCHVOL_XX_P > 0) * 1
+forestInfo$CONTORTAVOL_XX_P <- (forestInfo$CONTORTAVOL_XX_P > 0) * 1
+forestInfo$DECIDUOUSVOL_XX_P <- (forestInfo$DECIDUOUSVOL_XX_P > 0) * 1
+forestInfo$OAKVOL_XX_P <- (forestInfo$OAKVOL_XX_P > 0) * 1
+forestInfo$PINEVOL_XX_P <- (forestInfo$PINEVOL_XX_P > 0) * 1
+forestInfo$SPRUCEVOL_XX_P <- (forestInfo$SPRUCEVOL_XX_P > 0) * 1
+```
+
+
+```{r}
+forestInfo_long <- forestInfo |> 
+  select(-c(index, yr)) |> 
+  pivot_longer(cols = c(1:11))
+
+# Calculate NA and zero counts per variable
+na_zero_summary <- forestInfo_long |> 
+  group_by(name) |> 
+  summarise(
+    n_na = sum(is.na(value)),
+    n_zero = sum(value == 0, na.rm = TRUE), # na.rm = TRUE to ignore NA in the comparison
+    total_n = n()
+  ) |> 
+  mutate(
+    label = paste0("NA: ", n_na, "\nZero: ", n_zero)
+  )
+
+ggplot(forestInfo_long, aes(value)) +
+  geom_density() +
+  facet_wrap(~name, scales = "free") +
+  geom_text(data = na_zero_summary,
+            aes(x = Inf, y = Inf, label = label),
+            hjust = 1.1, vjust = 1.1, size = 3)
+```
+
+
+```{r}
+#------------------------------- # just for proof of concept, I need to investigate why there are data without information even the other variables get me info
+forestData <- forestInfo$index
+
+Y <- Y[forestData, ]
+localityYear <- localityYear[forestData, ] 
+coordSampleUnits <- coordSampleUnits[forestData, ]
+
+```
+
+### LandUse
+
+```{r}
+library(terra)
+clc <- rast("data/covariates/NMD/18/nmd2018bas_ogeneraliserad_v1_1.tif")
+coltab(clc) <- NULL
+clc2 <- clc
+res(clc2) <- 100 
+clc_resampled <- resample(clc, clc2, method = "near")
+
+clcRaw <- coordSampleUnits |> 
+  st_transform(crs=crs(clc)) |> 
+  terra::extract(x = clc_resampled) |> 
+  select(-ID) |> 
+  mutate(Klass = iconv(Klass, from = "ISO-8859-1", to = "UTF-8"))
+  
+clcInfo <- clcRaw |> 
+  mutate(
+    Klass = case_when(
+      Klass %in% c("Exploaterad mark, väg/järnväg", "Åkermark", "Exploaterad mark, 
+                        byggnad", "Exploaterad mark, ej byggnad eller väg/järnväg") ~ "Urb",
+      Klass %in% c("Triviallövskog (utanför våtmark)", "Triviallövskog med ädellövinslag (utanför våtmark)", 
+                        "Lövblandad barrskog (utanför våtmark)", "Ädellövskog (utanför våtmark)",
+                        "Lövblandad barrskog (på våtmark)", "Ädellövskog (på våtmark)", 
+                        "Triviallövskog (på våtmark)", "Triviallövskog med ädellövinslag (på våtmark)") ~ "Br",
+      Klass %in% c("Granskog (utanför våtmark)", "Tallskog (utanför våtmark)", 
+                        "Barrblandskog (utanför våtmark)", "Tallskog (på våtmark)", 
+                        "Granskog (på våtmark)", "Barrblandskog (på våtmark)") ~ "Co",
+      Klass %in% c("Övrig öppen mark med vegetation", "Övrig öppen mark utan vegetation") ~ "Op",
+      Klass == "Hav" ~ "Ma",
+      Klass %in% c("Sjö och vattendrag", "Öppen våtmark", "Temporärt ej skog (på våtmark)", 
+                        "Temporärt ej skog (utanför våtmark)") ~ "We",
+      Klass == "" ~ "", # Keep the empty string as is
+      TRUE ~ NA_character_  # For any other value (shouldn't happen if your data is clean)
+    )
+  )
+
+#------------------------------- # just for proof of concept, I need to investigate why there are sea data/NA
+clcData <- which(clcInfo$Klass != "" & !is.na(clcInfo$Klass))
+
+clcInfo <- clcInfo[clcData, , drop = F]
+Y <- Y[clcData, ]
+localityYear <- localityYear[clcData, ] 
+coordSampleUnits <- coordSampleUnits[clcData, ]
+forestInfo <- forestInfo[clcData, ]
+
+```
+### Climate
+
+Keep stable or vary between years (?). My main concern is about "land" use.
+
+```{r}
+#| warning: false
+
+worldClim <- rast(c("data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_5.tif",
+               "data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_18.tif"))
+  
+clim <- coordSampleUnits |> 
+  st_transform(crs=crs(worldClim)) |> 
+  terra::extract(x = worldClim) |> 
+  select(-ID)
+
+#------------------------------- # just for proof of concept, I need to investigate why there are sea data/NA
+no_seaData <- which((!is.na(clim$wc2.1_30s_bio_5)))
+
+Y <- Y[no_seaData, ]
+localityYear <- localityYear[no_seaData, ] 
+coordSampleUnits <- coordSampleUnits[no_seaData, ]
+clim <- clim[no_seaData, ]
+forestInfo <- forestInfo[no_seaData, ]
+clcInfo <- clcInfo[no_seaData, , drop = F]
+#-----------------------------
+
+XData <- forestInfo |> 
+  select(-c(index, yr)) |> 
+  bind_cols(clim, clcInfo) |> 
+  as.data.frame() |> 
+  mutate(Klass = as.factor(Klass))
+
+row.names(XData) <- paste0(localityYear$karta, ":", localityYear$yr, ":", localityYear$punkt)
+
+```
+
+```{r}
+zero_spp <-  which(colSums(Y) == 0)
+
+Y <- Y[ , -zero_spp]
+```
+
+```{r}
+
+## Heureka inputs
+
+heureka <- T
+
+if(heureka){
+  forestRaw |>
+    rename_with(~ paste0(., "_raw")) |> 
+    slice(clcData) |>    
+    slice(no_seaData) |> 
+    bind_cols(XData) |> 
+    write.csv("slu/input_heureka_forest.csv", row.names = F)
+  
+  coordSampleUnits |> 
+    st_transform("EPSG:3006") %>% 
+    mutate(longSweref99 = sf::st_coordinates(.)[,1], latSweref99 = sf::st_coordinates(.)[,2]) |> 
+    st_transform("EPSG:4326") %>% 
+    mutate(longWGS = sf::st_coordinates(.)[,1], latWGS = sf::st_coordinates(.)[,2]) |>
+    st_drop_geometry() |> 
+    write.csv("slu/input_heureka_coordSampleUnits.csv", row.names = F)
+}
+
+
+
+
+```
+
+
+### Phylogenetic
+
+First, we have to resolve names used in the phylogeny database and the bird survey.(BirdTree database)\[https://birdtree.org/\] The database come froms: (Jetz, W., G. H. Thomas, J. B. Joy, K. Hartmann, and A. O. Mooers. 2012. The global diversity of birds in space and time. Nature 491:444-448)\[https://www-nature-com.ludwig.lub.lu.se/articles/nature11631\]. There is no API, so write and retrieve manually. The species list from the database were web scrapping.
+
+```{r}
+
+birdTreeSpp <- read.csv("data/bird_tree/birdTree_spp.csv")
+sppY <- colnames(Y)
+
+sppResolved <- data.frame("scientificName" = NA, "bird_tree" = NA)
+
+run <- F
+
+if(run){
+
+  for(i in 1:length(sppY)){
+    spp.i <- sppY[i]
+    
+    isMissingSppTree <- !(spp.i %in% birdTreeSpp$species)
+      
+    if(isMissingSppTree){
+        
+      if(spp.i == "Corvus cornix"){
+        
+        synSppY.i <- "Corvus corone"
+          
+        }else if(spp.i == "Loxia bifasciata"){
+          synSppY.i <- "Loxia leucoptera"
+    
+        }else if(spp.i == "Curruca cantillans"){
+          synSppY.i <- "Sylvia cantillans"
+    
+        }else if(spp.i == "Columba livia f. domestica"){
+          synSppY.i <- "Columba livia"
+          
+        }else{
+          
+        synSppY.i <- synonyms(spp.i, db = "nbn", rec_only = T, accepted = F, rank = "species", ask = F) |> 
+          map_df(~ .x)
+        
+        if(ncol(synSppY.i) == 1 | ncol(synSppY.i) == 0){
+          synSppY.i <- NA
+        }else{
+          synSppY.i <-  synSppY.i |> 
+            select(nameString) |> 
+            pull()
+          synSppY.i <- (synSppY.i[synSppY.i %in% birdTreeSpp$species]) |> 
+            unique()
+        }
+    
+        }
+      }else{
+        synSppY.i <- spp.i
+      }
+     sppResolved[i,"scientificName"] <- spp.i
+     sppResolved[i,"bird_tree"] <- synSppY.i
+  }
+  
+  write.csv(sppResolved, "data/bird_tree/taxonomical_synonyms_birdtree.csv", row.names = F)
+}else{
+  
+  sppResolved <- read.csv("data/bird_tree/taxonomical_synonyms_birdtree.csv")
+
+}
+
+
+# tree-pruner-79dc275b-d443-43a0-ad48-65f64e969c4f # 1000
+# tree-pruner-cc685151-9887-452d-9dc0-01386d287412 # 100 removing NA data
+
+Trees <- ape::read.nexus("data/bird_tree/n100_naRemoved/output.nex")
+
+## MISSING. Consensus method (?)
+
+
+phyloTree <- Trees[[sample(1:100, 1)]]
+
+
+phyloTree$tip.label <- phyloTree$tip.label |> 
+  str_replace(pattern = "_", " ")
+
+#----------------
+# remove spp
+# phyloTree <- drop.tip(phyloTree, c("Anser_indicus", "Falco_vespertinus"))
+
+#----------------
+
+phyloTree$tip.label <- sppResolved$scientificName[match(phyloTree$tip.label, sppResolved$bird_tree)]
+
+```
+
+### Traits
+
+```{r}
+tr1 <- read.xlsx("data/traits/AVONET/TraitData/AVONET3_BirdTree.xlsx", sheet = 2) |> 
+  rename(bird_tree = Species3) |>
+  right_join(sppResolved, by = "bird_tree" ) |>  
+  select(scientificName, Mass, Habitat, Habitat.Density, Trophic.Niche, Primary.Lifestyle, Migration)
+ 
+TrData <- tr1 |>  
+  as.data.frame()
+
+row.names(TrData) <- TrData$scientificName 
+ 
+TrData <- select(TrData, -scientificName)
+
+TrData <- TrData[order(row.names(TrData)), ]
+
+```
+
+## Set up the model
+
+### Study desing
+
+```{r}
+studyDesign <- localityYear |> 
+  select(karta, yr, sampleUnit) |> 
+  mutate(across(everything(), as.factor)) |> 
+  as.data.frame()
+
+row.names(studyDesign) <- paste0(studyDesign$karta, ":", studyDesign$yr, ":" ,studyDesign$sampleUnit)
+
+xy <- coordSampleUnits |> 
+  select(-c(yr, punkt, sampleUnit)) |> 
+  st_transform("EPSG:4326")%>%  
+    mutate(
+    long = sf::st_coordinates(.)[,1],
+    lat = sf::st_coordinates(.)[,2]
+  ) |> 
+  st_drop_geometry() |> 
+  distinct() |> 
+  as.data.frame()
+
+le <-  levels(studyDesign$karta)
+xy.karta <-  matrix(nrow=length(le), ncol=2)  
+rownames(xy.karta) <-  le
+
+for(i in 1:length(le)){
+  xy.cle <- xy[which(xy$karta == le[i]), c("long", "lat")]
+  xy.karta[le[i],] <- colMeans(xy.cle)
+}
+
+colnames(xy.karta) <-  c("long", "lat")
+
+write.csv(xy.karta, "xy.karta.csv", row.names = T)
+
+```
+
+### Random effects
+
+```{r}
+
+rL.sampleUnit <- HmscRandomLevel(units = levels(studyDesign$sampleUnit))
+rL.year <- HmscRandomLevel(units = levels(studyDesign$yr))
+
+```
+
+Clean Environment
+
+```{r}
+toKeep <- c("model", "modeltype","XData", "XFormula", "TrData", "TrFormula", "phyloTree", "Y", "rL.sampleUnit", "rL.locality", "rL.year", "studyDesign",
+            "sampleUnits", "transform_Y_to_abunCpres", "xy.karta")
+rm(list = setdiff(ls(), toKeep))
+gc()
+
+```
+
+```{r}
+
+colnames(XData)
+
+XFormula <- ~ Klass + AGE_XX_P + BEECHVOL_XX_P + CONTORTAVOL_XX_P + BIRCHVOL_XX_P + DECIDUOUSVOL_XX_P + HEIGHT_XX_P + OAKVOL_XX_P + PINEVOL_XX_P + SPRUCEVOL_XX_P + TOTALVOL_XX_P + BIOMASS_XX_P + poly(wc2.1_30s_bio_5, degree = 2) + poly(wc2.1_30s_bio_18, degree = 2)
+
+
+```
+
+
+```{r}
+TrFormula <- ~ log(Mass) + Habitat +  Trophic.Niche + Habitat.Density + Primary.Lifestyle + Migration
+
+```
+
+### Define model
+
+#### Three random levels and full gausian process
+
+
+```{r}
+rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE)
+```
+
+
+```{r}
+m.abu = Hmsc(Y = Y,
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson", 
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ )
+
+m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson", 
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ )
+
+m.pa = Hmsc(Y = 1*(Y>0),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "probit", 
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ )
+```
+
+
+```{r}
+model <- "sbsF_full"
+modeltype <- c("abu", "aCp", "pa")
+
+dir.create("models", showWarnings = F)
+models <-  list(m.abu, m.abuCpres, m.pa )
+names(models) <- paste0(model, "_", modeltype)
+save(models, file = file.path("models", "unfitted_models_full.RData"))
+```
+
+#### To make the process faster: spatial level and temporal level only and NNGP in GPU proccessing
+
+```{r}
+rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
+```
+
+
+```{r}
+m.abu = Hmsc(Y = Y,
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson",
+ studyDesign = studyDesign,
+ ranLevels = list("karta" = rL.locality, "yr" = rL.year)
+ )
+
+m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson", 
+ studyDesign = studyDesign, 
+ ranLevels = list("karta" = rL.locality, "yr" = rL.year)
+ )
+
+m.pa = Hmsc(Y = 1*(Y>0),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "probit", 
+ studyDesign = studyDesign, 
+ ranLevels = list("karta" = rL.locality, "yr" = rL.year)
+ )
+```
+
+
+```{r}
+model <- "sbsF_ngpp_2rl"
+modeltype <- c("abu", "aCp", "pa")
+
+dir.create("models", showWarnings = F)
+models <-  list(m.abu, m.abuCpres, m.pa)
+names(models) <- paste0(model, "_", modeltype)
+save(models, file = file.path("models", "unfitted_models_NGPP.RData"))
+```
+
+#### Three random levels: spatial, samling unit, and temporal level and NNGP in GPU proccessing
+
+```{r}
+rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
+```
+
+
+```{r}
+m.abu = Hmsc(Y = Y,
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson", 
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ )
+
+m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "lognormal poisson", 
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ )
+
+m.pa = Hmsc(Y = 1*(Y>0),
+ XData = XData, XFormula = XFormula,
+ TrData = TrData, TrFormula = TrFormula,
+ phyloTree = phyloTree,
+ distr = "probit", 
+ studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ )
+
+
+m.abu$call
+
+```
+
+```{r}
+model <- "sbsF_ngpp_3rl"
+modeltype <- c("abu", "aCp", "pa")
+
+dir.create("models", showWarnings = F)
+models <-  list(m.abu, m.abuCpres, m.pa)
+names(models) <- paste0(model, "_", modeltype)
+save(models, file = file.path("models", "unfitted_models_NGPP_3rl.RData"))
+```
+
+
+```{r}
+sampleMcmc(m.abu, samples=2)
+```
+
+```{r}
+# Yx <- Y |> 
+#   pivot_longer(
+#     cols = everything(), # Pivotear todas las columnas excepto "id"
+#     names_to = "especie",
+#     values_to = "abundancia"
+#   ) |> 
+#   filter(abundancia != 0) |> 
+```
+

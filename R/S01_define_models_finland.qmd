@@ -176,7 +176,7 @@ coords$punkt <- as.double(coords$punkt)
 ```{r}
 ## filtering
 
-years <- c(2000, 2005, 2010, 2015)
+years <- c(2000, 2005, 2010)
 
 spp <- spp |> 
   filter(taxon_rank == "species", class == "Aves")  
@@ -202,6 +202,7 @@ occurrSpp <- select(.data = spp, c(art, latin)) |>
 occurrSpp$punkt |> unique()
 
 occurrSppCoord <-  occurrSpp |>
+  filter(startsWith(punkt, "p") ) |> 
   mutate(
     punkt = case_when(
       startsWith(punkt, "p") ~ as.numeric(sub("p", "", punkt)) * 2 - 1,
@@ -223,13 +224,6 @@ localityYear <- occurrSppCoord |>
   group_by(karta, punkt) |>
   mutate(sampleUnit = paste0(karta,":", punkt)) |>
   ungroup()
-
-#----------------
-# ONLY FOR RARIFIED DATA
-
-# occurr <- occurr[!(occurr$scientificName %in% c("Anser indicus", "Falco vespertinus")), ]
-
-##  mutate(latin = ifelse(latin == "Corvus corone", "Corvus cornix", latin))
 
 ```
 
@@ -261,20 +255,6 @@ Y <- occurrSppCoord |>
   select(-yr, -punkt, -karta) |> 
   as.data.frame()
 
-# row.names(Y) <- paste0(Y$verbatimLocality, Y$year_)
-
-# commonsp <- colSums(Y[,-1]) |> 
-#   sort(decreasing = T) |> 
-#   names() |> 
-#   head(20)
-# 
-# species name for phylogenetic tree downloaded from
-# https://birdtree.org/subsets/
-# write.csv(commonsp, "spp.csv", row.names = F)
-#   
-# Y <- Y |> 
-#   select(all_of(commonsp))
- 
 Y <- Y[, order(colnames(Y))]
 
 ```
