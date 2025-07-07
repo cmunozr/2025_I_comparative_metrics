@@ -93,6 +93,7 @@ library(remotes)
 library(phytools)
 library(openxlsx)
 library(tidyterra)
+library(viridis)
 ```
 
 ```{r}
@@ -112,26 +113,118 @@ transform_Y_to_abunCpres <- function(data) {
 set.seed(11072024)
 ```
 
-"The summer and winter point count routes (“punktrutterna”) are two of several schemes within the Swedish Bird Survey (see below), run by the Department of Biology at Lund University. The point count routes were initiated in 1975 as a standardised method for detecting and reporting changes in the abundance of birds and their distributions in Sweden over time. The point count routes can be surveyed in summer and/or winter. The surveys are initiated and carried out by volunteer ornithologists who use standardised methods to count birds along routes of their own choice. In this analysis we going to work with the summer point count routes. Where the bird diversity in Sweden is on its peak." GBIF page of the SBS.
 
 ```{r}
-# species data (names and keys)
-spp <- read.xlsx("data/sbs/public_eurolist.xlsx", sheet = 1)
+# coordinates 
+coords <- st_read("data/fbs/vakiolinja/Vakiolinjat_routes.geojson")
 
-# counts by sampling (spp key, and counts in points and lines)
+# routes (names and dates)
+routes <- read.csv("data/fbs/vakiolinja/vakiolinja1_20250626.csv")
 
-occurr <- read.xlsx("data/sbs/public_totalstandard_250410.xlsx", sheet = 1) 
+# occurrences by track (spp key, and counts in points and lines)
 
-# coordinates (keys)
-coords <- read.xlsx("data/sbs/KoordinaterPkt.xlsx", cols = 1:4) |> 
-  mutate(punkt = rep(seq(1,15,2), length(unique(karta))))
+occurr_track <- read.csv("data/fbs/vakiolinja/vakiolinja2_20250626.csv") 
+
+# occurrences by section track (spp key, and counts in points and lines)
+
+occurr_sect_track <- read.csv("data/fbs/vakiolinja/vakiolinja3_20250626.csv") 
+
 
 ```
+
+```{r}
+# exploring biotope information
+
+no_biotope <- occurr_sect_track |> 
+  filter(biotope == "")
+no_biotope <- (table(no_biotope$vakio, no_biotope$year) > 0) 
+
+# a) what percentage of tracks have no biotope information or subsection information
+# b) of those without information how many times have been without biotope info?
+
+no_biotope_tracks <- no_biotope |> 
+  rowSums()
+
+## a 
+length(no_biotope_tracks)/566*100
+
+## b
+table(no_biotope_tracks)/566*100
+
+no_biotope_tracks_df <- data.frame(
+  vakio = names(no_biotope_tracks),
+  times_missing = no_biotope_tracks
+)
+
+# how many tracks have no had biotope or subsection info each year?
+# what percentege of tracks that were sample each year dont have biotope or subsection info?
+
+no_biotope_years <- no_biotope |> 
+  colSums()
+
+sample_by_year <- occurr_sect_track |> 
+  filter(year != 2019) |> 
+  group_by(year) |> 
+  summarize(sample_tracks = length(unique(vakio)))
+
+percent_sample_no_biotope <- no_biotope_years/sample_by_year$sample_tracks*100
+
+hist(percent_sample_no_biotope)
+
+# how many of the biotope and subsection information is missing? Is all the track?
+
+occurr_sect_track |> 
+  group_by(year, vakio) |> 
+  summarise(total_rows = n(), count = sum(biotope == "")) |> 
+  filter(count != 0) |> 
+  mutate(vakio = as.factor(vakio)) |> 
+  pivot_longer(cols = c(total_rows, count), names_to = "category", values_to = "rows") |> 
+  ggplot(aes(x = vakio, y = rows, fill = category ))+
+  geom_col(position="dodge") + 
+  coord_flip() + 
+  facet_wrap(vars(year), scales="free")
+
+```
+
+```{r}
+coords_nm <- str_split(coords$name, pattern = ", ", simplify = T) |> 
+  as.data.frame()
+names(coords_nm) <- c("vakio", "str1", "str2", "numer")
+
+coords <- bind_cols(coords, coords_nm) |> 
+  left_join(y = no_biotope_tracks_df, by = "vakio") |> 
+  mutate(vakio = sort(as.numeric(vakio)), times_missing = as.factor(ifelse(is.na(times_missing), 0, times_missing)))
+
+```
+
+```{r}
+
+fin <- st_as_sf(map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
+
+lvls <- levels(coords$times_missing)
+turbo_discrete_colors <- viridis_pal(option = "turbo")(n = length(lvls) - 1)
+custom_colors <- c(
+  "0" = "gray",
+  setNames(turbo_discrete_colors, lvls[lvls != "0"])
+)
+
+table(coords$times_missing)
+
+coords |> 
+  ggplot() +
+  geom_sf(data = fin) +
+  geom_sf(aes(color = times_missing)) +
+  scale_color_manual(values = custom_colors, name = "times_missing", drop = FALSE)
+
+```
+
 
 There are `r nrow(spp)` species observed in the data set and `r nrow(occurr)` occurrence data in apparently `r nrow(coords)`.
 
 ```{r}
+
 # transforming raw data
+
 
 ## calculating coordinate information for lines
 ## Line information is taken as the mid point between adjacent points
