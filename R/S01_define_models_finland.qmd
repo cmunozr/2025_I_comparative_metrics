@@ -94,6 +94,8 @@ library(phytools)
 library(openxlsx)
 library(tidyterra)
 library(viridis)
+library(lwgeom)
+library(ggrepel)
 ```
 
 ```{r}
@@ -104,7 +106,7 @@ options("OSR_USE_NON_DEPRECATED" = "NO")
 
 ```{r}
 transform_Y_to_abunCpres <- function(data) {
-  data %>% mutate(across(everything(), ~ ifelse(. == 0, NA, scale(log(.)))))
+  data |> mutate(across(everything(), ~ ifelse(. == 0, NA, scale(log(.)))))
 }
 ```
 
@@ -121,59 +123,99 @@ coords <- st_read("data/fbs/vakiolinja/Vakiolinjat_routes.geojson")
 # routes (names and dates)
 routes <- read.csv("data/fbs/vakiolinja/vakiolinja1_20250626.csv")
 
-# occurrences by track (spp key, and counts in points and lines)
+# occurrences by route (spp key, and counts in points and lines)
 
-occurr_track <- read.csv("data/fbs/vakiolinja/vakiolinja2_20250626.csv") 
+occurr_route <- read.csv("data/fbs/vakiolinja/vakiolinja2_20250626.csv") 
 
-# occurrences by section track (spp key, and counts in points and lines)
+# occurrences by section route (spp key, and counts in points and lines)
 
-occurr_sect_track <- read.csv("data/fbs/vakiolinja/vakiolinja3_20250626.csv") 
+occurr_sect_route <- read.csv("data/fbs/vakiolinja/vakiolinja3_20250626.csv") 
 
 
 ```
 
 ```{r}
-# exploring biotope information
+# late Spring/Summer routes from 2009-2021
 
-no_biotope <- occurr_sect_track |> 
+routes <- routes |> 
+  mutate(out_date = ifelse((month < 5 | month > 7 | year < 2009 | year > 2021), 1, 0 ))
+
+event_ids_to_match <- routes |> 
+  filter(out_date == 1) |> 
+  pull(eventId) |> 
+  unique()
+
+occurr_route <- occurr_route |> 
+  mutate(out_date = as.numeric(eventId %in% event_ids_to_match))
+
+occurr_sect_route <- occurr_sect_route |> 
+  mutate(out_date = as.numeric(eventId %in% event_ids_to_match))
+
+# are there routes that we have to remove because no data?
+routes |> 
+  group_by(vakio) |> 
+  summarise(total_events = n(), out_count = sum(out_date == 1)) |> 
+  mutate(vakio_out = as.numeric(total_events == out_count)) |> 
+  filter(vakio_out == 1)
+  ##  No need to filter coords
+  
+# Filtering routes and routes
+
+routes <- routes |> 
+  filter(out_date != 1)
+
+occurr_route <- occurr_route |> 
+  filter(out_date != 1)
+
+occurr_sect_route <- occurr_sect_route |> 
+  filter(out_date != 1)
+
+
+```
+
+
+```{r}
+# exploring spatial information on valid eventids (inside season and years) with biotope information
+
+no_biotope <- occurr_sect_route |> 
   filter(biotope == "")
 no_biotope <- (table(no_biotope$vakio, no_biotope$year) > 0) 
 
-# a) what percentage of tracks have no biotope information or subsection information
+# a) what percentage of routes have no biotope information or subsection information
 # b) of those without information how many times have been without biotope info?
 
-no_biotope_tracks <- no_biotope |> 
+no_biotope_routes <- no_biotope |> 
   rowSums()
 
 ## a 
-length(no_biotope_tracks)/566*100
+length(no_biotope_routes)/566*100
 
 ## b
-table(no_biotope_tracks)/566*100
+table(no_biotope_routes)/566*100
 
-no_biotope_tracks_df <- data.frame(
-  vakio = names(no_biotope_tracks),
-  times_missing = no_biotope_tracks
+no_biotope_routes_df <- data.frame(
+  vakio = names(no_biotope_routes),
+  times_missing = no_biotope_routes
 )
 
-# how many tracks have no had biotope or subsection info each year?
-# what percentege of tracks that were sample each year dont have biotope or subsection info?
+# how many routes have no had biotope or subsection info each year?
+# what percentege of routes that were sample each year dont have biotope or subsection info?
 
 no_biotope_years <- no_biotope |> 
   colSums()
 
-sample_by_year <- occurr_sect_track |> 
+sample_by_year <- occurr_sect_route |> 
   filter(year != 2019) |> 
   group_by(year) |> 
-  summarize(sample_tracks = length(unique(vakio)))
+  summarize(sample_routes = length(unique(vakio)))
 
-percent_sample_no_biotope <- no_biotope_years/sample_by_year$sample_tracks*100
+percent_sample_no_biotope <- no_biotope_years/sample_by_year$sample_routes*100
 
 hist(percent_sample_no_biotope)
 
-# how many of the biotope and subsection information is missing? Is all the track?
+# how many of the biotope and subsection information is missing? Is all the route?
 
-occurr_sect_track |> 
+occurr_sect_route |> 
   group_by(year, vakio) |> 
   summarise(total_rows = n(), count = sum(biotope == "")) |> 
   filter(count != 0) |> 
@@ -192,8 +234,11 @@ coords_nm <- str_split(coords$name, pattern = ", ", simplify = T) |>
 names(coords_nm) <- c("vakio", "str1", "str2", "numer")
 
 coords <- bind_cols(coords, coords_nm) |> 
-  left_join(y = no_biotope_tracks_df, by = "vakio") |> 
-  mutate(vakio = sort(as.numeric(vakio)), times_missing = as.factor(ifelse(is.na(times_missing), 0, times_missing)))
+  left_join(y = no_biotope_routes_df, by = "vakio") |> 
+  mutate(vakio = as.numeric(vakio), times_missing = as.factor(ifelse(is.na(times_missing), 0, times_missing))) |> 
+  arrange(vakio)
+
+write_sf(coords, "data/fbs/coords.gpkg", delete_layer = T)
 
 ```
 
@@ -218,125 +263,161 @@ coords |>
 
 ```
 
-
-There are `r nrow(spp)` species observed in the data set and `r nrow(occurr)` occurrence data in apparently `r nrow(coords)`.
-
 ```{r}
 
 # transforming raw data
+## calculating polygon information for biotope line
 
+route_i <- coords |> 
+  filter(vakio == 113) |> 
+  st_transform(crs = "EPSG:2393") 
 
-## calculating coordinate information for lines
-## Line information is taken as the mid point between adjacent points
+biotope_route_i <- occurr_sect_route |> 
+  filter(year == 2011, vakio == 113) |> 
+  select(biotopeStripId, startMeters, endMeters, meters, biotope, biotopeSpecifier) |> 
+  distinct() |> 
+  mutate(r_startMeters = startMeters/as.numeric(st_length(route_i)), r_endMeters = endMeters/as.numeric(st_length(route_i)))
 
-calculate_line_midpoints <- function(data) {
-  n_points <- nrow(data)
+split_route_i <- list()
 
-  if (n_points < 1) {
-    return(data.frame(karta = character(0), punkt = character(0), rt90_o = numeric(0), rt90_n = numeric(0)))
-  }
-
-  midpoints_list <- lapply(1:n_points, function(i) {
-    current_point <- data[i, ]
-    next_index <- ifelse(i == n_points, 1, i + 1)
-    next_point <- data[next_index, ]
-
-    rt90_o <- (current_point$rt90_o + next_point$rt90_o) / 2
-    rt90_n <- (current_point$rt90_n + next_point$rt90_n) / 2
-    punktl <- paste0(i)
-    karta <- current_point$karta # karta will be the same for all points in the group
-
-    return(data.frame(karta = karta, punkt = punktl, rt90_o = rt90_o, rt90_n = rt90_n))
-  })
-
-  midpoints <- bind_rows(midpoints_list) |> 
-  mutate(punkt = rep(seq(2,16,2), length(unique(karta))))
-  
-  return(midpoints)
+for(r in 1:nrow(biotope_route_i)){
+  split_route_i[[r]] <- st_linesubstring(route_i, from = biotope_route_i$r_startMeters[r], to = biotope_route_i$r_endMeters[r])
 }
 
-coords_lines <- split(coords, f = coords$karta) |> 
-  lapply(calculate_line_midpoints) |> 
-  bind_rows()
+split_route_i <- do.call("rbind", split_route_i) |> 
+  bind_cols(biotope_route_i) |> 
+  st_buffer(dist = 150, endCapStyle = "FLAT", joinStyle = "BEVEL")
 
-coords <- bind_rows(coords, coords_lines)
-
-coords$punkt <- as.double(coords$punkt)
+# if we keep this it is needed to extent the loop to all years and routes
 
 ```
 
 
 ```{r}
-## filtering
+## species info
 
-years <- c(2000, 2005, 2010)
+sppY <- unique(occurr_route$scientificName)
 
-spp <- spp |> 
-  filter(taxon_rank == "species", class == "Aves")  
+run <-  F
 
-occurr <- occurr |> 
-  mutate(datum = as_date(datum)) |> 
-  filter(yr %in% years)
-occurr <- occurr[which(occurr$art %in% spp$art), ]
+if(run == T){
+  tax_raw <- taxize::classification(sppY, db = "gbif")
+  missing_index <- which(is.na(tax_raw))
+  missing <- sppY[missing_index]
+  tax_raw <- tax_raw[-missing_index]
+  missing_tax <- taxize::classification(missing, db = "itis")
+  tax_raw <- c(tax_raw, missing_tax)
+  saveRDS(object = tax_raw, file = "data/fbs/tax_raw_data.rds")
+}else{
+  tax_raw <- readRDS(file = "data/fbs/tax_raw_data.rds")
+}
 
-coords <- coords[which(coords$karta %in% occurr$karta), ]
+tax_i <- purrr::map2(tax_raw, names(tax_raw), .f = function(.x, .y){
+  if(!is.logical(.x)){
+    current_df <- as.data.frame(.x)
+    n.r <- nrow(current_df)
+    cols <- current_df$rank
+    high_rank <- cols[n.r]
+    info <- as.list(current_df$name)
+    names(info) <- cols
+    info <- as.data.frame(info)
+    info$id <- as.integer(current_df$id[n.r])
+    info$input_name <- .y  
+    info$high_rank <- high_rank
+  }
+  return(info)
+})
 
-## reshaping
+tax_i <- list_rbind(tax_i) |> 
+  relocate(subfamily, .after = family) |> 
+  relocate(subspecies, .after = species) |> 
+  select(-c("subkingdom", "infrakingdom", "subphylum", "infraphylum", "superclass",
+            "subclass", "infraclass", "suborder", "superfamily"))
 
-occurr <- occurr |> 
-  pivot_longer(cols = starts_with("p") | starts_with("l"), names_to = "punkt", values_to = "count")
+index_odo <- which(tax_i$subfamily == "Odocoileinae")
+tax_i$kingdom[index_odo] <- "Animalia"
+tax_i$phylum[index_odo] <- "Chordata"
+tax_i$class[index_odo] <- "Mammalia"
+tax_i$order[index_odo] <- "Artiodactila"
+tax_i$family[index_odo] <- "Cervidae"
 
-## joining
-
-occurrSpp <- select(.data = spp, c(art, latin)) |> 
-  full_join(occurr, by = "art") |>
-  filter(punkt != "pkind" , punkt != "lind", !is.na(punkt))
-
-occurrSpp$punkt |> unique()
-
-occurrSppCoord <-  occurrSpp |>
-  filter(startsWith(punkt, "p") ) |> 
+# What classes do we have?
+class_data <- tax_i |>
+  count(class, name = "n")  |> 
   mutate(
-    punkt = case_when(
-      startsWith(punkt, "p") ~ as.numeric(sub("p", "", punkt)) * 2 - 1,
-      startsWith(punkt, "l") ~ as.numeric(sub("l", "", punkt)) * 2,
-      TRUE ~ as.numeric(punkt)
-    )
-  ) |> 
-  full_join(coords, by = c("karta", "punkt"))
+    value = n / sum(n),
+    csum = rev(cumsum(rev(value))),
+    pos = value / 2 + lead(csum, 1),
+    pos = if_else(is.na(pos), value / 2, pos),
+    label = paste0(class, "\n", scales::percent(value))
+  )
+
+ggplot(class_data, aes(x = "", y = value, fill = fct_inorder(class))) +
+  geom_col(width = 1, color = "white", linewidth = 0.5) +
+  coord_polar(theta = "y") +
+  labs(title = "Distribution of Taxonomic Labels by Class", fill = "Class") +
+  theme_void() +
+  geom_label_repel(aes(y = pos, label = label),
+                   size = 3.5,
+                   nudge_x = 1,
+                   show.legend = FALSE,
+                   force = 1,
+                   max.overlaps = Inf,
+                   box.padding = 0.5,
+                   point.padding = 0.5
+                   ) +
+  guides(fill = guide_legend(title = "Class")) +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+# Which is the distribution of birds in the data set? (using order)
+aves_order_data_barplot <- tax_i |>
+  filter(class == 'Aves') |>
+  count(order, name = 'n') |>
+  mutate(percentage = n / sum(n)) |>
+  arrange(desc(n))
+
+ggplot(aves_order_data_barplot, aes(x = reorder(order, -n), y = n, fill = order)) +
+  geom_col(color = 'black') +
+  labs(title = 'Distribution of Taxonomic Labels by Order (Class: Aves)',
+       x = 'Order',
+       y = 'Count',
+       fill = 'Order') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 14, face = 'bold')) +
+  geom_text(aes(label = n), vjust = -0.5, size = 3) 
+
+# What kind of taxonomic labels do we have?
+high_rank_data_barplot <- tax_i |>
+  count(high_rank, name = 'n') |>
+  mutate(percentage = n / sum(n)) |>
+  arrange(desc(n))
+
+ggplot(high_rank_data_barplot, aes(x = reorder(high_rank, -n), y = n, fill = high_rank)) +
+  geom_col(color = 'black') +
+  labs(title = 'Distribution of Taxonomic Labels by High Rank',
+       x = 'High Rank',
+       y = 'Count',
+       fill = 'High Rank') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 14, face = 'bold')) +
+  geom_text(aes(label = n), vjust = -0.5, size = 3)
+
+## From those that aren't species, how many of them are birds?
+
+tax_i |> 
+  filter(high_rank != "species", high_rank != "subspecies") |> 
+  count(class, high_rank, name = 'n') |> 
+  gt()
   
-rm(coords, coords_lines, occurr, occurrSpp, spp)
+
+
 ```
 
-
-```{r}
-
-localityYear <- occurrSppCoord |>
-  select(karta, punkt, yr, rt90_o, rt90_n) |>
-  distinct() |>
-  group_by(karta, punkt) |>
-  mutate(sampleUnit = paste0(karta,":", punkt)) |>
-  ungroup()
-
-```
 
 From `r min(years)`to `r max(years)` (`r max(years) - min(years)` years), the number of 2x2 km squares sampled was `r length(unique(localityYear$karta))` and `r length(unique(localityYear$sampleUnit))` sampling units and according to unique coordinates `r length(unique(paste0(localityYear$rt90_o, ";", localityYear$rt90_n)))`). It were counted a total number of visits of `r nrow(localityYear)` (year, square, unit). . **In that way, there are units or big squares that werent visited all the years**.
 
-```{r}
-
-swe <- st_as_sf(map(database = "world", regions = "sweden", plot = FALSE, fill = TRUE)) |> 
-  st_transform("EPSG:2400")
-
-coordSampleUnits <- localityYear |> 
-  st_as_sf(coords = c("rt90_o", "rt90_n"), crs = "EPSG:2400") 
-
-# coordSampleUnits |> st_transform("EPSG:4326") |> write_sf("coordSampleUnits.shp", delete_layer = T)
-
-ggplot() +
-  geom_sf(data = swe) +
-  geom_sf(data = coordSampleUnits)
-
-```
 
 ### Species data
 
@@ -630,9 +711,9 @@ if(heureka){
     write.csv("slu/input_heureka_forest.csv", row.names = F)
   
   coordSampleUnits |> 
-    st_transform("EPSG:3006") %>% 
+    st_transform("EPSG:3006") |> 
     mutate(longSweref99 = sf::st_coordinates(.)[,1], latSweref99 = sf::st_coordinates(.)[,2]) |> 
-    st_transform("EPSG:4326") %>% 
+    st_transform("EPSG:4326") |> 
     mutate(longWGS = sf::st_coordinates(.)[,1], latWGS = sf::st_coordinates(.)[,2]) |>
     st_drop_geometry() |> 
     write.csv("slu/input_heureka_coordSampleUnits.csv", row.names = F)
@@ -767,7 +848,7 @@ row.names(studyDesign) <- paste0(studyDesign$karta, ":", studyDesign$yr, ":" ,st
 
 xy <- coordSampleUnits |> 
   select(-c(yr, punkt, sampleUnit)) |> 
-  st_transform("EPSG:4326")%>%  
+  st_transform("EPSG:4326")|>  
     mutate(
     long = sf::st_coordinates(.)[,1],
     lat = sf::st_coordinates(.)[,2]
