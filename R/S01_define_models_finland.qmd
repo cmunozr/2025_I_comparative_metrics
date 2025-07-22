@@ -71,7 +71,7 @@ To compare biodiversity metrics using quantitative models to assess how accurate
 
 An Hmsc model provides predictions at the species-community level. This enables the spatial representation of biodiversity to analyse and evaluate biodiversity metrics’ performance and variation through environmental and spatial gradients while counting for uncertainties.
 
-## Data
+## Setup
 
 ```{r, setup}
 knitr::opts_knit$set(root.dir = "c:/Users/Carlos Munoz/Documents/Ph.D/6_courses/2025_I_comparative_metrics/")
@@ -96,6 +96,7 @@ library(tidyterra)
 library(viridis)
 library(lwgeom)
 library(ggrepel)
+library(gt)
 ```
 
 ```{r}
@@ -114,6 +115,8 @@ transform_Y_to_abunCpres <- function(data) {
 ```{r}
 set.seed(11072024)
 ```
+
+## Breeding Finish Bird Survey
 
 
 ```{r}
@@ -134,8 +137,8 @@ occurr_sect_route <- read.csv("data/fbs/vakiolinja/vakiolinja3_20250626.csv")
 
 ```
 
-```{r}
-# late Spring/Summer routes from 2009-2021
+```{r} 
+# late Spring/Summer routes from 2009-2021 (years because the MS-NFI)
 
 routes <- routes |> 
   mutate(out_date = ifelse((month < 5 | month > 7 | year < 2009 | year > 2021), 1, 0 ))
@@ -173,137 +176,18 @@ occurr_sect_route <- occurr_sect_route |>
 
 ```
 
-
-```{r}
-# exploring spatial information on valid eventids (inside season and years) with biotope information
-
-no_biotope <- occurr_sect_route |> 
-  filter(biotope == "")
-no_biotope <- (table(no_biotope$vakio, no_biotope$year) > 0) 
-
-# a) what percentage of routes have no biotope information or subsection information
-# b) of those without information how many times have been without biotope info?
-
-no_biotope_routes <- no_biotope |> 
-  rowSums()
-
-## a 
-length(no_biotope_routes)/566*100
-
-## b
-table(no_biotope_routes)/566*100
-
-no_biotope_routes_df <- data.frame(
-  vakio = names(no_biotope_routes),
-  times_missing = no_biotope_routes
-)
-
-# how many routes have no had biotope or subsection info each year?
-# what percentege of routes that were sample each year dont have biotope or subsection info?
-
-no_biotope_years <- no_biotope |> 
-  colSums()
-
-sample_by_year <- occurr_sect_route |> 
-  filter(year != 2019) |> 
-  group_by(year) |> 
-  summarize(sample_routes = length(unique(vakio)))
-
-percent_sample_no_biotope <- no_biotope_years/sample_by_year$sample_routes*100
-
-hist(percent_sample_no_biotope)
-
-# how many of the biotope and subsection information is missing? Is all the route?
-
-occurr_sect_route |> 
-  group_by(year, vakio) |> 
-  summarise(total_rows = n(), count = sum(biotope == "")) |> 
-  filter(count != 0) |> 
-  mutate(vakio = as.factor(vakio)) |> 
-  pivot_longer(cols = c(total_rows, count), names_to = "category", values_to = "rows") |> 
-  ggplot(aes(x = vakio, y = rows, fill = category ))+
-  geom_col(position="dodge") + 
-  coord_flip() + 
-  facet_wrap(vars(year), scales="free")
-
-```
-
-```{r}
-coords_nm <- str_split(coords$name, pattern = ", ", simplify = T) |> 
-  as.data.frame()
-names(coords_nm) <- c("vakio", "str1", "str2", "numer")
-
-coords <- bind_cols(coords, coords_nm) |> 
-  left_join(y = no_biotope_routes_df, by = "vakio") |> 
-  mutate(vakio = as.numeric(vakio), times_missing = as.factor(ifelse(is.na(times_missing), 0, times_missing))) |> 
-  arrange(vakio)
-
-write_sf(coords, "data/fbs/coords.gpkg", delete_layer = T)
-
-```
+Species information in the FBS routes. There is no taxonomic data, so it needs to be retrieved from external data sets (using the GBIF and the Integrated Taxonomic Information System, ITIS as backup)
 
 ```{r}
 
-fin <- st_as_sf(map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
-
-lvls <- levels(coords$times_missing)
-turbo_discrete_colors <- viridis_pal(option = "turbo")(n = length(lvls) - 1)
-custom_colors <- c(
-  "0" = "gray",
-  setNames(turbo_discrete_colors, lvls[lvls != "0"])
-)
-
-table(coords$times_missing)
-
-coords |> 
-  ggplot() +
-  geom_sf(data = fin) +
-  geom_sf(aes(color = times_missing)) +
-  scale_color_manual(values = custom_colors, name = "times_missing", drop = FALSE)
-
-```
-
-```{r}
-
-# transforming raw data
-## calculating polygon information for biotope line
-
-route_i <- coords |> 
-  filter(vakio == 113) |> 
-  st_transform(crs = "EPSG:2393") 
-
-biotope_route_i <- occurr_sect_route |> 
-  filter(year == 2011, vakio == 113) |> 
-  select(biotopeStripId, startMeters, endMeters, meters, biotope, biotopeSpecifier) |> 
-  distinct() |> 
-  mutate(r_startMeters = startMeters/as.numeric(st_length(route_i)), r_endMeters = endMeters/as.numeric(st_length(route_i)))
-
-split_route_i <- list()
-
-for(r in 1:nrow(biotope_route_i)){
-  split_route_i[[r]] <- st_linesubstring(route_i, from = biotope_route_i$r_startMeters[r], to = biotope_route_i$r_endMeters[r])
-}
-
-split_route_i <- do.call("rbind", split_route_i) |> 
-  bind_cols(biotope_route_i) |> 
-  st_buffer(dist = 150, endCapStyle = "FLAT", joinStyle = "BEVEL")
-
-# if we keep this it is needed to extent the loop to all years and routes
-
-```
-
-
-```{r}
-## species info
-
-sppY <- unique(occurr_route$scientificName)
+spp_unique <- unique(occurr_sect_route$scientificName) |> sort()
 
 run <-  F
 
 if(run == T){
-  tax_raw <- taxize::classification(sppY, db = "gbif")
+  tax_raw <- taxize::classification(spp_unique, db = "gbif")
   missing_index <- which(is.na(tax_raw))
-  missing <- sppY[missing_index]
+  missing <- spp_unique[missing_index]
   tax_raw <- tax_raw[-missing_index]
   missing_tax <- taxize::classification(missing, db = "itis")
   tax_raw <- c(tax_raw, missing_tax)
@@ -312,37 +196,50 @@ if(run == T){
   tax_raw <- readRDS(file = "data/fbs/tax_raw_data.rds")
 }
 
-tax_i <- purrr::map2(tax_raw, names(tax_raw), .f = function(.x, .y){
-  if(!is.logical(.x)){
-    current_df <- as.data.frame(.x)
+tax_list <- list()
+
+for (current_name in names(tax_raw)) {
+  
+  current_data <- tax_raw[[current_name]]
+  
+  if (!is.null(current_data)) {
+    current_df <- as.data.frame(current_data)
     n.r <- nrow(current_df)
     cols <- current_df$rank
     high_rank <- cols[n.r]
+    
     info <- as.list(current_df$name)
     names(info) <- cols
     info <- as.data.frame(info)
+    
     info$id <- as.integer(current_df$id[n.r])
-    info$input_name <- .y  
+    info$input_name <- current_name 
     info$high_rank <- high_rank
+    
+    tax_list[[current_name]] <- info
   }
-  return(info)
-})
+}
 
-tax_i <- list_rbind(tax_i) |> 
+cols <- c("subkingdom", "infrakingdom", "subphylum", "infraphylum", "superclass",
+          "subclass", "infraclass", "suborder", "superfamily")
+
+tax <- list_rbind(tax_list) |> 
   relocate(subfamily, .after = family) |> 
   relocate(subspecies, .after = species) |> 
-  select(-c("subkingdom", "infrakingdom", "subphylum", "infraphylum", "superclass",
-            "subclass", "infraclass", "suborder", "superfamily"))
+  select(-any_of(cols))
 
-index_odo <- which(tax_i$subfamily == "Odocoileinae")
-tax_i$kingdom[index_odo] <- "Animalia"
-tax_i$phylum[index_odo] <- "Chordata"
-tax_i$class[index_odo] <- "Mammalia"
-tax_i$order[index_odo] <- "Artiodactila"
-tax_i$family[index_odo] <- "Cervidae"
+index_odo <- which(tax$subfamily == "Odocoileinae")
+tax$kingdom[index_odo] <- "Animalia"
+tax$phylum[index_odo] <- "Chordata"
+tax$class[index_odo] <- "Mammalia"
+tax$order[index_odo] <- "Artiodactila"
+tax$family[index_odo] <- "Cervidae"
+```
 
+
+```{r}
 # What classes do we have?
-class_data <- tax_i |>
+class_data <- tax |>
   count(class, name = "n")  |> 
   mutate(
     value = n / sum(n),
@@ -368,9 +265,12 @@ ggplot(class_data, aes(x = "", y = value, fill = fct_inorder(class))) +
                    ) +
   guides(fill = guide_legend(title = "Class")) +
   theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+```
 
+
+```{r}
 # Which is the distribution of birds in the data set? (using order)
-aves_order_data_barplot <- tax_i |>
+aves_order_data_barplot <- tax |>
   filter(class == 'Aves') |>
   count(order, name = 'n') |>
   mutate(percentage = n / sum(n)) |>
@@ -385,10 +285,13 @@ ggplot(aves_order_data_barplot, aes(x = reorder(order, -n), y = n, fill = order)
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         plot.title = element_text(hjust = 0.5, size = 14, face = 'bold')) +
-  geom_text(aes(label = n), vjust = -0.5, size = 3) 
+  geom_text(aes(label = n), vjust = -0.5, size = 3)
+```
 
+
+```{r}
 # What kind of taxonomic labels do we have?
-high_rank_data_barplot <- tax_i |>
+high_rank_data_barplot <- tax |>
   count(high_rank, name = 'n') |>
   mutate(percentage = n / sum(n)) |>
   arrange(desc(n))
@@ -403,16 +306,260 @@ ggplot(high_rank_data_barplot, aes(x = reorder(high_rank, -n), y = n, fill = hig
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         plot.title = element_text(hjust = 0.5, size = 14, face = 'bold')) +
   geom_text(aes(label = n), vjust = -0.5, size = 3)
+```
 
+
+```{r}
 ## From those that aren't species, how many of them are birds?
 
-tax_i |> 
+tax |> 
   filter(high_rank != "species", high_rank != "subspecies") |> 
   count(class, high_rank, name = 'n') |> 
   gt()
+
+#------
+
+spp_tax_data <- tax |> 
+  filter(high_rank == "species" | high_rank ==	"subspecies", class == "Aves")
+
+```
+
+We need to filter the route information data to actual places in which the selected species were observed. List from Bakx et al, 2023. So we need to ovelap the info from the list with the taxonomic data.
+
+```{r}
+species_list <- read.xlsx(xlsxFile = "data/ecs24559-sup-0001-appendixs1.xlsx", sheet = 1)
+
+species_list <- species_list |> 
+  mutate(in_route = species_list$Latin_name %in% spp_tax_data$input_name) 
+
+species <- species_list |> 
+  filter(in_route == T) |> 
+  select(Latin_name) |> 
+  pull()
+```
+
+From the pool of species we have `r length(species)` in the subset of FBS routes. We are missing the next:
+
+```{r}
+species_list |> 
+  filter(in_route == F) |>
+  gt()
+```
+
+Now the information routes need to be filtered to the species what we are looking for: 
+
+```{r}
+occurr_sect_route <- occurr_sect_route |> 
+  filter(scientificName %in% species)
+
+route_number_sppinfo <- occurr_sect_route$vakio |> 
+  unique()
+```
+
+```{r}
+# exploring spatial information on valid eventids (inside season, years and selected species) with biotope information
+
+no_biotope <- occurr_sect_route |> 
+  filter(biotope == "")
+no_biotope <- (table(no_biotope$vakio, no_biotope$year) > 0) 
+
+# a) what percentage of routes have no biotope information or subsection information
+# b) of those without information how many times have been without biotope info?
+
+no_biotope_routes <- no_biotope |> 
+  rowSums()
+
+## a 
+length(no_biotope_routes)/length(route_number_sppinfo)*100
+
+## b
+table(no_biotope_routes)/length(route_number_sppinfo)*100
+
+no_biotope_routes_df <- data.frame(
+  vakio = names(no_biotope_routes),
+  times_missing = no_biotope_routes
+)
+
+# how many routes have no had biotope or subsection info each year?
+# what percentege of routes that were sample each year dont have biotope or subsection info?
+
+no_biotope_years <- no_biotope |> 
+  colSums()
+
+sample_by_year <- occurr_sect_route |> 
+  filter(year != 2019) |> 
+  group_by(year) |> 
+  summarize(sample_routes = length(unique(vakio)))
+
+percent_sample_no_biotope <- no_biotope_years/sample_by_year$sample_routes*100
+
+hist(percent_sample_no_biotope, 
+     main = "Distribution of Annual Percentage of Routes with Missing Biotope Data",
+     xlab = "Percentage of Routes with Missing Biotope Data (%)")
+```
+
+
+```{r}
+# how many of the biotope and subsection information is missing? Is all the route?
+
+occurr_sect_route |> 
+  group_by(year, vakio) |> 
+  # 'total_rows' is the total number of sections, 'count' is the number of sections missing biotope info
+  summarise(total_rows = n(), count = sum(biotope == "")) |> 
+  filter(count != 0) |> 
+  mutate(vakio = as.factor(vakio)) |> 
+  pivot_longer(cols = c(total_rows, count), names_to = "category", values_to = "rows") |> 
+  ggplot(aes(x = vakio, y = rows, fill = category )) +
+  geom_col(position="dodge") + 
+  coord_flip() + 
+  facet_wrap(vars(year), scales="free") +
+  # Updated labels for better clarity
+  labs(
+    title = "Comparison of Total vs. Missing Biotope Sections for Affected Routes, by Year",
+    x = "Number of Sections",
+    y = "Route ID (vakio)",
+    fill = "Category"
+  ) +
+  # This function renames the items in the legend
+  scale_fill_discrete(
+    labels = c(
+      "count" = "Sections with Missing Biotope", 
+      "total_rows" = "Total Sections"
+    )
+  )
+
+```
+
+```{r}
+coords_nm <- str_split(coords$name, pattern = ", ", simplify = T) |> 
+  as.data.frame()
+names(coords_nm) <- c("vakio", "str1", "str2", "numer")
+
+route_number_sppinfo <- coords_nm$vakio %in% route_number_sppinfo
+
+coords <- bind_cols(coords, coords_nm) |> 
+  left_join(y = no_biotope_routes_df, by = "vakio") |> 
+  mutate(vakio = as.numeric(vakio), 
+         times_missing = as.factor(ifelse(is.na(times_missing), 0, times_missing)),
+         route_number_sppinfo = route_number_sppinfo) |> 
+  arrange(vakio)
+
+write_sf(coords, "data/fbs/coords.gpkg", delete_layer = T)
+
+```
+
+```{r}
+fin <- st_as_sf(map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
+
+lvls <- levels(coords$times_missing)
+turbo_discrete_colors <- viridis_pal(option = "turbo")(n = length(lvls) - 1)
+custom_colors <- c(
+  "0" = "gray",
+  setNames(turbo_discrete_colors, lvls[lvls != "0"])
+)
+
+coords |> 
+  ggplot() +
+  geom_sf(data = fin) +
+  geom_sf(aes(color = times_missing)) +
+  scale_color_manual(
+    values = custom_colors, 
+    name = "Number of Years Missing Data", 
+    drop = FALSE
+  ) +
+  labs(
+    title = "Frequency of Years with Missing Biotope Data per Survey Route",
+    subtitle = "Routes with no missing data are shown in grey."
+  ) +
+  theme_minimal()
+
+```
+```{r}
+coords |> 
+  ggplot() +
+  geom_sf(data = fin) +
+  geom_sf(aes(color = route_number_sppinfo), size = 1.5, alpha = 0.8) +
+  scale_color_manual(
+    values = c("TRUE" = "gray", "FALSE" = "red"),
+    labels = c("TRUE" = "Information Species", "FALSE" = "No Information Species"),
+    name = "Data Availability"
+  ) +
+  labs(
+    title = "Spatial Distribution of Finnish Bird Survey Routes",
+    subtitle = "Highlighting routes with and without focal species data"
+  ) +
+  theme_minimal()
+```
+
+
+```{r}
+
+table(coords$times_missing) |>
+  as.data.frame() |>
+  rename(
+    `Times Missing` = Var1, 
+    `Number of Routes` = Freq
+  ) |>
+  gt()
+
+```
+
+```{r}
+
+coords <- coords |> 
+  filter(route_number_sppinfo == TRUE)
+
+years_to_process <- unique(occurr_sect_route$year) |> sort()
+
+output_paths <- as.character()
+
+for (current_year in years_to_process) {
   
-
-
+  message(paste("--- Processing year:", current_year, "---"))
+  
+  split_route_list_year <- list()
+  
+  for (a in 1:nrow(coords)) {
+    route_id <- coords$vakio[a]
+    route_a <- coords |> 
+      filter(vakio == route_id) |> 
+      st_transform(crs = "EPSG:2393")
+      
+    biotope_route_a <- occurr_sect_route |> 
+      filter(year == current_year, vakio == route_id) |> # Using the 'current_year' variable
+      select(biotopeStripId, startMeters, endMeters, meters, biotope, biotopeSpecifier) |> 
+      distinct() |> 
+      mutate(
+        r_startMeters = startMeters / as.numeric(st_length(route_a)), 
+        r_endMeters = endMeters / as.numeric(st_length(route_a))
+      )
+      
+    # Proceed only if there is biotope data for this route in this year
+    if (nrow(biotope_route_a) > 0) {
+      split_route_i <- list()
+      for (r in 1:nrow(biotope_route_a)) {
+        split_route_i[[r]] <- st_linesubstring(
+          route_a, 
+          from = biotope_route_a$r_startMeters[r], 
+          to = biotope_route_a$r_endMeters[r]
+        )
+      }
+      split_route_list_year[[a]] <- do.call("rbind", split_route_i) |> 
+        bind_cols(biotope_route_a) |> 
+        st_buffer(dist = 150, endCapStyle = "FLAT", joinStyle = "BEVEL")
+    }
+  }
+  
+  if (length(split_route_list_year) > 0) {
+    year_sf <- st_as_sf(do.call("rbind", split_route_list_year))
+    output_filename <- paste0("data/fbs/route_sections_", current_year, ".gpkg")
+    write_sf(year_sf, output_filename, delete_layer = TRUE)
+    output_paths <- c(output_paths, output_filename)
+    message(paste("Saved file:", output_filename))
+  } else {
+    message(paste("No biotope data found for any route in year", current_year, ". Skipping."))
+  }
+}
 ```
 
 
