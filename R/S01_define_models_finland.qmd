@@ -356,17 +356,22 @@ route_number_sppinfo <- occurr_sect_route$vakio |>
   unique()
 ```
 
+Now lets to explore the spatial information on valid eventids (inside season, years and selected species) with biotope information
+
 ```{r}
 # exploring spatial information on valid eventids (inside season, years and selected species) with biotope information
 
+occurr_sect_route <- occurr_sect_route |> 
+  mutate(biotope_logic = ifelse(biotope == "", yes = 0, no = 1))
+
 no_biotope <- occurr_sect_route |> 
   filter(biotope == "")
-no_biotope <- (table(no_biotope$vakio, no_biotope$year) > 0) 
+no_biotope_table <- (table(no_biotope$vakio, no_biotope$year) > 0) 
 
 # a) what percentage of routes have no biotope information or subsection information
 # b) of those without information how many times have been without biotope info?
 
-no_biotope_routes <- no_biotope |> 
+no_biotope_routes <- no_biotope_table |> 
   rowSums()
 
 ## a 
@@ -383,7 +388,7 @@ no_biotope_routes_df <- data.frame(
 # how many routes have no had biotope or subsection info each year?
 # what percentege of routes that were sample each year dont have biotope or subsection info?
 
-no_biotope_years <- no_biotope |> 
+no_biotope_years <- no_biotope_table |> 
   colSums()
 
 sample_by_year <- occurr_sect_route |> 
@@ -448,6 +453,8 @@ write_sf(coords, "data/fbs/coords.gpkg", delete_layer = T)
 
 ```
 
+How the missing biotope routes are spread in the country? Is some are prone to have less data?
+
 ```{r}
 fin <- st_as_sf(map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
 
@@ -474,6 +481,8 @@ coords |>
   theme_minimal()
 
 ```
+Is some route without no species information?
+
 ```{r}
 coords |> 
   ggplot() +
@@ -481,7 +490,7 @@ coords |>
   geom_sf(aes(color = route_number_sppinfo), size = 1.5, alpha = 0.8) +
   scale_color_manual(
     values = c("TRUE" = "gray", "FALSE" = "red"),
-    labels = c("TRUE" = "Information Species", "FALSE" = "No Information Species"),
+    labels = c("TRUE" = "Species Information", "FALSE" = "No Species Information"),
     name = "Data Availability"
   ) +
   labs(
@@ -504,22 +513,80 @@ table(coords$times_missing) |>
 
 ```
 
+Less than 5% of the routes have problems of "no biotope". If we remove these routes and sections, how many species are we loossing? How many info of them?
+
+```{r}
+
+occurrence_data <-  table(scientificName = occurr_sect_route$scientificName, biotope_logic = occurr_sect_route$biotope_logic) |>
+  as.data.frame() |>
+  pivot_wider(id_cols = scientificName, names_from = biotope_logic, values_from = Freq) |>
+  rename(no_biotope_occurrences = `0`, biotope_occurrences = `1`) |>
+  mutate(total_occurrences = (no_biotope_occurrences + biotope_occurrences),
+         percent_no_biotope_occurrences = round((no_biotope_occurrences / total_occurrences) * 100, 2))
+
+
+paircount_data <- occurr_sect_route |>
+  group_by(scientificName, biotope_logic) |>
+  summarise(total_pairCount = sum(pairCount, na.rm = TRUE), .groups = 'drop') |>
+  pivot_wider(
+    id_cols = scientificName,
+    names_from = biotope_logic,
+    values_from = total_pairCount,
+    values_fill = 0 # Fill NA with 0 if a species/biotope_logic combination has no pairCount entries
+  ) |>
+  rename(
+    no_biotope_pairCount = `0`,
+    biotope_pairCount = `1`
+  ) |> 
+  mutate(
+    total_pairCount = no_biotope_pairCount + biotope_pairCount,
+    percent_no_biotope_pairCount = round((no_biotope_pairCount / total_pairCount) * 100, 2)
+  )
+
+combined_data <- occurrence_data |>
+  left_join(paircount_data, by = "scientificName")
+
+combined_data |> 
+  arrange(desc(percent_no_biotope_pairCount)) |> 
+  gt() |>
+  tab_spanner("Pair Count", 
+              columns= ends_with("pairCount")) |> 
+  cols_label(
+    no_biotope_occurrences = "No Biotope",
+    biotope_occurrences = "Biotope",
+    total_occurrences = "Total",
+    percent_no_biotope_occurrences = "% No Biotope",
+    no_biotope_pairCount = "No Biotope (PairCount)",
+    biotope_pairCount = "Biotope (PairCount)",
+    total_pairCount = "Total PairCount",
+    percent_no_biotope_pairCount = "% No Biotope (PairCount)"
+  ) |> 
+  opt_stylize(style = 1, color="cyan")
+
+```
+
+
 ```{r}
 
 coords <- coords |> 
   filter(route_number_sppinfo == TRUE)
 
-years_to_process <- unique(occurr_sect_route$year) |> sort()
+years_to_process <- unique(occurr_sect_route$year) |> 
+  sort()
 
-output_paths <- as.character()
+output_paths <- data.frame("year" = years_to_process, "path" = NA)
 
-for (current_year in years_to_process) {
+for (y in 1:length(years_to_process)) {
   
+  current_year <- years_to_process[y]
+  
+  #current_year <- 2009
   message(paste("--- Processing year:", current_year, "---"))
   
   split_route_list_year <- list()
   
   for (a in 1:nrow(coords)) {
+    #a <- 127
     route_id <- coords$vakio[a]
     route_a <- coords |> 
       filter(vakio == route_id) |> 
@@ -535,7 +602,9 @@ for (current_year in years_to_process) {
       )
       
     # Proceed only if there is biotope data for this route in this year
-    if (nrow(biotope_route_a) > 0) {
+    # Also proceed only if there are more than one biotope, only one is flag to 
+    # no biotope data
+    if (nrow(biotope_route_a) > 1) {
       split_route_i <- list()
       for (r in 1:nrow(biotope_route_a)) {
         split_route_i[[r]] <- st_linesubstring(
@@ -544,9 +613,21 @@ for (current_year in years_to_process) {
           to = biotope_route_a$r_endMeters[r]
         )
       }
-      split_route_list_year[[a]] <- do.call("rbind", split_route_i) |> 
+      
+      split_route_i <- do.call("rbind", split_route_i) |> 
         bind_cols(biotope_route_a) |> 
+        mutate(geom_type = st_geometry_type(geometry))
+      
+      split_route_flat <- split_route_i|> 
+        filter(geom_type == "LINESTRING") |> 
         st_buffer(dist = 150, endCapStyle = "FLAT", joinStyle = "BEVEL")
+      
+      split_route_point <- split_route_i|> 
+        filter(geom_type == "POINT") |> 
+        st_buffer(dist = 150)
+        
+      split_route_list_year[[a]] <- rbind(split_route_flat, split_route_point) |> 
+        arrange(r_endMeters)
     }
   }
   
@@ -554,13 +635,15 @@ for (current_year in years_to_process) {
     year_sf <- st_as_sf(do.call("rbind", split_route_list_year))
     output_filename <- paste0("data/fbs/route_sections_", current_year, ".gpkg")
     write_sf(year_sf, output_filename, delete_layer = TRUE)
-    output_paths <- c(output_paths, output_filename)
+    output_paths[y,"path"] <- output_filename
     message(paste("Saved file:", output_filename))
   } else {
     message(paste("No biotope data found for any route in year", current_year, ". Skipping."))
   }
 }
 ```
+
+We remove the routes without biotope data in an eture year. In case of the route 148 in the year 2009 there is no information. After this removing, did we lose species?
 
 
 From `r min(years)`to `r max(years)` (`r max(years) - min(years)` years), the number of 2x2 km squares sampled was `r length(unique(localityYear$karta))` and `r length(unique(localityYear$sampleUnit))` sampling units and according to unique coordinates `r length(unique(paste0(localityYear$rt90_o, ";", localityYear$rt90_n)))`). It were counted a total number of visits of `r nrow(localityYear)` (year, square, unit). . **In that way, there are units or big squares that werent visited all the years**.
