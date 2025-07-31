@@ -526,7 +526,7 @@ occurrence_data <-  table(scientificName = occurr_sect_route$scientificName, bio
 
 
 paircount_data <- occurr_sect_route |>
-  group_by(scientificName, biotope_logic) |>
+  group_by(scientificName) |>
   summarise(total_pairCount = sum(pairCount, na.rm = TRUE), .groups = 'drop') |>
   pivot_wider(
     id_cols = scientificName,
@@ -562,6 +562,14 @@ combined_data |>
     percent_no_biotope_pairCount = "% No Biotope (PairCount)"
   ) |> 
   opt_stylize(style = 1, color="cyan")
+
+```
+```{r}
+number_strip <- str_split(occurr_sect_route$biotopeStripId, pattern = "#", simplify = T) |> 
+  as.data.frame()
+names(number_strip) <- c("str1", "number")
+
+occurr_sect_route <- occurr_sect_route |> mutate(number = as.numeric(number))
 
 ```
 
