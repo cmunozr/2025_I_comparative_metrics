@@ -2,45 +2,14 @@ library(rvest)
 library(dplyr)
 library(stringr)
 library(xml2)
-library(deeplr)
+library(fs)
 options(timeout = 1000)
 
 #-----------------
-
-get_all_disk_space_windows <- function() {
-  command <- "wmic"
-  args <- c("logicaldisk", "get", "Caption,Freespace,Size")
-  result <- system2(command, args, stdout = TRUE, stderr = TRUE)
-  
-  # Filter out empty lines, headers, and any "No Instance(s)" messages
-  result <- result[nchar(result) > 0]
-  result <- result[!grepl("Caption", result) & !grepl("---", result) & !grepl("No Instance", result)]
-  
-  parsed_lines <- lapply(result, function(line) {
-    parts <- str_split(line, "\\s\\s+")[[1]]
-    parts <- parts[parts != ""]
-    return(parts)
-  })
-  
-  df_output <- do.call(rbind, parsed_lines) |> as.data.frame(stringsAsFactors = FALSE)
-  colnames(df_output) <- c("Caption", "FreeSpace_bytes", "Size_bytes")
-  
-  df_output$FreeSpace_bytes <- as.numeric(df_output$FreeSpace_bytes)
-  df_output$Size_bytes <- as.numeric(df_output$Size_bytes)
-  
-  # Filter out any rows that might have non-numeric data or a carriage return after conversion
-  df_output <- df_output |>
-    filter(!is.na(FreeSpace_bytes) & !is.na(Size_bytes)) |>
-    filter(!if_any(everything(), ~ str_detect(., "\r")))
-  
-  return(df_output)
-}
-
-#----------------------
+# Download TREE HEIGHT
+# https://www.sciencedirect.com/science/article/pii/S0034425723003486?via%3Dihub
 
 target_disk <- "D:"
-
-#--------------------------
 
 base_url <- "https://glad.umd.edu/users/Potapov/Europe_TCH/Tree_Height/"
 
@@ -78,13 +47,44 @@ for (url in tif_links) {
   })
 }
 
+#-----------------
+# Latvus model is quite big, it is needed a way to identify space disk in my storage units
+
+get_all_disk_space_windows <- function() {
+  command <- "wmic"
+  args <- c("logicaldisk", "get", "Caption,Freespace,Size")
+  result <- system2(command, args, stdout = TRUE, stderr = TRUE)
+  
+  # Filter out empty lines, headers, and any "No Instance(s)" messages
+  result <- result[nchar(result) > 0]
+  result <- result[!grepl("Caption", result) & !grepl("---", result) & !grepl("No Instance", result)]
+  
+  parsed_lines <- lapply(result, function(line) {
+    parts <- str_split(line, "\\s\\s+")[[1]]
+    parts <- parts[parts != ""]
+    return(parts)
+  })
+  
+  df_output <- do.call(rbind, parsed_lines) |> as.data.frame(stringsAsFactors = FALSE)
+  colnames(df_output) <- c("Caption", "FreeSpace_bytes", "Size_bytes")
+  
+  df_output$FreeSpace_bytes <- as.numeric(df_output$FreeSpace_bytes)
+  df_output$Size_bytes <- as.numeric(df_output$Size_bytes)
+  
+  # Filter out any rows that might have non-numeric data or a carriage return after conversion
+  df_output <- df_output |>
+    filter(!is.na(FreeSpace_bytes) & !is.na(Size_bytes)) |>
+    filter(!if_any(everything(), ~ str_detect(., "\r")))
+  
+  return(df_output)
+}
+
 #---------------------
+# Download from metsakeskus: LATVUS model
 
 preferred_disk_order <- c("D:", "E:")
 
-years <- c(2017, 2019, 2021)
-
-#---------------------
+years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
 
 base_url <- "https://avoin.metsakeskus.fi/aineistot/Latvusmalli/Karttalehti/"
 
@@ -203,25 +203,37 @@ for(i in 1:length(folder_links)){
 }
 
 #---------------------
+# download from LUKE: 
+# https://kartta.luke.fi/opendata/valinta.html
+# Average stand diameter, Average stand length, Canopy cover broadleaves
+# Canopy cover whole stand, Stand age, Stand basal area, Total wood volume
+# Spruce volume
+# first run _utilities_download_shultz_covariates.py
+# extract list of links from mail
+# run next
 
 luke_urls <- readClipboard() #comming from the mail
 
-for (i in 1:length(luke_urls)) {
-  
+for (i in 11:length(luke_urls)) {
+  #i <- 10
   url_i <- luke_urls[i]
   
   webpage <- read_html(url_i)
   
-  nm_fi <- webpage |>
+  nm <- webpage |>
     html_node("table") |> 
     paste(concatenate = ",") |> 
     str_split(pattern = "<td>|</td>", simplify = T)
-  nm_fi <- (nm_fi[2]) |> 
-    str_replace_all(pattern = " ", replacement = "_")
+  nm <- (nm[2]) |> 
+    str_replace_all(pattern = " |/|-", replacement = "_")
+
+  yr_ <- str_extract_all(nm, pattern = "\\d")[[1]]
   
-  nm <- deeplr::toEnglish2(text = nm_fi, preserve_formatting = T, source_lang = "FI") # get an API key free service in DeepL, add it usethis::edit_r_environ(), check Sys.getenv("DEEPL_API_KEY")
+  if(length(yr_) == 5){
+    yr_ <- yr_[-5]
+  }
   
-  yr_ <- str_extract_all(nm, pattern = "\\d")[[1]] |> 
+  yr_ <- yr_ |> 
     paste(collapse = "")
   
   links <- webpage |> 
@@ -246,4 +258,62 @@ for (i in 1:length(luke_urls)) {
   }, error = function(e) {
     message(paste0("Error downloading ", filename, ": ", e$message))
   })
+}
+
+#------
+
+library(fs)
+
+base_directory <- "E:/luke/"
+
+# Get a list of all main folders (FolderX, e.g., Folder1, Folder2)
+main_folders <- dir_ls(base_directory, type = "directory")
+
+# Loop through each main folder
+for (folder_path in main_folders) {
+  #folder_path <- main_folders[1]
+  folder_name <- path_file(folder_path)
+  
+  zip_files_in_folder <- dir_ls(folder_path, glob = "*.zip")
+  
+  for (zip_file_path in zip_files_in_folder) {
+    # zip_file_path <- zip_files_in_folder[1]
+    zip_file_name <- path_file(zip_file_path)
+    
+    # Create a temporary directory for extraction
+    temp_extract_dir <- path(base_directory, paste0("temp_extract_", Sys.time() |> as.integer(), "_", sample(1:1000, 1)))
+    dir_create(temp_extract_dir)
+    
+    # Attempt to unzip the current zip file
+    unzip_success <- tryCatch({
+      unzip(zip_file_path, exdir = temp_extract_dir, junkpaths = FALSE)
+      TRUE
+    }, error = function(e) {
+      message(paste0("    ERROR unzipping '", zip_file_name, "': ", e$message, "\n"))
+      FALSE
+    })
+    
+    if (!unzip_success) {
+      dir_delete(temp_extract_dir) # Clean up failed temp dir
+      next
+    }else{
+      subfolder <- dir_ls(temp_extract_dir, type = "directory")
+      
+      
+      # --- Process nested zip files ---
+      nested_zip_files <- dir_ls(subfolder, glob = "*.zip")
+      
+      if (length(nested_zip_files) > 0) {
+        for (nested_zip in nested_zip_files) {
+          target_path <- path(folder_path, path_file(nested_zip))
+          file_move(nested_zip, target_path)
+        }
+      }
+      
+      # --- Deleting ---
+      
+      file_delete(zip_file_path)
+      dir_delete(temp_extract_dir)
+    }
+  }
 }

@@ -159,10 +159,10 @@ all_map_boxes = [
     "L2", "L3", "L4", "L5", "K2", "K3", "K4"
 ]
 
-# The specific themes you want to download, with year-specific templates.
+# The specific themes, with year-specific templates.
 # Each key (common name) maps to a dictionary of year-specific templates or a 'default'.
 desired_themes_template = {
-    # "Stand mean diameter": {
+    #"Stand mean diameter": {
     #    "2009": "Mean diameter of stand {} (cm)",
     #    "default": "Stand mean diameter of {} (cm)"
     #},
@@ -178,26 +178,26 @@ desired_themes_template = {
     #    "2009": "Canopy cover {} (%)",
     #    "default": "Canopy cover {} (%)"
     #},
-    "Stand age": {
-        "2009": "Stand age of growing stock {} (year)",
-        "default": "Stand age {} (year)"
-    },
-    "Stand basal area": {
-        "2009": "Stand basal area {} (m2/ha)", 
-        "default": "Stand basal area {} (m2/ha)"
-    }#,
-    #"Volume, the growing stock": {
-    #    "2009": "Volume of the growing stock {} (m3/ha)",
-    #    "default": "Volume, the growing stock {} (m3/ha)"
+    #"Stand age": {
+    #    "2009": "Stand age of growing stock {} (year)",
+    #    "default": "Stand age {} (year)"
     #},
-    #"Volume, spruce": {
-    #    "2009": "Spruce volume {} (m3/ha)",
-    #    "default": "Volume, spruce {} (m3/ha)"
-    #}
+    #"Stand basal area": {
+    #    "2009": "Stand basal area {} (m2/ha)", 
+    #    "default": "Stand basal area {} (m2/ha)"
+    #},
+    "Volume, the growing stock": {
+        "2009": "Volume of the growing stock {} (m3/ha)",
+        "default": "Volume, the growing stock {} (m3/ha)"
+    },
+    "Volume, spruce": {
+        "2009": "Spruce volume {} (m3/ha)",
+        "default": "Volume, spruce {} (m3/ha)"
+    }
 }
 
 
-# The years for which data is available and you want to download (excluding 2006).
+# The years for which data is available and want to download (excluding 2006).
 available_years = [2009, 2011, 2013, 2015, 2017, 2019, 2021]
 
 # Maximum number of map boxes to request per single download URL.
@@ -242,16 +242,15 @@ if __name__ == "__main__":
                 print(f"\n----- Processing Batch {i+1} of {len(map_box_batches)} for '{current_theme_text}' -----")
                 
                 # Construct a unique email address for this specific request for better organization
-                # IMPORTANT: Replace 'your.email@example.com' with your actual email address
-                email_suffix = f"{theme_key.replace(' ', '_').replace('(', '').replace(')', '')}_{year}_batch{i+1}"
-                your_actual_email = f"cmunozbiol+{email_suffix}@gmail.com" # <--- REPLACE THIS LINE
+                email_suffix = f"{theme_key.replace(' ', '_').replace('(', '').replace(')', '').replace(',', '')}_{year}_batch{i+1}"
+                actual_email = f"cmunozbiol+{email_suffix}@gmail.com"
                 
                 # Execute the automation helper function
                 automate_luke_download_simplified(
                     year=year,
                     theme_text=current_theme_text,
                     map_box_identifiers=batch,
-                    email=your_actual_email,
+                    email=actual_email,
                     accept_license=True
                 )
                 
@@ -274,5 +273,5 @@ if __name__ == "__main__":
 
     print("\n==================================================")
     print("ALL SPECIFIED THEMES ACROSS ALL AVAILABLE YEARS HAVE BEEN PROCESSED.")
-    print("Please check your email for download links.")
+    print("Check email for download links.")
     print("==================================================")
