@@ -3,33 +3,30 @@ library(sf)
 library(terra)
 
 # shape de corte
-path_shape <- "data/nordic_countries.gpkg"
-
+path_shape <- "data/finland_square.gpkg"
 
 mask_ <- path_shape %>% 
   sf::st_read() %>%  
   sf::st_transform(st_crs(4326)) %>% 
   terra::vect()
-template <- rast(resolution = c(0.008333333, 0.008333333), crs = crs(mask_ ), ext(mask_), vals = 1)
 
-dirs <- list.dirs("data/covariates/", recursive = F, full.names = T)[-1]
-#dirs_nm <- list.dirs("neotropico/ALPHA/", recursive = F, full.names = F)[-2]
+dirs <- "D:/tree_high_Europe/"
+new_dir <- paste0(dirname(dirs), basename(dirs), "_fi")
+dir.create(new_dir, showWarnings = F, recursive = T)
 
 for(i in 1:length(dirs)){
-  print(dirs[i])
   #i <- 1
+  message(dirs[i])
   listi <- list.files(dirs, recursive = F, full.names = T, pattern = "*.adf$|*.tif$")
-  #listi <- dirs
   
   for(a in 1:length(listi)){
     #a <- 1
+    message(listi[a])
     ras.a <- terra::rast(listi[a])
     print(listi[a])
-    mask.a <- ras.a %>% raster::crop(template) # %>% raster::mask(mask.t)
-    #mask.a <- trunc(mask.a)
+    mask.a <- ras.a %>% terra::crop(mask_)
     terra::writeRaster(
-      x = mask.a, filename = paste0(dirs[i], "/", names(ras.a), "_.tif"),
-      #x = mask.a, filename = paste0(dirs[i], "/", dirs_nm[a], "_.tif"),
+      x = mask.a, filename = paste0(new_dir[i], "/", basename(listi[a])),
       overwrite = T, NAflag = -9999, gdal = c("COMPRESS=LZW", "TFW=NO")
     )
   }
@@ -39,3 +36,4 @@ for(i in 1:length(dirs)){
   # dir_raster <- rasterOptions()[["tmpdir"]]
   # file.remove(list.files(dir_raster, full.names = T, recursive = F))
 }
+

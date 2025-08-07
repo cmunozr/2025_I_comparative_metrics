@@ -97,6 +97,7 @@ library(viridis)
 library(lwgeom)
 library(ggrepel)
 library(gt)
+library(exactextractr)
 ```
 
 ```{r}
@@ -162,7 +163,7 @@ routes |>
   filter(vakio_out == 1)
   ##  No need to filter coords
   
-# Filtering routes and routes
+# Filtering routes and occurrences in routes
 
 routes <- routes |> 
   filter(out_date != 1)
@@ -172,6 +173,8 @@ occurr_route <- occurr_route |>
 
 occurr_sect_route <- occurr_sect_route |> 
   filter(out_date != 1)
+
+rm(event_ids_to_match)
 
 
 ```
@@ -192,8 +195,13 @@ if(run == T){
   missing_tax <- taxize::classification(missing, db = "itis")
   tax_raw <- c(tax_raw, missing_tax)
   saveRDS(object = tax_raw, file = "data/fbs/tax_raw_data.rds")
+  
+  rm(missing_index, missing, missing_tax)
+  
 }else{
+  
   tax_raw <- readRDS(file = "data/fbs/tax_raw_data.rds")
+  
 }
 
 tax_list <- list()
@@ -234,6 +242,8 @@ tax$phylum[index_odo] <- "Chordata"
 tax$class[index_odo] <- "Mammalia"
 tax$order[index_odo] <- "Artiodactila"
 tax$family[index_odo] <- "Cervidae"
+
+rm(index_odo, current_data, current_df, n.r, cols, high_rank, info, tax_raw)
 ```
 
 
@@ -265,6 +275,8 @@ ggplot(class_data, aes(x = "", y = value, fill = fct_inorder(class))) +
                    ) +
   guides(fill = guide_legend(title = "Class")) +
   theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+rm(class_data)
 ```
 
 
@@ -286,6 +298,8 @@ ggplot(aves_order_data_barplot, aes(x = reorder(order, -n), y = n, fill = order)
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         plot.title = element_text(hjust = 0.5, size = 14, face = 'bold')) +
   geom_text(aes(label = n), vjust = -0.5, size = 3)
+
+rm(aves_order_data_barplot)
 ```
 
 
@@ -306,6 +320,8 @@ ggplot(high_rank_data_barplot, aes(x = reorder(high_rank, -n), y = n, fill = hig
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         plot.title = element_text(hjust = 0.5, size = 14, face = 'bold')) +
   geom_text(aes(label = n), vjust = -0.5, size = 3)
+
+rm(high_rank_data_barplot)
 ```
 
 
@@ -401,6 +417,8 @@ percent_sample_no_biotope <- no_biotope_years/sample_by_year$sample_routes*100
 hist(percent_sample_no_biotope, 
      main = "Distribution of Annual Percentage of Routes with Missing Biotope Data",
      xlab = "Percentage of Routes with Missing Biotope Data (%)")
+
+rm(no_biotope, no_biotope_routes, no_biotope_years, no_biotope_routes, no_biotope_table, sample_by_year, percent_sample_no_biotope, sample_by_year)
 ```
 
 
@@ -451,9 +469,11 @@ coords <- bind_cols(coords, coords_nm) |>
 
 write_sf(coords, "data/fbs/coords.gpkg", delete_layer = T)
 
+rm(coords_nm)
+
 ```
 
-How the missing biotope routes are spread in the country? Is some are prone to have less data?
+How the missing biotope routes are spread in the country? Is some area prone to have less data?
 
 ```{r}
 fin <- st_as_sf(map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
@@ -480,8 +500,9 @@ coords |>
   ) +
   theme_minimal()
 
+rm(lvls, turbo_discrete_colors, custom_colors)
 ```
-Is some route without no species information?
+Is some route without no target species information?
 
 ```{r}
 coords |> 
@@ -519,14 +540,20 @@ Less than 5% of the routes have problems of "no biotope". If we remove these rou
 
 occurrence_data <-  table(scientificName = occurr_sect_route$scientificName, biotope_logic = occurr_sect_route$biotope_logic) |>
   as.data.frame() |>
-  pivot_wider(id_cols = scientificName, names_from = biotope_logic, values_from = Freq) |>
-  rename(no_biotope_occurrences = `0`, biotope_occurrences = `1`) |>
-  mutate(total_occurrences = (no_biotope_occurrences + biotope_occurrences),
+  pivot_wider(id_cols = scientificName, 
+              names_from = biotope_logic, 
+              values_from = Freq
+              ) |>
+  rename(no_biotope_occurrences = `0`, 
+         biotope_occurrences = `1`
+         ) |>
+  mutate(
+    total_occurrences = (no_biotope_occurrences + biotope_occurrences),
          percent_no_biotope_occurrences = round((no_biotope_occurrences / total_occurrences) * 100, 2))
 
 
 paircount_data <- occurr_sect_route |>
-  group_by(scientificName) |>
+  group_by(scientificName, biotope_logic) |>
   summarise(total_pairCount = sum(pairCount, na.rm = TRUE), .groups = 'drop') |>
   pivot_wider(
     id_cols = scientificName,
@@ -563,13 +590,17 @@ combined_data |>
   ) |> 
   opt_stylize(style = 1, color="cyan")
 
+rm(occurrence_data, paircount_data)
 ```
+
 ```{r}
 number_strip <- str_split(occurr_sect_route$biotopeStripId, pattern = "#", simplify = T) |> 
   as.data.frame()
 names(number_strip) <- c("str1", "number")
 
-occurr_sect_route <- occurr_sect_route |> mutate(number = as.numeric(number))
+occurr_sect_route <- bind_cols(occurr_sect_route, number_strip)
+
+rm(number_strip)
 
 ```
 
@@ -651,12 +682,6 @@ for (y in 1:length(years_to_process)) {
 }
 ```
 
-We remove the routes without biotope data in an eture year. In case of the route 148 in the year 2009 there is no information. After this removing, did we lose species?
-
-
-From `r min(years)`to `r max(years)` (`r max(years) - min(years)` years), the number of 2x2 km squares sampled was `r length(unique(localityYear$karta))` and `r length(unique(localityYear$sampleUnit))` sampling units and according to unique coordinates `r length(unique(paste0(localityYear$rt90_o, ";", localityYear$rt90_n)))`). It were counted a total number of visits of `r nrow(localityYear)` (year, square, unit). . **In that way, there are units or big squares that werent visited all the years**.
-
-
 ### Species data
 
 ```{r}
@@ -679,135 +704,266 @@ hist(P, xlab = "Species prevalence (P)",xlim=c(0,1))
 
 Most species exhibit low prevalence, clustering towards the rare end of the spectrum, while a few species show a significantly higher prevalence, indicating they are common across the sampled areas, even an species is occurring in the `r max(P)` of sites (`r names(which(P == max(P)))`).
 
-### Covariates
+### Extracting information from Covariates
 
-#### Forest
-
-"Three national maps containing information about Sweden’s woodlands and forests are already available. These maps include data collected in 2000, 2005 and 2010, each with cells of 25 x 25 metres. Up until 2010, the maps were based solely on satellite images from Landsat and SPOT. The 2015 SLU Forest Map contains a number of raster maps created by co-processing field inventories from Sweden’s National Forest Inventory (SLU), surface models from the Land Survey’s stereo-matched aerial photographs, and satellite images from Sentinel-2. The 2015 expansion of the SLU Forest Map was limited to areas where high-resolution images were available." SLU Web
-
-![Coverage of national forest maps by year](images/coverage_SLU.png)
+Online repositories are not deployed as Web Feature Service in which we can work "in-situ". It was needed to download the data sets. Data sets are massive and splitted over several storage units. To consult how they were downloaded please refer to scripts "_utilities_download_shultz_covariates.R" and "_utilities_download_shultz_covariates.py".
 
 ```{r}
-lsuZips <- list.files("data/covariates/slu_forest/", pattern = ".zip", recursive = T, full.names = T)
-lsuZipsSplit <- str_split(lsuZips, pattern = "/", simplify = T)
 
-lsuList <- list()
+find_root_folder <- function(folder_name) {
+  drive_info <- shell('wmic logicaldisk get name', intern = TRUE)
+  search_roots <- trimws(grep("^[A-Z]:", drive_info, value = TRUE))
 
-run <- F
-
-if(run){
-  
-  for(i in 1:length(lsuZips)){
-    # i <- 4
-    files_in_zip <- unzip(lsuZips[i], list = TRUE)$Name
-    zip_tif <- grep("*_P_.*\\.tif$", files_in_zip, value = T)
-    
-    lsutmp <- list()
-    
-    for(a in 1:length(zip_tif)){
-      # a  <- 2
-      r <- rast(paste0("/vsizip/", lsuZips[i], "/", zip_tif)[a])
+  found_paths <- c()
+  for (root_path in search_roots) {
+    path_to_check <- file.path(root_path, folder_name)
+    if (dir.exists(path_to_check)) {
+      folders <- list.dirs(path_to_check, recursive = F, full.names = T)
+      if(length(folders) == 0){
+        found_paths <- c(found_paths, path_to_check)
+      }else{
+        found_paths <- c(found_paths, folders)  
+      }
       
-      # # Create a new temp raster
-      r2 <- r
-      
-      #rescale temp raster to new resolution
-      res(r2) <- 100 
-      # 
-      # Resample the raster to 100m x 100m using mean aggregation
-      r_resampled <- resample(r, r2, method = "average")
-      
-      lsutmp[[a]] <- coordSampleUnits |> 
-        st_transform(crs=crs(r)) |> 
-        terra::extract(x = r_resampled) |> 
-        select(all_of(names(r)))
     }
-    
-    lsuList[[i]] <- bind_cols(lsutmp)
-    
   }
-  
-  save(lsuList, file = file.path("data", "covariates", "slu_forest", "extracted_data.RData"))
-}else{
-  load(file = file.path("data", "covariates", "slu_forest", "extracted_data_100m.RData"))
+  return(found_paths)
 }
-
-names(lsuList) <- years
 ```
 
+#### Three high
+
+Dataset that models the changes in tree canopy height across Europe from 2001 to 2021 using multidecadal spectral data from the Landsat archive and calibration data
+from Airborne Laser Scanning (ALS) and spaceborne Global Ecosystem Dynamics Investigation (GEDI) lidars.
+
 
 ```{r}
-get_forest_info <- function(locality.df, forest.list, years) {
-  result <- list()
-  for (i in 1:length(years)) {
-    year_i <- as.character(years[i])
-    index <- which(locality.df$yr == year_i)
-    if (year_i %in% names(forest.list)) {
-      info_i <- forest.list[[year_i]]
-      colnames(info_i) <- sub(pattern = "_[0-9]{2}", replacement = "", colnames(info_i) )
-      df <- info_i[index, ] |> 
-        mutate(index = index, yr = year_i)
-      result[[i]] <- df
-    }
-  }
-  result <- bind_rows(result)
-  result <- result[order(result$index), ] |>
-    relocate(index, yr, last_col())
-  
-  return(result)
-}
+tree_high_europe <- find_root_folder("tree_high_Europe")
+full_path <- list.files(tree_high_europe, "*.tif$", full.names = T, recursive = F)
 
-forestRaw <- get_forest_info(locality.df = localityYear, forest.list = lsuList, years = years) |> 
-  filter(yr != 2015) |> ########## Watchout!!!!!!!!!!!!
-  select(-DIAMETER_XX_P, -BASALAREA_XX_P, ) |> 
-  filter(if_any(-c(index, yr), ~ !is.na(.))) 
-
-forestRaw[is.na(forestRaw) ] <- 0 ########## Watchout!!!!!!!!!!!!
-
-table(forestRaw$yr)
+tree_high_europe <-
+  tibble(path = full_path) |>
+  tidyr::extract(
+    col = path,
+    into = c("var", "year"),
+    regex = ".*/(.+?)_(\\d{4}).*\\.tif$",
+    convert = TRUE,
+    remove = FALSE
+  ) |>
+  dplyr::mutate(
+    dataset = "tree_high_eu",
+    UTM200 = NA,
+    UTM10 = NA
+  ) |>
+  dplyr::select(dataset, var, path, year, UTM200, UTM10) |> 
+  arrange(year)
 
 ```
 
+#### Luke (Multi Source National Forest Inventory)
+
 
 ```{r}
-forestRaw_long <- forestRaw |> 
-  select(-c(index, yr)) |> 
-  pivot_longer(cols = c(1:11))
+luke <- find_root_folder("luke")
+full_path <- list.files(luke, "*.zip$", full.names = T, recursive = F)
 
-# Calculate NA and zero counts per variable
-na_zero_summary <- forestRaw_long |> 
-  group_by(name) |> 
-  summarise(
-    n_na = sum(is.na(value)),
-    n_zero = sum(value == 0, na.rm = TRUE), # na.rm = TRUE to ignore NA in the comparison
-    total_n = n()
-  ) |> 
+split_utm_code <- function(code) {
+  # Check if the utm code actually has multiple utm zones
+  if (str_detect(code, "[A-Z]{2,}")) {
+    letters_part <- str_extract(code, "[A-Za-z]+")
+    number_part <- str_extract(code, "\\d+")
+    individual_letters <- str_split_1(letters_part, "")
+    return(paste0(individual_letters, number_part))
+  } else {
+    return(code)
+  }
+}
+
+luke <- tibble(path = full_path) |>
   mutate(
-    label = paste0("NA: ", n_na, "\nZero: ", n_zero)
-  )
+    dataset = "luke",
+    var = str_extract(basename(path), "^(.*)_[^_]*$", group = 1),
+    year = basename(dirname(path)),
+    UTM200 = str_extract(basename(path), "(?<=_)[^_.]+(?=\\.)"),
+    UTM10 = NA
+  ) |> 
+  mutate(UTM200 = purrr::map(UTM200, split_utm_code)) |> 
+  unnest(UTM200) |> 
+  select(dataset, var, path, year, UTM200, UTM10)|> 
+  mutate(year = as.numeric(year)) |> 
+  arrange(year)
+```
 
-ggplot(forestRaw_long, aes(value)) +
-  geom_density() +
-  facet_wrap(~name, scales = "free") +
-  geom_text(data = na_zero_summary,
-            aes(x = Inf, y = Inf, label = label),
-            hjust = 1.1, vjust = 1.1, size = 3)
+#### Latvus (Canopy model)
+
+```{r}
+latvus <- find_root_folder("latvus")
+full_path <- list.files(latvus, "*.tif$", full.names = T, recursive = F)
+
+latvus <- tibble(path = full_path) |> 
+  mutate(
+    dataset = "latvus",
+    year = basename(dirname(path)),
+    var = paste0(dataset, "_", year),
+    UTM200 = NA,
+    UTM10 = str_extract(basename(path), "(?<=_)[^_.]+(?=\\_)")
+  ) |> 
+  select(dataset, var, path, year, UTM200, UTM10) |> 
+  mutate(year = as.numeric(year)) |> 
+  arrange(year)
 ```
 
 ```{r}
-# transforming forest info
-
-forestInfo <- forestRaw
-
-forestInfo$BEECHVOL_XX_P <- (forestInfo$BEECHVOL_XX_P > 0) * 1
-forestInfo$BIRCHVOL_XX_P <- (forestInfo$BIRCHVOL_XX_P > 0) * 1
-forestInfo$CONTORTAVOL_XX_P <- (forestInfo$CONTORTAVOL_XX_P > 0) * 1
-forestInfo$DECIDUOUSVOL_XX_P <- (forestInfo$DECIDUOUSVOL_XX_P > 0) * 1
-forestInfo$OAKVOL_XX_P <- (forestInfo$OAKVOL_XX_P > 0) * 1
-forestInfo$PINEVOL_XX_P <- (forestInfo$PINEVOL_XX_P > 0) * 1
-forestInfo$SPRUCEVOL_XX_P <- (forestInfo$SPRUCEVOL_XX_P > 0) * 1
+master_covariates <- bind_rows(tree_high_europe, luke, latvus)
 ```
 
+#### Preparing METSO and NON_METSO stands and routes polygons
+
+```{r}
+metso <- st_read("data/metso/treatment_control_stand.gpkg")
+
+utm_10 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm10")
+utm_200 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm200")
+
+metso_utm_join <- metso |> 
+  select(standid, metso) |> 
+  mutate(set = "metso") |> 
+  st_transform(st_crs(utm_200)) |> 
+  st_join(y = utm_200) |> 
+  rename(UTM200 = lehtitunnus) |> 
+  st_join(y = utm_10) |> 
+  rename(UTM10 = lehtitunnus) |> 
+  select(standid, metso, set, UTM200, UTM10)
+
+coords_utm_join <- coords |> 
+  select(vakio) |> 
+  mutate(set = "coords") |> 
+  st_transform(st_crs(utm_200)) |> 
+  st_join(y = utm_200) |> 
+  rename(UTM200 = lehtitunnus) |> 
+  st_join(y = utm_10) |> 
+  rename(UTM10 = lehtitunnus) |> 
+  select(vakio, set, UTM200, UTM10) |> 
+  st_buffer(dist = 150)
+
+# Add a unique ID to each polygon set to ensure results join correctly
+metso_utm_join$poly_id <- 1:nrow(metso_utm_join)
+coords_utm_join$poly_id <- 1:nrow(coords_utm_join)
+
+rm(utm_10, utm_200)
+```
+
+#### Get covariates information 
+
+```{r}
+#' Creates a direct-readable path for both zipped and unzipped rasters.
+prepare_raster_paths <- function(df) {
+  df |>
+    mutate(
+      path = gsub("\\\\", "/", path),
+      proc_path = if_else(
+        endsWith(path, ".zip"),
+        paste0("/vsizip/", path, "/", sub("\\.zip$", "", basename(path))),
+        path
+      )
+    ) 
+}
+
+#' Gets the CRS from a raster file as a WKT string.
+get_raster_crs <- function(raster_path) {
+  tryCatch({
+    r <- terra::rast(raster_path)
+    return(terra::crs(r, proj = TRUE))
+  }, error = function(e) {
+    warning(paste("Could not read CRS from:", raster_path, "\nError:", e$message))
+    return(NA_character_)
+  })
+}
+
+```
+
+```{r}
+master_covariates <- master_covariates |>
+  prepare_raster_paths() |>
+  group_by(dataset) |>
+  mutate(raster_crs = get_raster_crs(first(proc_path))) |>
+  ungroup() |>  
+  filter(!is.na(raster_crs))
+```
+
+
+```{r}
+extract_raw_values <- function(polygons_sf, raster_info_df, folder = "results") {
+  
+  message(paste("Fetching from", raster_info_df$dataset[1], "variable", unique(raster_info_df$var), " with polygon set", unique(polygons_sf$set)))
+  
+  target_crs <- raster_info_df$raster_crs[1]
+  
+  polygons_reprojected <- st_transform(polygons_sf, crs = target_crs, quiet = TRUE)
+  
+  folder_name <- file.path(folder, "intermediate_by_tile", paste0(raster_info_df$dataset[1], "-", unique(polygons_sf$set)))
+  dir.create(folder_name, showWarnings = FALSE, recursive = TRUE)
+  
+  created_files <- c() 
+  
+  for (i in seq_len(nrow(raster_info_df))) {
+    
+    raster_info <- raster_info_df[i, ]
+
+    if (is.na(raster_info$UTM200) && is.na(raster_info$UTM10)) {
+      polygons_to_process <- polygons_reprojected
+      nm <- paste0(raster_info$var, "_", raster_info$year, "_", i, "_tile.rds")
+    } else if (!is.na(raster_info$UTM200)) {
+      polygons_to_process <- polygons_reprojected |> filter(UTM200 == raster_info$UTM200)
+      nm <- paste0(raster_info$var, "_", raster_info$year, "_", raster_info$UTM200, "_tile.rds")
+    } else if (!is.na(raster_info$UTM10)) {
+      polygons_to_process <- polygons_reprojected |> filter(UTM10 == raster_info$UTM10)
+      nm <- paste0(raster_info$var, "_", raster_info$UTM10, "_tile.rds")
+    } else {
+      next # Skip to the next iteration
+    }
+    
+    if (nrow(polygons_to_process) == 0) {
+      next # Skip to the next iteration
+    }
+    
+    suppressWarnings({
+      raw_data_for_tile <- exact_extract(
+        x = rast(raster_info$proc_path),
+        y = polygons_to_process,
+        fun = NULL,
+        include_cols = "poly_id"
+      )
+    })
+    
+    raw_data_for_tile <- bind_rows(raw_data_for_tile) |>
+      mutate(variable = raster_info$var,
+             dataset = raster_info$dataset,
+             year = raster_info$year)
+    
+    tile_filename <- file.path(folder_name, nm)
+    
+    saveRDS(raw_data_for_tile, file = tile_filename)
+    
+    created_files <- c(created_files, tile_filename)
+    
+    rm(raw_data_for_tile); gc()
+  }
+  
+  return(created_files)
+}
+```
+
+```{r}
+list_of_groups <- master_covariates |> 
+  group_by(dataset, var) |> 
+  group_split()
+
+coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x))
+coords_raw_data <- purrr::map_dfr(compact(coords_raw_data), readRDS)
+
+metso_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(metso_utm_join, .x))
+```
 
 ```{r}
 forestInfo_long <- forestInfo |> 
@@ -834,16 +990,6 @@ ggplot(forestInfo_long, aes(value)) +
             hjust = 1.1, vjust = 1.1, size = 3)
 ```
 
-
-```{r}
-#------------------------------- # just for proof of concept, I need to investigate why there are data without information even the other variables get me info
-forestData <- forestInfo$index
-
-Y <- Y[forestData, ]
-localityYear <- localityYear[forestData, ] 
-coordSampleUnits <- coordSampleUnits[forestData, ]
-
-```
 
 ### LandUse
 
@@ -890,75 +1036,6 @@ Y <- Y[clcData, ]
 localityYear <- localityYear[clcData, ] 
 coordSampleUnits <- coordSampleUnits[clcData, ]
 forestInfo <- forestInfo[clcData, ]
-
-```
-### Climate
-
-Keep stable or vary between years (?). My main concern is about "land" use.
-
-```{r}
-#| warning: false
-
-worldClim <- rast(c("data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_5.tif",
-               "data/covariates/wc2.1_30s_bio/wc2.1_30s_bio_18.tif"))
-  
-clim <- coordSampleUnits |> 
-  st_transform(crs=crs(worldClim)) |> 
-  terra::extract(x = worldClim) |> 
-  select(-ID)
-
-#------------------------------- # just for proof of concept, I need to investigate why there are sea data/NA
-no_seaData <- which((!is.na(clim$wc2.1_30s_bio_5)))
-
-Y <- Y[no_seaData, ]
-localityYear <- localityYear[no_seaData, ] 
-coordSampleUnits <- coordSampleUnits[no_seaData, ]
-clim <- clim[no_seaData, ]
-forestInfo <- forestInfo[no_seaData, ]
-clcInfo <- clcInfo[no_seaData, , drop = F]
-#-----------------------------
-
-XData <- forestInfo |> 
-  select(-c(index, yr)) |> 
-  bind_cols(clim, clcInfo) |> 
-  as.data.frame() |> 
-  mutate(Klass = as.factor(Klass))
-
-row.names(XData) <- paste0(localityYear$karta, ":", localityYear$yr, ":", localityYear$punkt)
-
-```
-
-```{r}
-zero_spp <-  which(colSums(Y) == 0)
-
-Y <- Y[ , -zero_spp]
-```
-
-```{r}
-
-## Heureka inputs
-
-heureka <- T
-
-if(heureka){
-  forestRaw |>
-    rename_with(~ paste0(., "_raw")) |> 
-    slice(clcData) |>    
-    slice(no_seaData) |> 
-    bind_cols(XData) |> 
-    write.csv("slu/input_heureka_forest.csv", row.names = F)
-  
-  coordSampleUnits |> 
-    st_transform("EPSG:3006") |> 
-    mutate(longSweref99 = sf::st_coordinates(.)[,1], latSweref99 = sf::st_coordinates(.)[,2]) |> 
-    st_transform("EPSG:4326") |> 
-    mutate(longWGS = sf::st_coordinates(.)[,1], latWGS = sf::st_coordinates(.)[,2]) |>
-    st_drop_geometry() |> 
-    write.csv("slu/input_heureka_coordSampleUnits.csv", row.names = F)
-}
-
-
-
 
 ```
 
