@@ -3,6 +3,7 @@ library(sf)
 library(exactextractr)
 library(dplyr)
 library(purrr)
+library(stringr)
 
 # Prepare paths and organize information for each set of covariates
 
@@ -39,7 +40,7 @@ tree_high_europe <-
   tidyr::extract(
     col = path,
     into = c("var", "year"),
-    regex = ".*/(.+?)_(\\d{4}).*\\.tif$",
+    regex = ".*/(.+?)_(\\d{4}).*\\.tif$", # divide a string in two and arrange in two different columns
     convert = TRUE,
     remove = FALSE
   ) |>
@@ -101,12 +102,15 @@ latvus <- tibble(path = full_path) |>
   arrange(year)
 
 master_covariates <- bind_rows(tree_high_europe, luke, latvus)
+
+write.csv(master_covariates, "data/master_covariates_temp.csv")
+
 rm(tree_high_europe, luke, latvus)
 #--------------------
 
 # Prepare METSO and NON_METSO stands and routes polygons
 
-coords <- st_read("data/coords_transformed.gpkg")
+coords <- st_read("data/fbs/coords_transformed.gpkg")
 metso <- st_read("data/metso/treatment_control_stand.gpkg")
 
 utm_10 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm10")
@@ -137,8 +141,6 @@ coords_utm_join <- coords |>
 
 metso_utm_join$poly_id <- 1:nrow(metso_utm_join)
 coords_utm_join$poly_id <- 1:nrow(coords_utm_join)
-
-rm(utm_10, utm_200)
 
 #-----------------------
 
@@ -259,7 +261,81 @@ list_of_groups <- master_covariates |>
   group_split()
 
 coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x))
-coords_raw_data <- purrr::map_dfr(compact(coords_raw_data), readRDS)
-
 metso_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(metso_utm_join, .x))
-metso_raw_data <- purrr::map_dfr(compact(coords_raw_data), readRDS)
+
+
+toKeep <- c("coords_raw_data", "metso_raw_data", "utm_10", "utm_200", "master_covariates")
+rm(list = setdiff(ls(), toKeep));gc()
+
+#--------------------
+
+# Agregatting
+## because of storage issues intermediate by tile files were moved to hard disk "D:"
+## because problems in variable names, I needed to construct a dictionary
+
+dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";")
+
+root_name <- file.path("D:", "intermediate_aggregated")
+
+dir.create(root_name, showWarnings = F)
+
+polygon_type <- "metso" #  "metso" = metso_raw_data, "coords" = coords_raw_data
+
+folder_name <- file.path(root_name, polygon_type)
+  
+dir.create(folder_name, showWarnings = F)
+
+for(a in 8:length(metso_raw_data)){ #<---------- REPLACE
+  #a <- 1
+  message(paste("running", a, "of", length(metso_raw_data))) #<---------- REPLACE
+  dfa <- purrr::map_dfr(.x = metso_raw_data[[a]], #<---------- REPLACE
+                      .f = ~ compact(readRDS(str_replace(.x, pattern = "results", replacement = "D:")))
+  )
+  if(!is.na(dfa$variable[1])){
+    index <- which(dfa$variable[1] == dict_covar$var_error)
+    if(dfa$dataset[1] == "luke"){
+      dfa$variable_new <- paste0(dict_covar$var_new[index], "_", dfa$year)  
+    }else{
+      dfa$variable_new <- dfa$variable
+    }
+     # just possible because is divided by years see up
+  }else{
+    dfa$variable_new <- "Tree_removal_latest_date"
+  }
+  
+  dfa$polygon_source <- polygon_type
+  
+  file_name <-  file.path(folder_name, paste0(dfa$variable_new[1], "_", polygon_type, ".rds"))
+  saveRDS(object = dfa, file = file_name)
+  rm(dfa); gc()
+  Sys.sleep(20)
+}
+
+#--------------------
+
+# Checking extent of latvus, probably it would be better before download !!!! SOMETHING TO LEARN HERE (MASSIVE DATASET 300 GB at least)
+
+utm_zone_number <- 10  # e.g., 10, 200
+dataset_name <- "latvus" # e.g., "latvus", "luke"
+
+utm_col_name <- paste0("UTM", utm_zone_number)
+output_filename <- paste0("data/utm35_zones/", utm_col_name, "_coords_temp.gpkg")
+
+get(paste0("utm_", utm_zone_number)) |>
+  rename({{ utm_col_name }} := "lehtitunnus") |>
+  full_join(
+    st_drop_geometry(
+      dplyr::filter(master_covariates, dataset == dataset_name),
+      by = utm_col_name)
+  ) |>
+  left_join(st_drop_geometry(coords_utm_join), by = utm_col_name, relationship = "many-to-many") |>
+  mutate(poly_id = poly_id > 0) |>
+  write_sf(output_filename, delete_layer = T)
+
+# Latvus must be discarded as a time-variant covariate, coverage is uneven and scattered
+
+#------------------
+
+toKeep <- c("coords_raw_data", "metso_raw_data", "master_covariates")
+rm(list = setdiff(ls(), toKeep));gc()
+

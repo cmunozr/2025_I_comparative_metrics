@@ -606,10 +606,14 @@ rm(number_strip)
 
 
 ```{r}
-
 coords <- coords |> 
   filter(route_number_sppinfo == TRUE)
 
+st_write(coords, "data/fbs/coords_transformed.gpkg", delete_layer = T)
+```
+
+
+```{r}
 years_to_process <- unique(occurr_sect_route$year) |> 
   sort()
 
