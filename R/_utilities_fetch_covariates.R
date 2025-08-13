@@ -2,6 +2,7 @@ library(terra)
 library(sf)
 library(exactextractr)
 library(dplyr)
+library(tidyr)
 library(purrr)
 library(stringr)
 
@@ -101,11 +102,6 @@ latvus <- tibble(path = full_path) |>
   mutate(year = as.numeric(year)) |> 
   arrange(year)
 
-master_covariates <- bind_rows(tree_high_europe, luke, latvus)
-
-write.csv(master_covariates, "data/master_covariates_temp.csv")
-
-rm(tree_high_europe, luke, latvus)
 #--------------------
 
 # Prepare METSO and NON_METSO stands and routes polygons
@@ -142,9 +138,31 @@ coords_utm_join <- coords |>
 metso_utm_join$poly_id <- 1:nrow(metso_utm_join)
 coords_utm_join$poly_id <- 1:nrow(coords_utm_join)
 
+#--------------------
+
+# Checking extent of latvus, probably it would be better before download !!!! SOMETHING TO LEARN HERE (MASSIVE DATASET 300 GB at least)
+
+utm_zone_number <- 10  # e.g., 10, 200
+dataset_name <- "latvus" # e.g., "latvus", "luke"
+
+utm_col_name <- paste0("UTM", utm_zone_number)
+output_filename <- file.path("data", "utm35_zones", paste0(utm_col_name, "_coords_temp.gpkg"))
+
+get(paste0("utm_", utm_zone_number)) |>
+  rename({{ utm_col_name }} := "lehtitunnus") |>
+  full_join(latvus, by = utm_col_name) |>
+  left_join(st_drop_geometry(coords_utm_join), by = utm_col_name, relationship = "many-to-many") |>
+  mutate(poly_id = poly_id > 0) |>
+  write_sf(output_filename, delete_layer = T)
+
+# Latvus must be discarded as a time-variant covariate, coverage is uneven and scattered
+
+master_covariates <- bind_rows(tree_high_europe, luke)
+write.csv(master_covariates, "data/master_covariates_temp.csv", row.names = F)
+
 #-----------------------
 
-# Actually Get covariates information 
+# Actually Get covariates information
 
 ## Creates a direct-readable path for both zipped and unzipped rasters.
 prepare_raster_paths <- function(df) {
@@ -196,9 +214,10 @@ master_covariates <- master_covariates |>
 
 ## value (path of RDS containing raw information)
 
-extract_raw_values <- function(polygons_sf, raster_info_df, folder = "results") {
+extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_column = "vakio" ) {
   
-  message(paste("Fetching from", raster_info_df$dataset[1], "variable", unique(raster_info_df$var), " with polygon set", unique(polygons_sf$set)))
+  message(paste("Fetching from", raster_info_df$dataset[1], "variable", unique(raster_info_df$var), "year", 
+                raster_info_df$year[1], "with polygon set", unique(polygons_sf$set)))
   
   target_crs <- raster_info_df$raster_crs[1]
   
@@ -210,12 +229,12 @@ extract_raw_values <- function(polygons_sf, raster_info_df, folder = "results") 
   created_files <- c() 
   
   for (i in seq_len(nrow(raster_info_df))) {
-    
+    # i <- 1
     raster_info <- raster_info_df[i, ]
     
     if (is.na(raster_info$UTM200) && is.na(raster_info$UTM10)) {
       polygons_to_process <- polygons_reprojected
-      nm <- paste0(raster_info$var, "_", raster_info$year, "_", i, "_tile.rds")
+      nm <- paste0(raster_info$var, "_", raster_info$year, "_tile.rds")
     } else if (!is.na(raster_info$UTM200)) {
       polygons_to_process <- polygons_reprojected |> filter(UTM200 == raster_info$UTM200)
       nm <- paste0(raster_info$var, "_", raster_info$year, "_", raster_info$UTM200, "_tile.rds")
@@ -242,7 +261,13 @@ extract_raw_values <- function(polygons_sf, raster_info_df, folder = "results") 
     raw_data_for_tile <- bind_rows(raw_data_for_tile) |>
       mutate(variable = raster_info$var,
              dataset = raster_info$dataset,
-             year = raster_info$year)
+             year = raster_info$year) |>
+      left_join(
+        select(st_drop_geometry(polygons_reprojected), id_column, poly_id), 
+        by = "poly_id"
+      )
+       
+      
     
     tile_filename <- file.path(folder_name, nm)
     
@@ -256,13 +281,55 @@ extract_raw_values <- function(polygons_sf, raster_info_df, folder = "results") 
   return(created_files)
 }
 
+extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_column = "vakio" ) {
+  
+  message(paste("Fetching from", raster_info_df$dataset[1], "variable", unique(raster_info_df$var), "year", 
+                raster_info_df$year[1], "with polygon set", unique(polygons_sf$set)))
+  
+  target_crs <- raster_info_df$raster_crs[1]
+  
+  polygons_reprojected <- polygons_sf |> st_drop_geometry()
+  
+  folder_name <- file.path(folder, "intermediate_by_tile", paste0(raster_info_df$dataset[1], "-", unique(polygons_sf$set)))
+  
+  created_files <- c() 
+  
+  for (i in seq_len(nrow(raster_info_df))) {
+    # i <- 1
+    raster_info <- raster_info_df[i, ]
+    
+    if (is.na(raster_info$UTM200) && is.na(raster_info$UTM10)) {
+      polygons_to_process <- polygons_reprojected
+      nm <- paste0(raster_info$var, "_", raster_info$year, "_tile.rds")
+    } else if (!is.na(raster_info$UTM200)) {
+      polygons_to_process <- polygons_reprojected |> filter(UTM200 == raster_info$UTM200)
+      nm <- paste0(raster_info$var, "_", raster_info$year, "_", raster_info$UTM200, "_tile.rds")
+    } else if (!is.na(raster_info$UTM10)) {
+      polygons_to_process <- polygons_reprojected |> filter(UTM10 == raster_info$UTM10)
+      nm <- paste0(raster_info$var, "_", raster_info$UTM10, "_tile.rds")
+    } else {
+      next # Skip to the next iteration
+    }
+    
+    if (nrow(polygons_to_process) == 0) {
+      next # Skip to the next iteration
+    }
+    
+    tile_filename <- file.path(folder_name, nm)
+    
+    created_files <- c(created_files, tile_filename)
+  }
+  
+  return(created_files)
+}
+
+
 list_of_groups <- master_covariates |> 
-  group_by(dataset, var) |> 
+  group_by(dataset, var, year) |> 
   group_split()
 
 coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x))
-metso_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(metso_utm_join, .x))
-
+metso_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(metso_utm_join, .x, id_column = "standid"))
 
 toKeep <- c("coords_raw_data", "metso_raw_data", "utm_10", "utm_200", "master_covariates")
 rm(list = setdiff(ls(), toKeep));gc()
@@ -274,19 +341,15 @@ rm(list = setdiff(ls(), toKeep));gc()
 ## because problems in variable names, I needed to construct a dictionary
 
 dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";")
-
 root_name <- file.path("D:", "intermediate_aggregated")
-
 dir.create(root_name, showWarnings = F)
-
 polygon_type <- "metso" #  "metso" = metso_raw_data, "coords" = coords_raw_data
 
 folder_name <- file.path(root_name, polygon_type)
-  
 dir.create(folder_name, showWarnings = F)
 
-for(a in 8:length(metso_raw_data)){ #<---------- REPLACE
-  #a <- 1
+for(a in 1:length(metso_raw_data)){ #<---------- REPLACE
+  #a <- 5
   message(paste("running", a, "of", length(metso_raw_data))) #<---------- REPLACE
   dfa <- purrr::map_dfr(.x = metso_raw_data[[a]], #<---------- REPLACE
                       .f = ~ compact(readRDS(str_replace(.x, pattern = "results", replacement = "D:")))
@@ -294,48 +357,17 @@ for(a in 8:length(metso_raw_data)){ #<---------- REPLACE
   if(!is.na(dfa$variable[1])){
     index <- which(dfa$variable[1] == dict_covar$var_error)
     if(dfa$dataset[1] == "luke"){
-      dfa$variable_new <- paste0(dict_covar$var_new[index], "_", dfa$year)  
+      dfa$variable <- dict_covar$var_new[index]  
     }else{
-      dfa$variable_new <- dfa$variable
+      dfa$variable <- dfa$variable
     }
-     # just possible because is divided by years see up
   }else{
-    dfa$variable_new <- "Tree_removal_latest_date"
+    dfa$variable <- "Tree_removal_latest_date"
   }
   
   dfa$polygon_source <- polygon_type
   
-  file_name <-  file.path(folder_name, paste0(dfa$variable_new[1], "_", polygon_type, ".rds"))
+  file_name <-  file.path(folder_name, paste0(dfa$variable[1], "_", dfa$year[1], "_", polygon_type, ".rds"))
   saveRDS(object = dfa, file = file_name)
   rm(dfa); gc()
-  Sys.sleep(20)
 }
-
-#--------------------
-
-# Checking extent of latvus, probably it would be better before download !!!! SOMETHING TO LEARN HERE (MASSIVE DATASET 300 GB at least)
-
-utm_zone_number <- 10  # e.g., 10, 200
-dataset_name <- "latvus" # e.g., "latvus", "luke"
-
-utm_col_name <- paste0("UTM", utm_zone_number)
-output_filename <- paste0("data/utm35_zones/", utm_col_name, "_coords_temp.gpkg")
-
-get(paste0("utm_", utm_zone_number)) |>
-  rename({{ utm_col_name }} := "lehtitunnus") |>
-  full_join(
-    st_drop_geometry(
-      dplyr::filter(master_covariates, dataset == dataset_name),
-      by = utm_col_name)
-  ) |>
-  left_join(st_drop_geometry(coords_utm_join), by = utm_col_name, relationship = "many-to-many") |>
-  mutate(poly_id = poly_id > 0) |>
-  write_sf(output_filename, delete_layer = T)
-
-# Latvus must be discarded as a time-variant covariate, coverage is uneven and scattered
-
-#------------------
-
-toKeep <- c("coords_raw_data", "metso_raw_data", "master_covariates")
-rm(list = setdiff(ls(), toKeep));gc()
-

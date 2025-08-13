@@ -98,6 +98,7 @@ library(lwgeom)
 library(ggrepel)
 library(gt)
 library(exactextractr)
+library(patchwork)
 ```
 
 ```{r}
@@ -108,7 +109,8 @@ options("OSR_USE_NON_DEPRECATED" = "NO")
 
 ```{r}
 transform_Y_to_abunCpres <- function(data) {
-  data |> mutate(across(everything(), ~ ifelse(. == 0, NA, scale(log(.)))))
+  data |> 
+    mutate(across(everything(), ~ ifelse(. == 0, NA, scale(log(.)))))
 }
 ```
 
@@ -139,10 +141,16 @@ occurr_sect_route <- read.csv("data/fbs/vakiolinja/vakiolinja3_20250626.csv")
 ```
 
 ```{r} 
-# late Spring/Summer routes from 2009-2021 (years because the MS-NFI)
+# late Spring/Summer routes of years 2009, 2011, 2013, 2015, 2017, 2019, 2021 (years because the MS-NFI)
 
-routes <- routes |> 
-  mutate(out_date = ifelse((month < 5 | month > 7 | year < 2009 | year > 2021), 1, 0 ))
+ms_nfi_years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
+
+routes <- routes |>
+  mutate(out_date = if_else(
+    condition = month < 5 | month > 7 | ! (year %in% ms_nfi_years),
+    true = 1,
+    false = 0
+  ))
 
 event_ids_to_match <- routes |> 
   filter(out_date == 1) |> 
@@ -401,7 +409,7 @@ no_biotope_routes_df <- data.frame(
   times_missing = no_biotope_routes
 )
 
-# how many routes have no had biotope or subsection info each year?
+# how many routes do not have biotope or subsection info each year?
 # what percentege of routes that were sample each year dont have biotope or subsection info?
 
 no_biotope_years <- no_biotope_table |> 
@@ -418,20 +426,17 @@ hist(percent_sample_no_biotope,
      main = "Distribution of Annual Percentage of Routes with Missing Biotope Data",
      xlab = "Percentage of Routes with Missing Biotope Data (%)")
 
-rm(no_biotope, no_biotope_routes, no_biotope_years, no_biotope_routes, no_biotope_table, sample_by_year, percent_sample_no_biotope, sample_by_year)
+rm(no_biotope, no_biotope_routes, no_biotope_years, no_biotope_table, sample_by_year, percent_sample_no_biotope)
 ```
-
+How many of the biotope and subsection information is missing? Is all the route?
 
 ```{r}
-# how many of the biotope and subsection information is missing? Is all the route?
-
 occurr_sect_route |> 
   group_by(year, vakio) |> 
-  # 'total_rows' is the total number of sections, 'count' is the number of sections missing biotope info
-  summarise(total_rows = n(), count = sum(biotope == "")) |> 
-  filter(count != 0) |> 
+  summarise(total_sections = n(), sections_missing_biotope = sum(biotope == "")) |> 
+  filter(sections_missing_biotope != 0) |> 
   mutate(vakio = as.factor(vakio)) |> 
-  pivot_longer(cols = c(total_rows, count), names_to = "category", values_to = "rows") |> 
+  pivot_longer(cols = c(total_sections, sections_missing_biotope), names_to = "category", values_to = "rows") |> 
   ggplot(aes(x = vakio, y = rows, fill = category )) +
   geom_col(position="dodge") + 
   coord_flip() + 
@@ -439,21 +444,24 @@ occurr_sect_route |>
   # Updated labels for better clarity
   labs(
     title = "Comparison of Total vs. Missing Biotope Sections for Affected Routes, by Year",
-    x = "Number of Sections",
-    y = "Route ID (vakio)",
+    x = "Route ID (vakio)",
+    y = "Number of sections",
     fill = "Category"
   ) +
   # This function renames the items in the legend
   scale_fill_discrete(
     labels = c(
-      "count" = "Sections with Missing Biotope", 
-      "total_rows" = "Total Sections"
+      "sections_missing_biotope" = "Sections with Missing Biotope", 
+      "total_sections" = "Total Sections"
     )
   )
 
 ```
+How the missing biotope routes are spread in the country? Is some area prone to have less data?
 
 ```{r}
+# joining to spatial data "times missing biotope" information
+
 coords_nm <- str_split(coords$name, pattern = ", ", simplify = T) |> 
   as.data.frame()
 names(coords_nm) <- c("vakio", "str1", "str2", "numer")
@@ -467,15 +475,13 @@ coords <- bind_cols(coords, coords_nm) |>
          route_number_sppinfo = route_number_sppinfo) |> 
   arrange(vakio)
 
-write_sf(coords, "data/fbs/coords.gpkg", delete_layer = T)
-
 rm(coords_nm)
 
 ```
 
-How the missing biotope routes are spread in the country? Is some area prone to have less data?
-
 ```{r}
+# mapping spreading of no biotope data
+
 fin <- st_as_sf(map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
 
 lvls <- levels(coords$times_missing)
@@ -609,7 +615,8 @@ rm(number_strip)
 coords <- coords |> 
   filter(route_number_sppinfo == TRUE)
 
-st_write(coords, "data/fbs/coords_transformed.gpkg", delete_layer = T)
+write_sf(coords, "data/fbs/coords.gpkg", delete_layer = T)
+
 ```
 
 
@@ -712,71 +719,80 @@ Most species exhibit low prevalence, clustering towards the rare end of the spec
 
 Online repositories are not deployed as Web Feature Service in which we can work "in-situ". It was needed to download the data sets. Data sets are massive and splitted over several storage units. To consult how they were downloaded please refer to scripts "_utilities_download_covariates.R" and "_utilities_download_covariates.py". Dowloaded files were processing following the "_utilities_fetch_covariates.R" script.
 
-
+Raw data of each route with a 150m buffer and from metso/non metso stands is extracted with the script "_utilities_fetch_covariates.R". Once with this information 
+we can compare each type of unit to inform potential risk of exrapolation. We sample 10000 stands for each type (metso/non metso) and all the route buffers.
 
 ```{r}
-forestInfo_long <- forestInfo |> 
-  select(-c(index, yr)) |> 
-  pivot_longer(cols = c(1:11))
 
-# Calculate NA and zero counts per variable
-na_zero_summary <- forestInfo_long |> 
-  group_by(name) |> 
-  summarise(
-    n_na = sum(is.na(value)),
-    n_zero = sum(value == 0, na.rm = TRUE), # na.rm = TRUE to ignore NA in the comparison
-    total_n = n()
-  ) |> 
-  mutate(
-    label = paste0("NA: ", n_na, "\nZero: ", n_zero)
+main_data_dir <- "D:/intermediate_aggregated"
+
+metso_stands_df <- st_read("data/metso/treatment_control_stand.gpkg") |> 
+  st_drop_geometry() |> 
+  select(standid, metso)
+
+dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";") |> 
+  pull(var_new) |> 
+  unique()
+
+
+year_route_sampling <- occurr_sect_route |> 
+  group_by(year, vakio) |>
+  summarise(total_sections = n(), .groups = 'drop')
+
+sampled_stand_ids <- metso_stands_df |> 
+  group_by(metso) |>
+  sample_n(size = 10000, replace = FALSE) |>
+  ungroup() |>
+  pull(standid)
+
+
+all_rds_files <- list.files(main_data_dir, pattern = "\\.rds$", recursive = TRUE, full.names = TRUE)
+
+```
+
+```{r}
+source("R/_utilities_transform_covariates.R")
+
+folder_name <- file.path("data", "intermediate_covariates") 
+dir.create(folder_name, showWarnings = FALSE)
+
+for (covariate in dict_covar) {
+  # covariate <-  dict_covar[1]
+  message(paste("--- Processing covariate:", covariate, "---"))
+
+  filtered_data <- filter_covariate_data(
+    covariate_name = covariate,
+    all_files = all_rds_files,
+    sampled_ids = sampled_stand_ids,
+    route_map = year_route_sampling
   )
+  
+  if(is.null(filtered_data)) next
 
-ggplot(forestInfo_long, aes(value)) +
-  geom_density() +
-  facet_wrap(~name, scales = "free") +
-  geom_text(data = na_zero_summary,
-            aes(x = Inf, y = Inf, label = label),
-            hjust = 1.1, vjust = 1.1, size = 3)
+  output_rds_path <- file.path(folder_name, paste0("filtered_cov_coords_", covariate, ".rds"))
+  # writing a filtered data set just to coords because metso is a sample
+  saveRDS(filter(filtered_data, polygon_source == "coords"), file = output_rds_path) 
+  
+  plot_data <- prepare_covariates_data_toplot(
+    filtered_data = filtered_data,
+    metso_map = metso_stands_df
+  )
+  
+  is_binary <- all(unique(plot_data$value) %in% c(0, 1))
+  
+  if (is_binary) {
+    generate_binary_plot(covariate, plot_data, folder_name)
+  } else {
+    generate_covariate_plot(covariate, plot_data, folder_name)
+  }
+}
+
 ```
 
 
 ### LandUse
 
 ```{r}
-library(terra)
-clc <- rast("data/covariates/NMD/18/nmd2018bas_ogeneraliserad_v1_1.tif")
-coltab(clc) <- NULL
-clc2 <- clc
-res(clc2) <- 100 
-clc_resampled <- resample(clc, clc2, method = "near")
-
-clcRaw <- coordSampleUnits |> 
-  st_transform(crs=crs(clc)) |> 
-  terra::extract(x = clc_resampled) |> 
-  select(-ID) |> 
-  mutate(Klass = iconv(Klass, from = "ISO-8859-1", to = "UTF-8"))
-  
-clcInfo <- clcRaw |> 
-  mutate(
-    Klass = case_when(
-      Klass %in% c("Exploaterad mark, väg/järnväg", "Åkermark", "Exploaterad mark, 
-                        byggnad", "Exploaterad mark, ej byggnad eller väg/järnväg") ~ "Urb",
-      Klass %in% c("Triviallövskog (utanför våtmark)", "Triviallövskog med ädellövinslag (utanför våtmark)", 
-                        "Lövblandad barrskog (utanför våtmark)", "Ädellövskog (utanför våtmark)",
-                        "Lövblandad barrskog (på våtmark)", "Ädellövskog (på våtmark)", 
-                        "Triviallövskog (på våtmark)", "Triviallövskog med ädellövinslag (på våtmark)") ~ "Br",
-      Klass %in% c("Granskog (utanför våtmark)", "Tallskog (utanför våtmark)", 
-                        "Barrblandskog (utanför våtmark)", "Tallskog (på våtmark)", 
-                        "Granskog (på våtmark)", "Barrblandskog (på våtmark)") ~ "Co",
-      Klass %in% c("Övrig öppen mark med vegetation", "Övrig öppen mark utan vegetation") ~ "Op",
-      Klass == "Hav" ~ "Ma",
-      Klass %in% c("Sjö och vattendrag", "Öppen våtmark", "Temporärt ej skog (på våtmark)", 
-                        "Temporärt ej skog (utanför våtmark)") ~ "We",
-      Klass == "" ~ "", # Keep the empty string as is
-      TRUE ~ NA_character_  # For any other value (shouldn't happen if your data is clean)
-    )
-  )
-
 #------------------------------- # just for proof of concept, I need to investigate why there are sea data/NA
 clcData <- which(clcInfo$Klass != "" & !is.na(clcInfo$Klass))
 
