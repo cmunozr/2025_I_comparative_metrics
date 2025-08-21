@@ -1,6 +1,6 @@
-filter_covariate_data <- function(covariate_name, all_files, sampled_ids, route_map) {
+filter_covariate_data <- function(covariate_name, files, sampled_ids, route_map) {
   # Filter file paths to get only those relevant to the current covariate
-  relevant_files <- all_files[str_detect(basename(all_files), covariate_name)]
+  relevant_files <- files[str_detect(basename(files), covariate_name)]
   
   if (length(relevant_files) == 0) {
     message(paste("No data files found for covariate:", covariate_name))
@@ -53,20 +53,18 @@ prepare_covariates_data_toplot <- function(filtered_data, metso_map) {
 }
 
 generate_covariate_plot <- function(covariate_name, data, folder) {
-  # This message is helpful for tracking progress during the long loop
-  message(paste("Generating plot for:", covariate_name))
+
+  message(paste("Generating violin-plot for:", covariate_name))
   
-  # The plot_data object is created locally and is very small
   plot_data <- data |>
     filter(variable == covariate_name, !is.na(value))
   
-  # Check to ensure there's data to plot
+  # Ensure there's data to plot
   if (nrow(plot_data) == 0) {
     message(paste("No data available for", covariate_name, "- skipping."))
     return(NULL)
   }
   
-  # The core ggplot2 code for creating the violin plots
   p <- ggplot(plot_data, aes(x = category, y = value, fill = category)) +
     geom_violin(trim = TRUE, scale = "width") +
     geom_boxplot(width = 0.1, fill = "white", alpha = 0.3, outlier.shape = NA) +
@@ -85,7 +83,6 @@ generate_covariate_plot <- function(covariate_name, data, folder) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
   
-  # Save the plot to a file in your working directory
   output_filename <- file.path(folder, paste0("plot_", covariate_name, ".png"))
   ggsave(output_filename, p, width = 12, height = 8, dpi = 300)
   message(paste("Saved plot to:", output_filename))
@@ -95,7 +92,6 @@ generate_covariate_plot <- function(covariate_name, data, folder) {
 generate_binary_plot <- function(covariate_name, data, folder) {
   message(paste("Generating BAR CHART for binary covariate:", covariate_name))
   
-  # Ensure the binary variable is treated as a factor for plotting
   plot_data <- data %>%
     filter(variable == covariate_name) %>%
     mutate(value = as.factor(value))
@@ -123,11 +119,20 @@ generate_binary_plot <- function(covariate_name, data, folder) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
   
-  # Save the plot
-  # Save the plot to a file in your working directory
   output_filename <- file.path(folder, paste0("plot_", covariate_name, ".png"))
   ggsave(output_filename, p, width = 12, height = 8, dpi = 300)
   message(paste("Saved plot to:", output_filename))
-  
-  
+}
+
+# To calculate weighted standard deviation
+weighted_sd <- function(x, w, na.rm = TRUE) {
+  if (na.rm) {
+    complete_cases <- !is.na(x) & !is.na(w)
+    x <- x[complete_cases]
+    w <- w[complete_cases]
+  }
+  # Calculate the weighted mean
+  w_mean <- weighted.mean(x, w)
+  # Calculate the weighted standard deviation
+  sqrt(sum(w * (x - w_mean)^2) / sum(w))
 }
