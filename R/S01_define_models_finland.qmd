@@ -648,7 +648,7 @@ if (length(lost_species) > 0) {
 ### Create Biotope Polygon Buffers
 
 ```{r}
-biotope_L3_paths <- tidyr::expand_grid(
+biotope_polygon_L3_log <- tidyr::expand_grid(
   vakio = coords$vakio,
   year = ms_nfi_years
 ) |>
@@ -669,10 +669,10 @@ for (y in 1:length(ms_nfi_years)) {
   all_buffers_for_year <- list()
 
   for (a in 1:nrow(coords)) {
-    # a <- 433
+    # 
     route_id <- coords$vakio[a]
     
-    log_row_index <- which(biotope_L3_paths$vakio == route_id & biotope_L3_paths$year == current_year)
+    log_row_index <- which(biotope_polygon_L3_log$vakio == route_id & biotope_polygon_L3_log$year == current_year)
     
     route_a <- coords |>
       filter(vakio == route_id) |> 
@@ -698,20 +698,20 @@ for (y in 1:length(ms_nfi_years)) {
           r_endMeters = endMeters / as.numeric(st_length(route_a))
         )
       
-      biotope_L3_paths$was_extended[log_row_index] <- TRUE
-      biotope_L3_paths$extension_distance_m[log_row_index] <- d
+      biotope_polygon_L3_log$was_extended[log_row_index] <- TRUE
+      biotope_polygon_L3_log$extension_distance_m[log_row_index] <- d
     
     }else{
-      biotope_L3_paths[a,"extended"] <- F
+      biotope_polygon_L3_log$was_extended[log_row_index] <- FALSE
     }
     
     if (nrow(biotope_route_a) > 1) {
       
-      biotope_L3_paths$was_processed[log_row_index] <- TRUE
+      biotope_polygon_L3_log$was_processed[log_row_index] <- TRUE
       
       route_buffers <- list()
       for (r in 1:nrow(biotope_route_a)) {
-        
+        # r <- 30
         equal <- biotope_route_a[r,c("r_startMeters", "r_endMeters")] |> 
           unlist() |> 
           diff()
@@ -741,9 +741,16 @@ for (y in 1:length(ms_nfi_years)) {
         
         }else{
           
-          point_strip_a <- biotope_L3_paths$point_strips[a]
-          biotope_L3_paths$point_strips[a] <- c(point_strip_a, biotope_route_a$biotopeStripId[r])
-          warning("Some biotope observations are points")
+          value_in_log <- biotope_polygon_L3_log$point_strips[log_row_index] |> unlist()
+          
+          point_strip_r <-  biotope_route_a$biotopeStripId[r]
+          
+          warning(paste(point_strip_r, "route", route_id, "year", current_year, "is a point observation, check log."))
+          
+          value_to_log <- compact(list(c(value_in_log, point_strip_r)))
+          
+          biotope_polygon_L3_log$point_strips[[log_row_index]] <- value_to_log
+          
         }
         
       }
@@ -757,10 +764,14 @@ for (y in 1:length(ms_nfi_years)) {
 
   output_filename <- paste0("data/fbs/route_sections_L3_", current_year, ".gpkg")
   write_sf(year_sf, output_filename, delete_layer = TRUE)
-  biotope_L3_paths[biotope_L3_paths$year == current_year, "path"] <- output_filename
+  biotope_polygon_L3_log[biotope_polygon_L3_log$year == current_year, "path"] <- output_filename
   message(paste("Saved file:", output_filename))
 
 }
+
+saveRDS(biotope_polygon_L3_log, file.path("data", "fbs", "biotope_polygon_L3_log.rds"))
+
+biotope_polygon_L3_log <- readRDS(file.path("data", "fbs", "biotope_polygon_L3_log.rds"))
 ```
 
 
