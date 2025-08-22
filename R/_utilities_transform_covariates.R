@@ -136,3 +136,93 @@ weighted_sd <- function(x, w, na.rm = TRUE) {
   # Calculate the weighted standard deviation
   sqrt(sum(w * (x - w_mean)^2) / sum(w))
 }
+
+#' Extends an sf LINESTRING by a specified distance.
+#'
+#' @param line An sf object containing a single LINESTRING.
+#' @param distance The distance to extend the line by (in the line's coordinate system units).
+#' @param end Which end to extend: "end" (default) or "start".
+#' @return A new sf object with the extended LINESTRING.
+
+st_extend_line <- function(line, distance, end = "end") {
+  
+  require(sf)
+  require(dplyr)
+  
+  
+  # Get the coordinates of the line's vertices
+  xy <- st_coordinates(line)[, 1:2]
+  
+  # Determine the segment to use for calculating the angle
+  if (end == "end") {
+    # Use the last two vertices for the final segment
+    segment_start <- xy[nrow(xy) - 1, 1:2]
+    segment_end <- xy[nrow(xy), 1:2]
+  } else {
+    # Use the first two vertices for the initial segment
+    segment_start <- xy[2, 1:2]
+    segment_end <- xy[1, 1:2] # Reversed to get the outward angle
+  }
+  
+  # Calculate the angle of the segment
+  # atan2(y, x) gives the angle in radians
+  angle <- atan2(segment_end[2] - segment_start[2], segment_end[1] - segment_start[1])
+  
+  # Calculate the coordinates of the new point using trigonometry
+  new_point_x <- segment_end[1] + distance * cos(angle)
+  new_point_y <- segment_end[2] + distance * sin(angle)
+  new_point <- c(new_point_x, new_point_y)
+  
+  # Combine the new point with the original coordinates
+  if (end == "end") {
+    new_xy <- rbind(xy, new_point)
+  } else {
+    new_xy <- rbind(new_point, xy)
+  }
+  
+  # Create the new, extended linestring
+  extended_line <- st_linestring(new_xy) |>
+    st_sfc(crs = st_crs(line)) |>
+    st_sf() |> 
+    cbind(st_drop_geometry(line))
+  
+  return(extended_line)
+}
+
+# library(dplyr)
+# library(sf)
+# library(terra)
+# 
+# # shape de corte
+# path_shape <- "data/finland_square.gpkg"
+# 
+# mask_ <- path_shape %>% 
+#   sf::st_read() %>%  
+#   sf::st_transform(st_crs(4326)) %>% 
+#   terra::vect()
+# 
+# dirs <- "D:/tree_high_Europe/"
+# new_dir <- paste0(dirname(dirs), basename(dirs), "_fi")
+# dir.create(new_dir, showWarnings = F, recursive = T)
+# 
+# for(i in 1:length(dirs)){
+#   #i <- 1
+#   message(dirs[i])
+#   listi <- list.files(dirs, recursive = F, full.names = T, pattern = "*.adf$|*.tif$")
+#   
+#   for(a in 1:length(listi)){
+#     #a <- 1
+#     message(listi[a])
+#     ras.a <- terra::rast(listi[a])
+#     print(listi[a])
+#     mask.a <- ras.a %>% terra::crop(mask_)
+#     terra::writeRaster(
+#       x = mask.a, filename = paste0(new_dir[i], "/", basename(listi[a])),
+#       overwrite = T, NAflag = -9999, gdal = c("COMPRESS=LZW", "TFW=NO")
+#     )
+#   }
+#   
+#   rm(mask.a)
+#   gc()
+# }
+
