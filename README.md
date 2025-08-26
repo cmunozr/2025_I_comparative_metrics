@@ -21,40 +21,61 @@ Dependencies to install, choose the version depending on your operating system a
 * This repository (2025_I_comparative_metrics)
 
 ### Libraries
-R libraries required and their versions
+R libraries required
 
 ```
-"plyr" version 1.8.6
-"dplyr" version 1.0.5
-"hmsc"
-"fd"
-"terra"
-"sf"
+matrixStats
+Hmsc
+tidyverse
+data.table
+terra
+sf
+maps
+ape
+taxize
+remotes
+phytools
+openxlsx
+tidyterra
+viridis
+lwgeom
+ggrepel
+gt
+exactextractr) 
+patchwork
+dplyr
+units
 ```
 
-Python libraries required and their versions
+Python libraries required
 
 ```
-"tensorflow" 
-"hmsc-hpc"
+tensorflow
+hmsc-hpc
+selenium
+time
+cdsapi
+os
 ```
 
 ## How to run
 
-We suggest running the routines step-by-step, following the order of each script starting from [S01_define_models](https://github.com/cmunozr/2025_I_comparative_metrics/blob/main/R/S01_define_models.qmd) until [S11_analysis_diversity_metrics_distribution](https://github.com/cmunozr/2025_I_comparative_metrics/blob/main/R/S11_analysis_diversity_metrics_distribution.R).
+We suggest running the routines step-by-step, following the order in the next flowchart. It relates 
 
-Local instance
--   GPU
--   CPU
-Remote instance
--   HPC
-
+IN CONSTRUCTION
 
 ## Authors and contact
 
+## Main depelovi
+
 * [Carlos Jair Muñoz Rodriguez](https://www.linkedin.com/in/carlos-jair-munoz/)
 * [Ullrika Sahlin](https://www.cec.lu.se/ullrika-sahlin)
+
+## Collaborators
+
 * [Daniele Silvestro](https://bsse.ethz.ch/cevo/the-group/people/person-detail.dsilvestro.html)
+* [Dario Shultz](https://www.ilr1.uni-bonn.de/en/about-us/staff/dario-schulz)
+* [Aleksi Lehikoinen](https://researchportal.helsinki.fi/en/persons/aleksi-lehikoinen)
 * [Henrik Smith](https://www.cec.lu.se/henrik-smith)
 
 ## Acknowledgment
