@@ -7,10 +7,10 @@ library(viridis)   # For the color palette
 
 # --- Data Simulation ---
 n_posterior_samples <- 1000  # Number of posterior samples
-set.seed(42) # For reproducibility
+set.seed(11072024) # For reproducibility
 
 metrics <- c('MSA', 'Sorensen', 'Geometric', 'Rao', 'BetaDiv')
-sampling_conditions <- c('Basal', 'Partial') # 'Basal' likely means full/reference sampling
+sampling_conditions <- c('Complete', 'Partial') # 'Complete' likely means full/reference sampling
 
 # We will store the partial data frames here
 results_list <- list()
@@ -19,11 +19,11 @@ results_list <- list()
 # (mean, standard deviation) for each metric and condition
 # Using a nested list in R
 simulation_params <- list(
-  'MSA' = list('Basal' = c(mean = 0.8, sd = 0.2), 'Partial' = c(mean = 0.3, sd = 0.3)),
-  'Sorensen'  = list('Basal' = c(mean = 1.0, sd = 0.15), 'Partial' = c(mean = 0.9, sd = 0.2)),
-  'Geometric'  = list('Basal' = c(mean = 0.4, sd = 0.25), 'Partial' = c(mean = 0.1, sd = 0.35)),
-  'Rao'  = list('Basal' = c(mean = 0.1, sd = 0.3), 'Partial' = c(mean = 0.05, sd = 0.35)),
-  'BetaDiv' = list('Basal' = c(mean = 0.6, sd = 0.18), 'Partial' = c(mean = 0.58, sd = 0.19))
+  'MSA' = list('Complete' = c(mean = 0.8, sd = 0.2), 'Partial' = c(mean = 0.3, sd = 0.3)),
+  'Sorensen'  = list('Complete' = c(mean = 1.0, sd = 0.15), 'Partial' = c(mean = 0.9, sd = 0.2)),
+  'Geometric'  = list('Complete' = c(mean = 0.4, sd = 0.25), 'Partial' = c(mean = 0.1, sd = 0.35)),
+  'Rao'  = list('Complete' = c(mean = 0.1, sd = 0.3), 'Partial' = c(mean = 0.05, sd = 0.35)),
+  'BetaDiv' = list('Complete' = c(mean = 0.6, sd = 0.18), 'Partial' = c(mean = 0.58, sd = 0.19))
 )
 
 # Iterate to generate simulated data
@@ -57,7 +57,7 @@ all_results_df <- bind_rows(results_list) %>%
 
 # --- Creating the Plot with ggplot2 ---
 
-ggplot(all_results_df, aes(x = Metric, y = EffectSize, fill = Sampling)) +
+p <- ggplot(all_results_df, aes(x = Metric, y = EffectSize, fill = Sampling)) +
   # Use geom_violin
   # position_dodge places violins side-by-side
   # scale="width" makes all violins have the same maximum width
@@ -69,11 +69,11 @@ ggplot(all_results_df, aes(x = Metric, y = EffectSize, fill = Sampling)) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.8) +
   
   # Use the Viridis color palette (similar to the Python version)
-  scale_fill_viridis_d(name = "Sampling\nIntensity") + # Name for the legend
+  scale_fill_(name = "Sampling\nIntensity") + # Name for the legend
   
   # Titles and labels
   labs(
-    title = "Comparison of Mean Effect Size (Scenario A - Baseline)",
+    title = "Comparison of Mean Effect Size (METSO - Bussiness as usual)",
     subtitle = "Under Different Sampling Intensities (Local Scale)",
     x = "Biodiversity Metric",
     y = "Average Effect Size\n(Scenario A - Baseline)"
@@ -84,11 +84,20 @@ ggplot(all_results_df, aes(x = Metric, y = EffectSize, fill = Sampling)) +
   # Rotate x-axis labels if necessary
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+ggsave(
+  "C:/Users/Carlos Munoz/Documents/Ph.D/6_courses/_meetings/2025/five_figure.jpeg",    # The name of the file you want to save
+  plot = p,           # The plot object you want to save
+  width = 7,          # The width of the plot in inches
+  height = 5,         # The height of the plot in inches
+  units = "in",       # The units for the width and height
+  dpi = 300           # The resolution in dots per inch (PPI)
+)
+
 # --- Interpretation (Example for your presentation) ---
 # When presenting this graph, you could say something like:
-# - "Here we see the simulated posterior distributions of the average effect of Scenario A for 5 metrics, comparing full ('Basal') sampling with reduced ('Partial') sampling."
+# - "Here we see the simulated posterior distributions of the average effect of Scenario A for 5 metrics, comparing full ('Complete') sampling with reduced ('Partial') sampling."
 # - "The dashed line at zero indicates no effect. We look for distributions clearly above or below zero."
 # - "We can observe that metrics like 'Shannon' and 'PhyloDiv' appear robust, detecting a clear positive effect even with partial sampling (green and blue violins are similar and far from zero)."
-# - "On the other hand, 'Richness' and 'Simpson' show a strong signal with complete data (Basal), but their detection ability degrades noticeably (the distribution moves closer to zero and widens) with partial sampling."
+# - "On the other hand, 'Richness' and 'Simpson' show a strong signal with complete data (Complete), but their detection ability degrades noticeably (the distribution moves closer to zero and widens) with partial sampling."
 # - "'FuncDiv', in this simulation, seems insensitive to the change induced by Scenario A, as its distributions are centered near zero in both cases."
 # - "This type of plot allows us to visually assess which metrics are more sensitive and robust to changes in sampling effort for detecting the impact of a specific scenario."

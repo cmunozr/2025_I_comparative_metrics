@@ -438,7 +438,7 @@ coords_for_plot |>
   geom_sf(aes(color = times_missing), size = 1.5) +
   scale_color_manual(
     values = custom_colors,
-    name = "Number of Years Missing Data",
+    name = "Number of Years Missing Biotope Data",
     drop = FALSE
   ) +
   labs(
@@ -454,11 +454,11 @@ missing_by_year <- master_events |>
   group_by(year) |>
   summarise(
     # Count of routes missing data that year
-    n_routes_missing = sum(has_no_biotope_data),
+    n_routes_missing_biotope_data = sum(has_no_biotope_data),
     # Total routes sampled that year
     n_routes_sampled = n(),
     # Percentage of routes missing data that year
-    percent_missing = (n_routes_missing / n_routes_sampled) * 100
+    percent_missing = (n_routes_missing_biotope_data / n_routes_sampled) * 100
   )
 
 # Breakdown of missing biotope data by year
@@ -535,7 +535,10 @@ paircount_data <- loss_analysis_data |>
   ) |>
   rename(paircount_lost = flag_0,
          paircount_kept = flag_1)
+```
 
+
+```{r}
 # Join and display the final table
 left_join(occurrence_data, paircount_data, by = "scientificName") |>
   mutate(
@@ -648,146 +651,158 @@ if (length(lost_species) > 0) {
 ### Create Biotope Polygon Buffers
 
 ```{r}
-biotope_polygon_L3_log <- tidyr::expand_grid(
+
+run <- T
+if(run){
+  
+  biotope_polygon_L3_log <- tidyr::expand_grid(
   vakio = coords$vakio,
   year = ms_nfi_years
-) |>
+  ) |>
   mutate(
     path = NA_character_,
     was_processed = FALSE,
     was_extended = FALSE,
     extension_distance_m = NA_real_,
-    point_strips = list(NULL)
+    point_warning = NA_character_
   ) |>
   arrange(year, vakio)
 
-for (y in 1:length(ms_nfi_years)) {
-  #y <- 7
-  current_year <- ms_nfi_years[y]
-  message(paste("--- Processing year:", current_year, "---"))
-
-  all_buffers_for_year <- list()
-
-  for (a in 1:nrow(coords)) {
-    # 
-    route_id <- coords$vakio[a]
-    
-    log_row_index <- which(biotope_polygon_L3_log$vakio == route_id & biotope_polygon_L3_log$year == current_year)
-    
-    route_a <- coords |>
-      filter(vakio == route_id) |> 
-      st_simplify(preserveTopology = T, dTolerance = 20) #<- this solve spicules and a lot of problems but get into newer ones
-
-    biotope_route_a <- occurr_sect_route |>
-      filter(year == current_year, vakio == route_id) |>
-      select(biotopeStripId, startMeters, endMeters, meters, biotope, biotopeSpecifier) |>
-      distinct() |> 
-      arrange(startMeters) |> 
-      mutate(
-        r_startMeters = startMeters / as.numeric(st_length(route_a)),
-        r_endMeters = endMeters / as.numeric(st_length(route_a))
-      )
-    
-    if(any(biotope_route_a$r_startMeters > 1)){
-      d <- (biotope_route_a$r_endMeters[nrow(biotope_route_a)] - 1) * as.numeric(st_length(route_a))
-      route_a <- st_extend_line(line = route_a, distance = d, end = "end")
+  for (y in 1:length(ms_nfi_years)) {
+    #y <- 7
+    current_year <- ms_nfi_years[y]
+    message(paste("--- Processing year:", current_year, "---"))
+  
+    all_buffers_for_year <- list()
+  
+    for (a in 1:nrow(coords)) {
+      # 
+      route_id <- coords$vakio[a]
       
-      biotope_route_a <- biotope_route_a |>
+      log_row_index <- which(biotope_polygon_L3_log$vakio == route_id & biotope_polygon_L3_log$year == current_year)
+      
+      route_a <- coords |>
+        filter(vakio == route_id) |> 
+        st_simplify(preserveTopology = T, dTolerance = 20) #<- this solve spicules and a lot of problems but get into newer ones
+  
+      biotope_route_a <- occurr_sect_route |>
+        filter(year == current_year, vakio == route_id) |>
+        select(vakio, biotopeStripId, startMeters, endMeters, meters, biotope, biotopeSpecifier) |>
+        distinct() |> 
+        arrange(startMeters) |> 
         mutate(
           r_startMeters = startMeters / as.numeric(st_length(route_a)),
           r_endMeters = endMeters / as.numeric(st_length(route_a))
         )
       
-      biotope_polygon_L3_log$was_extended[log_row_index] <- TRUE
-      biotope_polygon_L3_log$extension_distance_m[log_row_index] <- d
-    
-    }else{
-      biotope_polygon_L3_log$was_extended[log_row_index] <- FALSE
-    }
-    
-    if (nrow(biotope_route_a) > 1) {
+      if(any(biotope_route_a$r_startMeters > 1)){
+        d <- (biotope_route_a$r_endMeters[nrow(biotope_route_a)] - 1) * as.numeric(st_length(route_a))
+        route_a <- st_extend_line(line = route_a, distance = d, end = "end")
+        
+        biotope_route_a <- biotope_route_a |>
+          mutate(
+            r_startMeters = startMeters / as.numeric(st_length(route_a)),
+            r_endMeters = endMeters / as.numeric(st_length(route_a))
+          )
+        
+        biotope_polygon_L3_log$was_extended[log_row_index] <- TRUE
+        biotope_polygon_L3_log$extension_distance_m[log_row_index] <- d
       
-      biotope_polygon_L3_log$was_processed[log_row_index] <- TRUE
+      }else{
+        biotope_polygon_L3_log$was_extended[log_row_index] <- FALSE
+      }
       
-      route_buffers <- list()
-      for (r in 1:nrow(biotope_route_a)) {
-        # r <- 30
-        equal <- biotope_route_a[r,c("r_startMeters", "r_endMeters")] |> 
-          unlist() |> 
-          diff()
+      if (nrow(biotope_route_a) > 1) {
         
-        if(equal != 0){
-          
-        # Create the line segment for this biotope section
-        line_section <- st_linesubstring(
-          route_a,
-          from = biotope_route_a$r_startMeters[r],
-          to = biotope_route_a$r_endMeters[r]
-        )
-
-        # A standard buffer on the raw, angular route lines can create unrealistic polygon artifacts around sharp corners.
-        # To solve this, we split each section and create sub-buffers and then join them.
+        biotope_polygon_L3_log$was_processed[log_row_index] <- TRUE
         
-        segments <- nngeo::st_segments(line_section, progress = F)
-       
-        segment_buffers <- st_buffer(segments, dist = 150, endCapStyle = "FLAT")
-        
-        final_buffer <- st_union(segment_buffers)
-        
-        final_buffer_sf <- st_sf(geometry = st_sfc(final_buffer), crs = st_crs(route_a)) |>
-            bind_cols(biotope_route_a[r,])
-
-        route_buffers[[r]] <- final_buffer_sf
-        
-        }else{
+        route_buffers <- list()
+        for (r in 1:nrow(biotope_route_a)) {
+          # r <- 30
+          # some strips are actually points, here we spot it using starting and final distance information
+          # then they are removed and flagged in the log file
+          equal <- biotope_route_a[r,c("r_startMeters", "r_endMeters")] |> 
+            unlist() |> 
+            diff()
           
-          value_in_log <- biotope_polygon_L3_log$point_strips[log_row_index] |> unlist()
+          if(equal != 0){ 
+            
+          # Create the line segment for this biotope section
+          line_section <- st_linesubstring(
+            route_a,
+            from = biotope_route_a$r_startMeters[r],
+            to = biotope_route_a$r_endMeters[r]
+          )
+  
+          # A standard buffer on the raw, angular route lines can create unrealistic polygon artifacts around sharp corners.
+          # To solve this, we split each section and create sub-buffers and then join them.
           
-          point_strip_r <-  biotope_route_a$biotopeStripId[r]
+          segments <- nngeo::st_segments(line_section, progress = F)
+         
+          segment_buffers <- st_buffer(segments, dist = 150, endCapStyle = "FLAT")
           
-          warning(paste(point_strip_r, "route", route_id, "year", current_year, "is a point observation, check log."))
+          final_buffer <- st_union(segment_buffers)
           
-          value_to_log <- compact(list(c(value_in_log, point_strip_r)))
+          final_buffer_sf <- st_sf(geometry = st_sfc(final_buffer), crs = st_crs(route_a)) |>
+              bind_cols(biotope_route_a[r,])
+  
+          route_buffers[[r]] <- final_buffer_sf
           
-          biotope_polygon_L3_log$point_strips[[log_row_index]] <- value_to_log
+          }else{
+            
+            value_in_log <- biotope_polygon_L3_log$point_warning[log_row_index]
+            
+            point_strip_r <-  biotope_route_a$biotopeStripId[r]
+            
+            warning(paste(point_strip_r, "route", route_id, "year", current_year, "is a point observation, check log."))
+            
+            value_to_log <- paste(c(value_in_log, point_strip_r), collapse = ",")
+            
+            biotope_polygon_L3_log$point_warning[[log_row_index]] <- value_to_log
+            
+          }
           
         }
-        
+        all_buffers_for_year[[a]] <- do.call(rbind, route_buffers)
       }
-      all_buffers_for_year[[a]] <- do.call(rbind, route_buffers)
     }
+  
+    # Combine and save the final file for the year
+    valid_buffers <- all_buffers_for_year[!sapply(all_buffers_for_year, is.null)]
+    year_sf <- do.call(rbind, valid_buffers)
+  
+    output_filename <- paste0("data/fbs/route_sections_L3_", current_year, ".gpkg")
+    write_sf(year_sf, output_filename, delete_layer = TRUE)
+    biotope_polygon_L3_log[biotope_polygon_L3_log$year == current_year, "path"] <- output_filename
+    message(paste("Saved file:", output_filename))
+  
   }
-
-  # Combine and save the final file for the year
-  valid_buffers <- all_buffers_for_year[!sapply(all_buffers_for_year, is.null)]
-  year_sf <- do.call(rbind, valid_buffers)
-
-  output_filename <- paste0("data/fbs/route_sections_L3_", current_year, ".gpkg")
-  write_sf(year_sf, output_filename, delete_layer = TRUE)
-  biotope_polygon_L3_log[biotope_polygon_L3_log$year == current_year, "path"] <- output_filename
-  message(paste("Saved file:", output_filename))
-
+  saveRDS(biotope_polygon_L3_log, file.path("data", "fbs", "biotope_polygon_L3_log.rds"))  
+  
+  rm(line_section, segments, segment_buffers, final_buffer, final_buffer_sf, 
+   route_buffers, all_buffers_for_year, valid_buffers, year_sf, output_filename)
+  
+}else{
+  
+  biotope_polygon_L3_log <- readRDS(file.path("data", "fbs", "biotope_polygon_L3_log.rds"))  
+  
 }
 
-saveRDS(biotope_polygon_L3_log, file.path("data", "fbs", "biotope_polygon_L3_log.rds"))
-
-biotope_polygon_L3_log <- readRDS(file.path("data", "fbs", "biotope_polygon_L3_log.rds"))
 ```
 
+### Aggregate biotope information from vakio+biotope+biotopeSpecifier to vakio+biotope. The former is too finer. 
+
+#### Dissolve poligons
 
 ```{r}
-rm(route_buffers, line_section, segments, segment_buffers, final_buffer, final_buffer_sf, 
-   route_buffers, all_buffers_for_year, valid_buffers, year_sf, output_filename)
-```
-
-```{r}
-l3_polygon_paths <- output_paths$path[!is.na(output_paths$path)]
+l3_polygon_paths <- biotope_polygon_L3_log$path |> 
+  unique()
 l2_output_paths <- data.frame("year" = ms_nfi_years, "path_L2" = NA)
 
 for (i in 1:length(l3_polygon_paths)) {
-  
+  # i <- 1
   l3_file <- l3_polygon_paths[i]
-  current_year <- as.numeric(gsub("[^0-9]", "", basename(l3_file)))
+  current_year <- ms_nfi_years[i]
   message(paste("Processing:", basename(l3_file)))
   
   # Read the detailed Level 3 polygons
@@ -799,17 +814,35 @@ for (i in 1:length(l3_polygon_paths)) {
     group_by(vakio, biotope) |>
     # The key step: st_union() merges all geometries within each group
     summarise(
+      geometry = st_union(geom),
+      dissolved_strip_ids = paste(unique(biotopeStripId), collapse = ","),
+      num_dissolved = n(),
       .groups = "drop" # Drop the grouping
     )
   
   # Save the new, dissolved polygons to a new file
-  output_filename_l2 <- paste0("data/fbs/route_sections_L2_", current_year, ".gpkg")
+  output_filename_l2 <- file.path("data", "fbs", paste0("route_sections_L2_", current_year, ".gpkg"))
   write_sf(polygons_l2, output_filename_l2, delete_layer = TRUE)
   l2_output_paths$path_L2[l2_output_paths$year == current_year] <- output_filename_l2
-  message(paste("Saved dissolved file:", output_filename_l2))
 }
 ```
 
+#### Aggregate occurrences
+
+```{r}
+occurr_biotope_route <- occurr_sect_route |>
+  group_by(vakio, year, biotope, scientificName) |>
+  summarise(
+    pairCount = sum(pairCount, na.rm = TRUE),
+    dissolved_strip_ids = paste(unique(biotopeStripId), collapse = ","),
+    num_dissolved = n(),
+    .groups = "drop"
+  ) |>
+  # We need to create a new unique ID for these aggregated units
+  mutate(
+    sampleUnit = paste(vakio, year, biotope, sep = "_")
+  )
+```
 
 
 ### Process Environmental Covariates
@@ -902,11 +935,11 @@ if(run){
 ### Species Occurrence Matrix (Y)
 
 ```{r}
-Y <- occurrSppCoord |> 
-  select(karta, punkt, yr, latin, count) |>
-  pivot_wider(id_cols = c(karta, punkt, yr), names_from = latin, values_from = count,
+Y <- occurr_biotope_route |> 
+  select(sampleUnit, scientificName, pairCount) |>
+  pivot_wider(id_cols = sampleUnit, names_from = scientificName, values_from = pairCount,
               values_fn = sum, values_fill = 0) |> 
-  select(-yr, -punkt, -karta) |> 
+  select(-sampleUnit) |> 
   as.data.frame()
 
 Y <- Y[, order(colnames(Y))]
