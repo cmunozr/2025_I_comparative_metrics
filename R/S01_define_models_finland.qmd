@@ -652,7 +652,7 @@ if (length(lost_species) > 0) {
 
 ```{r}
 
-run <- T
+run <- F
 if(run){
   
   biotope_polygon_L3_log <- tidyr::expand_grid(
@@ -683,7 +683,10 @@ if(run){
       
       route_a <- coords |>
         filter(vakio == route_id) |> 
-        st_simplify(preserveTopology = T, dTolerance = 20) #<- this solve spicules and a lot of problems but get into newer ones
+        # this solve spicules and a lot of problems on the topology of the line.
+        # However some lines become a bit longer, this is why in some special cases
+        # we extend the line to match with the maximum claimed distance by the surveyor
+        st_simplify(preserveTopology = T, dTolerance = 20)
   
       biotope_route_a <- occurr_sect_route |>
         filter(year == current_year, vakio == route_id) |>
@@ -695,6 +698,7 @@ if(run){
           r_endMeters = endMeters / as.numeric(st_length(route_a))
         )
       
+      # to extend sample lines
       if(any(biotope_route_a$r_startMeters > 1)){
         d <- (biotope_route_a$r_endMeters[nrow(biotope_route_a)] - 1) * as.numeric(st_length(route_a))
         route_a <- st_extend_line(line = route_a, distance = d, end = "end")
@@ -734,7 +738,7 @@ if(run){
             to = biotope_route_a$r_endMeters[r]
           )
   
-          # A standard buffer on the raw, angular route lines can create unrealistic polygon artifacts around sharp corners.
+          # A standard buffer on the raw, angular route lines can create unrealistic polygon artifacts around sharp and "spicule type" corners.
           # To solve this, we split each section and create sub-buffers and then join them.
           
           segments <- nngeo::st_segments(line_section, progress = F)
@@ -805,22 +809,20 @@ for (i in 1:length(l3_polygon_paths)) {
   current_year <- ms_nfi_years[i]
   message(paste("Processing:", basename(l3_file)))
   
-  # Read the detailed Level 3 polygons
-  polygons_l3 <- st_read(l3_file)
+  polygons_l3 <- st_read(l3_file, quiet = T)
   
   # Dissolve the geometries
   # We group by the route ID (vakio) and the Level 2 biotope code
   polygons_l2 <- polygons_l3 |>
     group_by(vakio, biotope) |>
-    # The key step: st_union() merges all geometries within each group
+    # st_union() merges all geometries within each group
     summarise(
       geometry = st_union(geom),
       dissolved_strip_ids = paste(unique(biotopeStripId), collapse = ","),
       num_dissolved = n(),
-      .groups = "drop" # Drop the grouping
+      .groups = "drop"
     )
   
-  # Save the new, dissolved polygons to a new file
   output_filename_l2 <- file.path("data", "fbs", paste0("route_sections_L2_", current_year, ".gpkg"))
   write_sf(polygons_l2, output_filename_l2, delete_layer = TRUE)
   l2_output_paths$path_L2[l2_output_paths$year == current_year] <- output_filename_l2
@@ -881,10 +883,10 @@ if(run){
   select(standid, metso)
   
   sampled_stand_ids <- metso_stands_df |> 
-  group_by(metso) |>
-  sample_n(size = 10000, replace = FALSE) |>
-  ungroup() |>
-  pull(standid)
+    group_by(metso) |>
+    sample_n(size = 10000, replace = FALSE) |>
+    ungroup() |>
+    pull(standid)
   
   rds_data_dir <- file.path("D:","intermediate_aggregated")
 
@@ -1007,69 +1009,61 @@ saveRDS(XData, "data/covariates/XData_hmsc.rds")
 
 ###  Phylogenetic Tree (phyloTree)
 
-First, we have to resolve names used in the phylogeny database and the bird survey.(BirdTree database)\[https://birdtree.org/\] The database come froms: (Jetz, W., G. H. Thomas, J. B. Joy, K. Hartmann, and A. O. Mooers. 2012. The global diversity of birds in space and time. Nature 491:444-448)\[https://www-nature-com.ludwig.lub.lu.se/articles/nature11631\]. There is no API, so write and retrieve manually. The species list from the database were web scrapping.
+We have to resolve names used in the phylogeny database and the bird survey.(BirdTree database)\[https://birdtree.org/\] The database comes from: (Jetz, W., G. H. Thomas, J. B. Joy, K. Hartmann, and A. O. Mooers. 2012. The global diversity of birds in space and time. Nature 491:444-448)\[https://www-nature-com.ludwig.lub.lu.se/articles/nature11631\]. The species list from the database were web scrapped. There is no API, so write and retrieve manually. BirdTree names will be an anchor for trait database names.
 
 ```{r}
+spp_Y <- colnames(Y)
 
-sppY <- colnames(Y)
+bird_tree <- birdTreeSpp$species
 
-sppResolved <- data.frame("scientificName" = NA, "bird_tree" = NA)
+is_missing_birdTree <- !(spp_Y %in% bird_tree)
 
-run <- F
+spp_resolved <- data.frame("scientificName" = NA_character_, "bird_tree" = NA_character_)
+
+run <- T
 
 if(run){
 
-  for(i in 1:length(sppY)){
-    spp.i <- sppY[i]
+  for(i in 1:length(spp_Y)){
     
-    isMissingSppTree <- !(spp.i %in% birdTreeSpp$species)
-      
-    if(isMissingSppTree){
+    spp_i <- spp_Y[i]
+    
+    if(is_missing_birdTree[i]){
         
-      if(spp.i == "Corvus cornix"){
-        
-        synSppY.i <- "Corvus corone"
-          
-        }else if(spp.i == "Loxia bifasciata"){
-          synSppY.i <- "Loxia leucoptera"
-    
-        }else if(spp.i == "Curruca cantillans"){
-          synSppY.i <- "Sylvia cantillans"
-    
-        }else if(spp.i == "Columba livia f. domestica"){
-          synSppY.i <- "Columba livia"
-          
-        }else{
-          
-        synSppY.i <- synonyms(spp.i, db = "nbn", rec_only = T, accepted = F, rank = "species", ask = F) |> 
+        syn_spp_i <- taxize::synonyms(spp_i, db = "nbn", rec_only = T, accepted = F, rank = "species", ask = F) |> 
           map_df(~ .x)
         
-        if(ncol(synSppY.i) == 1 | ncol(synSppY.i) == 0){
-          synSppY.i <- NA
+        if(ncol(syn_spp_i) == 1 | ncol(syn_spp_i) == 0){
+          
+          syn_spp_i <- NA
+        
         }else{
-          synSppY.i <-  synSppY.i |> 
+          
+          syn_spp_i <-  syn_spp_i |> 
             select(nameString) |> 
             pull()
-          synSppY.i <- (synSppY.i[synSppY.i %in% birdTreeSpp$species]) |> 
+          syn_spp_i <- (syn_spp_i[syn_spp_i %in% birdTreeSpp$species]) |> 
             unique()
-        }
-    
-        }
-      }else{
-        synSppY.i <- spp.i
+          }
+    }else{
+        syn_spp_i <- spp_i
       }
-     sppResolved[i,"scientificName"] <- spp.i
-     sppResolved[i,"bird_tree"] <- synSppY.i
+  
+  spp_resolved[i,"scientificName"] <- spp_i
+  spp_resolved[i,"bird_tree"] <- syn_spp_i
   }
   
-  write.csv(sppResolved, "data/bird_tree/taxonomical_synonyms_birdtree.csv", row.names = F)
-}else{
+  spp_resolved <- bind_cols(spp_resolved, is_missing_birdTree) |> 
+    rename(missing_birdTree = 3)
+  write.csv(spp_resolved, "data/bird_tree/taxonomical_synonyms_birdtree.csv", row.names = F)
   
-  sppResolved <- read.csv("data/bird_tree/taxonomical_synonyms_birdtree.csv")
-
+}else{
+  spp_resolved <- read.csv("data/bird_tree/taxonomical_synonyms_birdtree.csv")
 }
+```
 
 
+```{r}
 Trees <- ape::read.nexus("data/bird_tree/n100_naRemoved/output.nex")
 
 ## MISSING. Consensus method (?)
