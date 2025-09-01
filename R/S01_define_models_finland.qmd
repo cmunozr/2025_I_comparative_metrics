@@ -86,14 +86,14 @@ knitr::opts_knit$set(root.dir = "c:/Users/Carlos Munoz/Documents/Ph.D/6_courses/
 #| warning: false
 
 library(matrixStats)
-library(Hmsc)#
+library(Hmsc)
 library(tidyverse)
 library(data.table)
 library(terra)
-library(sf)#
-library(maps)#
+library(sf)
+library(maps)
 library(ape)
-library(taxize)#
+library(taxize)
 library(remotes)
 library(phytools)
 library(openxlsx)
@@ -102,10 +102,11 @@ library(viridis)
 library(lwgeom)
 library(ggrepel)
 library(gt)
-library(exactextractr) #
-library(patchwork) #
+library(exactextractr)
+library(patchwork)
 library(dplyr)
 library(units)
+library(clootl) # devtools::install_github("eliotmiller/clootl")
 ```
 
 ### Global Options & Helper Functions
@@ -128,30 +129,12 @@ transform_Y_to_abunCpres <- function(data) {
 ```
 
 ```{r}
-calculate_angle <- function(p1, p2, p3) {
-  v1 <- p1 - p2
-  v2 <- p3 - p2
-  
-  # Calculate the dot product
-  dot_product <- sum(v1 * v2)
-  
-  # Calculate the magnitude (length) of each vector
-  mag1 <- sqrt(sum(v1^2))
-  mag2 <- sqrt(sum(v2^2))
-  
-  # The angle in radians is the arccosine of the dot product divided by the product of the magnitudes
-  angle_rad <- acos(dot_product / (mag1 * mag2))
-  
-  # Convert radians to degrees
-  angle_deg <- angle_rad * 180 / pi
-  return(angle_deg)
-}
-```
-
-```{r}
 source("R/_utilities_transform_covariates.R")
 ```
 
+```{r}
+options(timeout = 9999)
+```
 
 ## Data loading
 
@@ -174,7 +157,6 @@ occurr_route <- read.csv("data/fbs/vakiolinja/vakiolinja2_20250626.csv")
 
 occurr_sect_route <- read.csv("data/fbs/vakiolinja/vakiolinja3_20250626.csv") 
 
-
 ```
 
 ### Load Auxiliary Files
@@ -187,7 +169,7 @@ species_list <- read.xlsx(xlsxFile = "data/ecs24559-sup-0001-appendixs1.xlsx", s
 
 Traits information
 ```{r}
-avonet <- read.xlsx("data/traits/AVONET/TraitData/AVONET3_BirdTree.xlsx", sheet = 2)
+avonet <- read.xlsx("data/traits/AVONET/TraitData/AVONET2_eBird.xlsx", sheet = 2)
 ```
 
 Dictionary of processed covariates (Shultz)
@@ -195,18 +177,23 @@ Dictionary of processed covariates (Shultz)
 dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";")
 ```
 
-Phylogenetic information
-
-```{r}
-birdTreeSpp <- read.csv("data/bird_tree/birds_tree_swedish/birdTree_spp.csv")
-
-```
-
 Multi Source Forest National Inventory available data years
 
 ```{r}
 ms_nfi_years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
 ```
+
+Phylogenetic information
+
+```{r}
+run <- F
+if(run){
+  get_avesdata_repo(path="data/") 
+}
+set_avesdata_repo_path(path = "data/AvesData-main/", overwrite = T)
+
+```
+
 
 
 ## FBS Data Preprocessing & Cleaning
@@ -246,7 +233,7 @@ if(run == T){
   tax_in_route_raw <- taxize::classification(spp_in_route, db = "gbif")
   missing_index <- which(is.na(tax_in_route_raw))
   missing <- spp_in_route[missing_index]
-  tax__in_route_raw <- tax_in_route_raw[-missing_index]
+  tax_in_route_raw <- tax_in_route_raw[-missing_index]
   missing_tax <- taxize::classification(missing, db = "itis")
   tax_in_route_raw <- c(tax_in_route_raw, missing_tax)
   saveRDS(object = tax_in_route_raw, file = "data/fbs/tax_raw_data.rds")
@@ -421,7 +408,7 @@ How are the routes with missing biotope data distributed spatially?
 
 ```{r}
 # mapping spreading of no biotope data
-fin <- st_as_sf(map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
+fin <- st_as_sf(maps::map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
 
 # Create a color palette
 lvls <- levels(coords_for_plot$times_missing)
@@ -652,7 +639,7 @@ if (length(lost_species) > 0) {
 
 ```{r}
 
-run <- F
+run <- F # want to recalculate buffers?
 if(run){
   
   biotope_polygon_L3_log <- tidyr::expand_grid(
@@ -774,6 +761,7 @@ if(run){
     # Combine and save the final file for the year
     valid_buffers <- all_buffers_for_year[!sapply(all_buffers_for_year, is.null)]
     year_sf <- do.call(rbind, valid_buffers)
+    year_sf$year <- current_year
   
     output_filename <- paste0("data/fbs/route_sections_L3_", current_year, ".gpkg")
     write_sf(year_sf, output_filename, delete_layer = TRUE)
@@ -819,6 +807,7 @@ for (i in 1:length(l3_polygon_paths)) {
     summarise(
       geometry = st_union(geom),
       dissolved_strip_ids = paste(unique(biotopeStripId), collapse = ","),
+      year = unique(year),
       num_dissolved = n(),
       .groups = "drop"
     )
@@ -829,7 +818,7 @@ for (i in 1:length(l3_polygon_paths)) {
 }
 ```
 
-#### Aggregate occurrences
+#### Sum up occurrences
 
 ```{r}
 occurr_biotope_route <- occurr_sect_route |>
@@ -871,7 +860,7 @@ year_route_sampling <- occurr_sect_route |>
 folder_name <- file.path("data", "intermediate_covariates") 
 
 
-run <- F
+run <- T
 
 if(run){
   
@@ -938,7 +927,7 @@ if(run){
 
 ```{r}
 Y <- occurr_biotope_route |> 
-  select(sampleUnit, scientificName, pairCount) |>
+  select(sampleUnit, scientificName, pairCount) |> 
   pivot_wider(id_cols = sampleUnit, names_from = scientificName, values_from = pairCount,
               values_fn = sum, values_fill = 0) |> 
   select(-sampleUnit) |> 
@@ -1009,91 +998,55 @@ saveRDS(XData, "data/covariates/XData_hmsc.rds")
 
 ###  Phylogenetic Tree (phyloTree)
 
-We have to resolve names used in the phylogeny database and the bird survey.(BirdTree database)\[https://birdtree.org/\] The database comes from: (Jetz, W., G. H. Thomas, J. B. Joy, K. Hartmann, and A. O. Mooers. 2012. The global diversity of birds in space and time. Nature 491:444-448)\[https://www-nature-com.ludwig.lub.lu.se/articles/nature11631\]. The species list from the database were web scrapped. There is no API, so write and retrieve manually. BirdTree names will be an anchor for trait database names.
+Note: We have to check if we have to resolve names used in the phylogeny database and the finish bird survey.
 
 ```{r}
+mctavish_mcc <- treeGet(version = "1.4", taxonomy_year = "2023")
+
 spp_Y <- colnames(Y)
 
-bird_tree <- birdTreeSpp$species
+mctavish_mcc$tip.label <- mctavish_mcc$tip.label |> 
+  str_replace("_", " ")
 
-is_missing_birdTree <- !(spp_Y %in% bird_tree)
+not_in_mctavish <- !(spp_Y %in% mctavish_mcc$tip.label)
 
-spp_resolved <- data.frame("scientificName" = NA_character_, "bird_tree" = NA_character_)
+to_rename <- taxize::synonyms(spp_Y[not_in_mctavish], db = "itis")[[1]] |> 
+  select(acc_name) |> 
+  pull() |> 
+  unique()
 
-run <- T
+# "Sylvia curruca" change to "'Curruca curruca"
 
-if(run){
+spp_Y[which(spp_Y == spp_Y[not_in_mctavish])] <- to_rename
 
-  for(i in 1:length(spp_Y)){
-    
-    spp_i <- spp_Y[i]
-    
-    if(is_missing_birdTree[i]){
-        
-        syn_spp_i <- taxize::synonyms(spp_i, db = "nbn", rec_only = T, accepted = F, rank = "species", ask = F) |> 
-          map_df(~ .x)
-        
-        if(ncol(syn_spp_i) == 1 | ncol(syn_spp_i) == 0){
-          
-          syn_spp_i <- NA
-        
-        }else{
-          
-          syn_spp_i <-  syn_spp_i |> 
-            select(nameString) |> 
-            pull()
-          syn_spp_i <- (syn_spp_i[syn_spp_i %in% birdTreeSpp$species]) |> 
-            unique()
-          }
-    }else{
-        syn_spp_i <- spp_i
-      }
-  
-  spp_resolved[i,"scientificName"] <- spp_i
-  spp_resolved[i,"bird_tree"] <- syn_spp_i
-  }
-  
-  spp_resolved <- bind_cols(spp_resolved, is_missing_birdTree) |> 
-    rename(missing_birdTree = 3)
-  write.csv(spp_resolved, "data/bird_tree/taxonomical_synonyms_birdtree.csv", row.names = F)
-  
-}else{
-  spp_resolved <- read.csv("data/bird_tree/taxonomical_synonyms_birdtree.csv")
-}
+phyloTree <- extractTree(species = spp_Y, version = 1.4)
+
+colnames(Y) <- spp_Y
+
 ```
 
 
 ```{r}
-Trees <- ape::read.nexus("data/bird_tree/n100_naRemoved/output.nex")
+#| label: fig-bird-tree
+#| fig-width: 12
+#| fig-height: 10
+#| fig-cap: "Species phylogenetic tree"
 
-## MISSING. Consensus method (?)
-
-
-phyloTree <- Trees[[sample(1:100, 1)]]
-
-
-phyloTree$tip.label <- phyloTree$tip.label |> 
-  str_replace(pattern = "_", " ")
-
-#----------------
-# remove spp
-# phyloTree <- drop.tip(phyloTree, c("Anser_indicus", "Falco_vespertinus"))
-
-#----------------
-
-phyloTree$tip.label <- sppResolved$scientificName[match(phyloTree$tip.label, sppResolved$bird_tree)]
+plot(phyloTree, cex = 0.7, no.margin = TRUE)
 
 ```
+
 
 ## Species Trait Data (T)
 
 ```{r}
-avonet <- avonet |> 
-  rename(bird_tree = Species3) |>
-  right_join(sppResolved, by = "bird_tree" ) |>  
-  select(scientificName, Mass, Habitat, Habitat.Density, Trophic.Niche, Primary.Lifestyle, Migration)
- 
-TrData <- avonet |>  
+
+spp_Y <- data.frame("scientificName" = colnames(Y))
+
+TrData <- avonet |> 
+  rename(scientificName = Species2) |>
+  right_join(spp_Y, by = "scientificName" ) |>  
+  select(scientificName, Mass, Habitat, Habitat.Density, Trophic.Niche, Primary.Lifestyle, Migration) |> 
   as.data.frame()
 
 row.names(TrData) <- TrData$scientificName 
