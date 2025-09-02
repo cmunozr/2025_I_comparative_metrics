@@ -807,9 +807,12 @@ for (i in 1:length(l3_polygon_paths)) {
     summarise(
       geometry = st_union(geom),
       dissolved_strip_ids = paste(unique(biotopeStripId), collapse = ","),
-      year = unique(year),
       num_dissolved = n(),
+      year = unique(year),
       .groups = "drop"
+    ) |> 
+    mutate(
+      sampleUnit = paste(vakio, year, biotope, sep = "_")
     )
   
   output_filename_l2 <- file.path("data", "fbs", paste0("route_sections_L2_", current_year, ".gpkg"))

@@ -6,30 +6,10 @@ library(tidyr)
 library(purrr)
 library(stringr)
 
+source("R/_utilities_transform_covariates.R")
+
+#--------------
 # Prepare paths and organize information for each set of covariates
-
-## Get root folder to creathe the paths for a set of covariates, example: "latvus". 
-## It iterates over all the hard disks available
-
-find_root_folder <- function(folder_name) {
-  drive_info <- shell('wmic logicaldisk get name', intern = TRUE)
-  search_roots <- trimws(grep("^[A-Z]:", drive_info, value = TRUE))
-  
-  found_paths <- c()
-  for (root_path in search_roots) {
-    path_to_check <- file.path(root_path, folder_name)
-    if (dir.exists(path_to_check)) {
-      folders <- list.dirs(path_to_check, recursive = F, full.names = T)
-      if(length(folders) == 0){
-        found_paths <- c(found_paths, path_to_check)
-      }else{
-        found_paths <- c(found_paths, folders)  
-      }
-      
-    }
-  }
-  return(found_paths)
-}
 
 ## Three high Europe. Global no tiles. https://glad.umd.edu/users/Potapov/Europe_TCH/Tree_Height/. See _utilities_download_covariates.R code
 
@@ -131,14 +111,14 @@ metso_utm_join$poly_id <- 1:nrow(metso_utm_join) # id
 
 coords_utm_join <- lapply(X = coords, FUN = function(X){
     X.i <- X |> 
-      select(vakio, year) |> 
+      select(sampleUnit, vakio, year) |> 
       mutate(set = "coords") |> 
       st_transform(st_crs(utm_200)) |> 
       st_join(y = utm_200) |> 
       rename(UTM200 = lehtitunnus) |> 
       st_join(y = utm_10) |> 
       rename(UTM10 = lehtitunnus) |> 
-      select(vakio, set, UTM200, UTM10, year) |> 
+      select(sampleUnit, vakio, year, set, UTM200, UTM10) |> 
       st_buffer(dist = 150) 
     X.i$poly_id <- 1:nrow(X.i) #id
     return(X.i)
@@ -199,31 +179,6 @@ coords_utm_join <- bind_rows(coords_utm_join)
 
 # Actually Get covariates information
 
-## Creates a direct-readable path for both zipped and unzipped rasters.
-prepare_raster_paths <- function(df) {
-  df |>
-    mutate(
-      path = gsub("\\\\", "/", path),
-      proc_path = if_else(
-        endsWith(path, ".zip"),
-        paste0("/vsizip/", path, "/", sub("\\.zip$", "", basename(path))),
-        path
-      )
-    ) 
-}
-
-## Gets the CRS from a raster file as a WKT string.
-
-get_raster_crs <- function(raster_path) {
-  tryCatch({
-    r <- terra::rast(raster_path)
-    return(terra::crs(r, proj = TRUE))
-  }, error = function(e) {
-    warning(paste("Could not read CRS from:", raster_path, "\nError:", e$message))
-    return(NA_character_)
-  })
-}
-
 master_covariates <- master_covariates |>
   prepare_raster_paths() |>
   group_by(dataset) |>
@@ -231,174 +186,11 @@ master_covariates <- master_covariates |>
   ungroup() |>  
   filter(!is.na(raster_crs))
 
-## Extracts raw information values from covarites for a polygon or set of polygons
-## Iterates over a data.frame of covariates information
-
-##raster_info_df
-## dataset (name of the set, character)
-## var (specific name of the variable, character)
-## file (path to the raster layer, character)
-## year (numeric)
-## UTM200 (UTM 200 code if the raster is divided in tiles, character)
-## UTM10 (UTM 10 code if the raster is divided in tiles, character)
-
-## polygons_sf
-## set (type of polygon, character)
-## UTM200 (location in UTM 200 tiles of the polygon, character)
-## UTM10 (location in UTM 10 tiles of the polygon, character)
-
-## value (path of RDS containing raw information)
-
-
-extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_column = "vakio") {
-  
-  message(paste("Fetching from", raster_info_df$dataset[1], "variable", raster_info_df$var[1], "year",
-                raster_info_df$year[1], "with polygon set", polygons_sf$set[1]))
-  
-  target_crs <- raster_info_df$raster_crs[1]
-  
-  folder_name <- file.path(folder, "intermediate_by_tile", paste0(raster_info_df$dataset[1], "-", polygons_sf$set[1]))
-  dir.create(folder_name, showWarnings = FALSE, recursive = TRUE)
-  
-  polygons_reprojected <- polygons_sf |>
-    filter(year == raster_info_df$year[1]) |>
-    st_transform(crs = target_crs) 
-  
-  created_files <- c()
-  
-  for (i in 1:nrow(raster_info_df)) {
-    
-    message(paste("tile", i, "of", nrow(raster_info_df)))
-    
-    raster_info <- raster_info_df[i, ]
-    
-    if (!is.na(raster_info$UTM200)) {
-      polygons_for_this_tile <- polygons_reprojected |> filter(UTM200 == raster_info$UTM200)
-      nm <- paste0(raster_info$var, "_", raster_info$year, "_", raster_info$UTM200, "_tile.rds")
-    } else if (!is.na(raster_info$UTM10)) {
-      polygons_for_this_tile <- polygons_reprojected |> filter(UTM10 == raster_info$UTM10)
-      nm <- paste0(raster_info$var, "_", raster_info$year, "_", raster_info$UTM10, "_tile.rds")
-    } else {
-      # This handles cases where the raster is not tiled (covers the whole area).
-      polygons_for_this_tile <- polygons_reprojected
-      nm <- paste0(raster_info$var, "_", raster_info$year, "_tile.rds")
-    }
-    
-    # If no polygons fall within this tile, skip to the next raster.
-    if (nrow(polygons_for_this_tile) == 0) {
-      next
-    }
-    
-    suppressWarnings({
-      raw_data_for_tile <- exact_extract(
-        x = rast(raster_info$proc_path),
-        y = polygons_for_this_tile,
-        fun = NULL,
-        include_cols = "poly_id",
-        progress = F
-      )
-    })
-    
-    raw_data_for_tile <- bind_rows(raw_data_for_tile) |>
-      mutate(variable = raster_info$var,
-             dataset = raster_info$dataset,
-             year = raster_info$year) |>
-      left_join(
-        st_drop_geometry(polygons_reprojected) |> select(all_of(id_column), poly_id),
-        by = "poly_id"
-      )
-    
-
-    tile_filename <- file.path(folder_name, nm)
-    
-    saveRDS(raw_data_for_tile, file = tile_filename)
-    
-    created_files <- c(created_files, tile_filename)
-
-    rm(raw_data_for_tile, polygons_for_this_tile); gc()
-  }
-  
-  return(created_files)
-}
-
-
-# extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_column = "vakio" ) {
-#   
-#   message(paste("Fetching from", raster_info_df$dataset[1], "variable", unique(raster_info_df$var), "year", 
-#                 raster_info_df$year[1], "with polygon set", unique(polygons_sf$set)))
-#   
-#   target_crs <- raster_info_df$raster_crs[1]
-#   
-#   polygons_to_process <- polygons_sf |> 
-#     filter(year == raster_info_df$year[1]) |> 
-#     st_transform(crs = target_crs, quiet = TRUE) 
-#   
-#   message(nrow(polygons_to_process))
-#   
-#   folder_name <- file.path(folder, "intermediate_by_tile", paste0(raster_info_df$dataset[1], "-", unique(polygons_sf$set)))
-#   dir.create(folder_name, showWarnings = FALSE, recursive = TRUE)
-#   
-#   created_files <- c() 
-#   
-#   for (i in 1:nrow(raster_info_df)) {
-#     # i <- 1
-#     raster_info <- raster_info_df[i, ]
-#     
-#     if (is.na(raster_info$UTM200) && is.na(raster_info$UTM10)) {
-#       polygons_to_process <- polygons_to_process
-#       nm <- paste0(raster_info$var, "_", raster_info$year, "_tile.rds")
-#     } else if (!is.na(raster_info$UTM200)) {
-#       polygons_to_process <- polygons_to_process |> filter(UTM200 == raster_info$UTM200)
-#       nm <- paste0(raster_info$var, "_", raster_info$year, "_", raster_info$UTM200, "_tile.rds")
-#     } else if (!is.na(raster_info$UTM10)) {
-#       polygons_to_process <- polygons_to_process |> filter(UTM10 == raster_info$UTM10)
-#       nm <- paste0(raster_info$var, "_", raster_info$UTM10, "_tile.rds")
-#     } else {
-#       next # Skip to the next iteration
-#     }
-#     
-#     if (nrow(polygons_to_process) == 0) {
-#       next # Skip to the next iteration
-#     }
-#     
-#     suppressWarnings({
-#       raw_data_for_tile <- exact_extract(
-#         x = rast(raster_info$proc_path),
-#         y = polygons_to_process,
-#         fun = NULL,
-#         include_cols = "poly_id"
-#       )
-#     })
-#     
-#     raw_data_for_tile <- bind_rows(raw_data_for_tile) |>
-#       mutate(variable = raster_info$var,
-#              dataset = raster_info$dataset,
-#              year = raster_info$year) |>
-#       left_join(
-#         select(st_drop_geometry(polygons_reprojected), id_column, poly_id), 
-#         by = "poly_id"
-#       )
-#        
-#       
-#     
-#     tile_filename <- file.path(folder_name, nm)
-#     
-#     saveRDS(raw_data_for_tile, file = tile_filename)
-#     
-#     created_files <- c(created_files, tile_filename)
-#     
-#     rm(raw_data_for_tile); gc()
-#   }
-#   
-#   return(created_files)
-# }
-
 list_of_groups <- master_covariates |> 
   group_by(dataset, var, year) |> 
   group_split()
 
-coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x))
-
+coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x, id_column = "sampleUnit"))
 metso_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(metso_utm_join, .x, id_column = "standid"))
 
 toKeep <- c("coords_raw_data", "metso_raw_data", "utm_10", "utm_200", "master_covariates")
@@ -406,8 +198,8 @@ rm(list = setdiff(ls(), toKeep));gc()
 
 #--------------------
 
-# Agregatting
-## because of storage issues intermediate by tile files were moved to hard disk "D:"
+# Agregate to polygon level
+
 ## because problems in variable names, I needed to construct a dictionary
 
 dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";")
