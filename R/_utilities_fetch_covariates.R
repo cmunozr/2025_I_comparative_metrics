@@ -5,6 +5,8 @@ library(dplyr)
 library(tidyr)
 library(purrr)
 library(stringr)
+library(maps)
+library(ggplot2)
 
 source("R/_utilities_transform_covariates.R")
 
@@ -89,13 +91,13 @@ latvus <- tibble(path = full_path) |>
 
 # Prepare sampling sites (buffers level 2) and METSO and NON_METSO stands and routes polygons
 
-coords <- list.files(file.path("data", "fbs"), pattern = "route_sections_L2", full.names = T) |> 
+coords <- list.files(file.path("data", "fbs"), pattern = "route_sections_L2", full.names = T) |> # external
   lapply(st_read)
 
-metso <- st_read("data/metso/treatment_control_stand.gpkg")
+metso <- st_read("data/metso/treatment_control_stand.gpkg") # external
 
-utm_10 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm10")
-utm_200 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm200")
+utm_10 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm10") # external
+utm_200 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm200") # external
 
 metso_utm_join <- metso |> 
   select(standid, metso) |> 
@@ -190,34 +192,44 @@ list_of_groups <- master_covariates |>
   group_by(dataset, var, year) |> 
   group_split()
 
-coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x, id_column = "sampleUnit"))
-metso_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(metso_utm_join, .x, id_column = "standid"))
+run <- F
+
+if(run){
+  coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x, id_column = "sampleUnit"))
+  metso_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(metso_utm_join, .x, id_column = "standid"))
+}else{
+  coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x, id_column = "sampleUnit", only_paths = T))
+  metso_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(metso_utm_join, .x, id_column = "standid", only_paths = T))
+}
 
 toKeep <- c("coords_raw_data", "metso_raw_data", "utm_10", "utm_200", "master_covariates")
 rm(list = setdiff(ls(), toKeep));gc()
 
 #--------------------
 
-# Agregate to polygon level
+# Aggregate data of covariates from the different tiles
 
 ## because problems in variable names, I needed to construct a dictionary
 
-dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";")
+dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";") # External 
 root_name <- file.path("D:", "intermediate_aggregated")
 dir.create(root_name, showWarnings = F)
-polygon_type <- "metso" #  "metso" = metso_raw_data, "coords" = coords_raw_data
+polygon_type <- "coords" #  "metso" = metso_raw_data, "coords" = coords_raw_data #<---------- REPLACE
 
 folder_name <- file.path(root_name, polygon_type)
 dir.create(folder_name, showWarnings = F)
 
-for(a in 1:length(metso_raw_data)){ #<---------- REPLACE
+for(a in 1:length(coords_raw_data)){ #<---------- REPLACE
   #a <- 5
-  message(paste("running", a, "of", length(metso_raw_data))) #<---------- REPLACE
-  dfa <- purrr::map_dfr(.x = metso_raw_data[[a]], #<---------- REPLACE
+  message(paste("running", a, "of", length(coords_raw_data))) #<---------- REPLACE
+  coords_raw_data[[a]]
+  
+  dfa <- purrr::map_dfr(.x = coords_raw_data[[a]], #<---------- REPLACE
                       .f = ~ compact(readRDS(str_replace(.x, pattern = "results", replacement = "D:")))
-  )
+                      )
+  
   if(!is.na(dfa$variable[1])){
-    index <- which(dfa$variable[1] == dict_covar$var_error)
+    index <- which(dfa$variable[1] == dict_covar$var_error)[1]
     if(dfa$dataset[1] == "luke"){
       dfa$variable <- dict_covar$var_new[index]  
     }else{

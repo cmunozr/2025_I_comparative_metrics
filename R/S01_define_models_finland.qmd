@@ -107,6 +107,7 @@ library(patchwork)
 library(dplyr)
 library(units)
 library(clootl) # devtools::install_github("eliotmiller/clootl")
+library(finbif) # https://github.com/luomus/finbif; usethis::edit_r_environ()
 ```
 
 ### Global Options & Helper Functions
@@ -164,7 +165,7 @@ occurr_sect_route <- read.csv("data/fbs/vakiolinja/vakiolinja3_20250626.csv")
 Species list from Bakx et al, 2023.
 
 ```{r}
-species_list <- read.xlsx(xlsxFile = "data/ecs24559-sup-0001-appendixs1.xlsx", sheet = 1)
+bakx_species <- read.xlsx(xlsxFile = "data/ecs24559-sup-0001-appendixs1.xlsx", sheet = 1)
 ```
 
 Traits information
@@ -188,13 +189,18 @@ Phylogenetic information
 ```{r}
 run <- F
 if(run){
-  get_avesdata_repo(path="data/") 
+  get_avesdata_repo(path="data/") # 1GB more or less
 }
 set_avesdata_repo_path(path = "data/AvesData-main/", overwrite = T)
 
 ```
-
-
+```{r}
+run <- F
+if(run){
+  download.file("https://www.avilist.org/wp-content/uploads/2025/06/AviList-v2025-11Jun-extended.xlsx", destfile = "data/AviList-v2025-11Jun-extended.xlsx", mode = "wb")  
+}
+avilist <- read.xlsx("data/AviList-v2025-11Jun-extended.xlsx", sheet = 1)
+```
 
 ## FBS Data Preprocessing & Cleaning
 
@@ -215,30 +221,55 @@ routes <-  routes |>
 occurr_route <- occurr_route |> 
   mutate(vakio = as.numeric(vakio))
 occurr_sect_route <- occurr_sect_route |> 
-  mutate(vakio = as.numeric(vakio)) |> 
-  rename(scientificName_old = scientificName)
+  mutate(vakio = as.numeric(vakio))
   
 ```
 
 ### Taxonomical retrieving
 
-Species information in the FBS routes. There is no taxonomic data, so it needs to be retrieved from external data sets (using the GBIF and the Integrated Taxonomic Information System, ITIS as backup)
+Species information in the FBS routes. There is no taxonomic data, so it needs to be retrieved from finbif.
 
 ```{r}
-spp_in_route <- unique(occurr_sect_route$scientificName_old) |> sort()
+spp_in_route <- occurr_sect_route |> 
+  group_by(scientificName) |> 
+  summarise(count = n(), .groups = "drop") |> 
+  filter(scientificName != "") 
 
-run <-  F
+run <-  T
 
 if(run == T){
-  tax_in_route_raw <- taxize::classification(spp_in_route, db = "gbif")
-  missing_index <- which(is.na(tax_in_route_raw))
-  missing <- spp_in_route[missing_index]
-  tax_in_route_raw <- tax_in_route_raw[-missing_index]
-  missing_tax <- taxize::classification(missing, db = "itis")
-  tax_in_route_raw <- c(tax_in_route_raw, missing_tax)
-  saveRDS(object = tax_in_route_raw, file = "data/fbs/tax_raw_data.rds")
+
+  tax_in_route_raw <- list() 
   
-  rm(missing_index, missing, missing_tax)
+  spp <- spp_in_route |> 
+    pull(scientificName) 
+  
+  for(i in 1:nrow(spp_in_route)){
+    #i <- 1
+    spp.i <- spp[i]
+    resp.i <- tryCatch(
+      {
+        finbif::finbif_taxa(spp.i, type = "exact", cache = getOption("finbif_use_cache"))$content[[1]]
+      },
+      error = function(e) {
+        finbif::finbif_taxa(spp.i, type = "partial", cache = getOption("finbif_use_cache"))$content[[1]]
+      }
+    )
+    
+    if(is.null(resp.i$vernacularName$en)) resp.i$vernacularName$en <- NA
+    
+    tax_in_route_raw[[i]] <- data.frame("taxonId" = resp.i$id, "inputName" = spp.i, "outputName" = resp.i$scientificName, "englishName" = resp.i$vernacularName$en,
+                                        "taxonRank" = resp.i$taxonRank, "is.species" = resp.i$species, "is.finnish" = resp.i$finnish,
+                                        "group" = resp.i$informalGroups[[1]]$name$en) 
+  }
+  
+  tax_in_route_raw <- tax_in_route_raw |> 
+    bind_rows() |> 
+    mutate(count = spp_in_route$count)
+  
+  saveRDS(object = tax_in_route_raw, file = "data/fbs/tax_raw_data.rds")
+
+  rm(spp.i, resp.i, i)
   
 }else{
   
@@ -246,82 +277,111 @@ if(run == T){
   
 }
 
-tax_in_route_list <- list()
+tax_in_route <- tax_in_route_raw |>
+  filter(is.species == TRUE, group == "Birds", taxonRank != "MX.hybrid", taxonRank != "MX.form") |>
+  mutate(outputName = ifelse(taxonRank == "MX.subspecies",
+                                        stringr::word(outputName, 1, 2),
+                                        outputName
+                                        )
+         ) |>
+  select(
+    original_route_name = inputName,
+    accepted_finbif_name = outputName,
+    taxonId
+  ) |>
+  distinct()
+```
 
-for (current_name in names(tax_in_route_raw)) {
+
+```{r}
+
+tax_bakx_raw <- list()
+
+# Loop through each species in the Bakx et al. list
+for (i in 1:nrow(bakx_species)) {
   
-  current_data <- tax_in_route_raw[[current_name]]
+  spp.i <- bakx_species$Latin_name[i]
   
-  if (inherits(current_data, "data.frame")) {
-    current_df <- as.data.frame(current_data)
-    n.r <- nrow(current_df)
-    cols <- current_df$rank
-    high_rank <- cols[n.r]
-    
-    info <- as.list(current_df$name)
-    names(info) <- cols
-    info <- as.data.frame(info)
-    
-    info$id <- as.integer(current_df$id[n.r])
-    info$input_name <- current_name 
-    info$high_rank <- high_rank
-    
-    tax_in_route_list[[current_name]] <- info
-  }else{
-    message(paste("Species with name", current_name, "in route has status NULL or NA"))
+  resp.i <- tryCatch({
+    finbif::finbif_taxa(spp.i, type = "exact")$content[[1]]
+  }, error = function(e) {
+    NULL
+  })
+  
+  if (!is.null(resp.i)) {
+    tax_bakx_raw[[i]] <- data.frame(
+      original_bakx_name = spp.i,
+      accepted_finbif_name = resp.i$scientificName,
+      taxonId = resp.i$id
+    )
+  } else {
+    tax_bakx_raw[[i]] <- data.frame(
+      original_bakx_name = spp.i,
+      accepted_finbif_name = NA,
+      taxonId = NA
+    )
   }
 }
 
-cols <- c("subkingdom", "infrakingdom", "subphylum", "infraphylum", "superclass",
-          "subclass", "infraclass", "suborder", "superfamily")
+tax_in_bakx <- bind_rows(tax_bakx_raw)
 
-tax_in_route <- list_rbind(tax_in_route_list) |> 
-  relocate(subfamily, .after = family) |> 
-  relocate(subspecies, .after = species) |> 
-  select(-any_of(cols)) |> 
-  rename(scientificName = species)
+```
 
-index_odo <- which(tax_in_route$subfamily == "Odocoileinae")
-tax_in_route$kingdom[index_odo] <- "Animalia"
-tax_in_route$phylum[index_odo] <- "Chordata"
-tax_in_route$class[index_odo] <- "Mammalia"
-tax_in_route$order[index_odo] <- "Artiodactila"
-tax_in_route$family[index_odo] <- "Cervidae"
+```{r}
+harmonized_species <- full_join(
+  tax_in_route, 
+  tax_in_bakx, 
+  by = "taxonId", 
+  suffix = c("_routes", "_bakx")
+)
 
-rm(index_odo, current_data, current_df, n.r, cols, high_rank, info, tax_in_route_raw, tax_in_route_list)
+harmonized_species <- harmonized_species |>
+  mutate(
+    in_routes_data = !is.na(original_route_name),
+    in_bakx_list = !is.na(original_bakx_name),
+    acceptedName = ifelse(!is.na(accepted_finbif_name_routes), 
+                           accepted_finbif_name_routes, 
+                           accepted_finbif_name_bakx)
+  ) |>
+  select(
+    taxonId,
+    acceptedName,
+    in_routes_data,
+    in_bakx_list,
+    original_route_name,
+    original_bakx_name
+  )
+
+```
+
+Once harmonized both datasets using finbif we found that 
+
+```{r}
+table("routes" = harmonized_species$in_routes_data, "bakx" = harmonized_species$in_bakx_list)
+```
+We are missing the next birds from Bakx et al (2023):
+
+```{r}
+harmonized_species$original_bakx_name[!harmonized_species$in_routes_data]
 
 ```
 
 
 ```{r}
-occurr_sect_route <- tax_in_route |> 
-  select(scientificName, input_name) |> 
-  rename(scientificName_old = input_name) |> 
-  right_join(occurr_sect_route, by = "scientificName_old")
-```
-
-```{r}
-target_spp_in_route <- tax_in_route[!duplicated(tax_in_route$scientificName), ] |> 
-  filter(high_rank == "species" | high_rank ==	"subspecies", class == "Aves") |> 
-  filter(scientificName %in% species_list$Latin_name)
-```
-
-From the pool of species we have `r length(unique(tax_in_route$scientificName))` in the FBS routes. We are missing the next birds:
-
-```{r}
-species_list$Latin_name[!(species_list$Latin_name %in% target_spp_in_route$scientificName)]
-
+occurr_sect_route <- occurr_sect_route |> 
+  left_join(harmonized_species, by = "taxonId") 
+  
 ```
 
 
 ## Exploratory Data Analysis & Quality Checks
 
 
-### Create Master Event Table
+### Create Master route Table
 
 ```{r}
 
-master_events <- routes |>
+master_routes <- routes |>
   # FLAG 1: Temporal Filter ---
   # Time window: late Spring/Summer routes of selected years ( because data availability of the multi source national forest inventory, MS-NFI)
   # Check vents outside the desired time window.
@@ -332,7 +392,7 @@ master_events <- routes |>
   # Check which routes contain at least one observation of a target species.
   left_join(
     occurr_sect_route |>
-      filter(scientificName %in% target_spp_in_route$scientificName) |> 
+      filter(in_bakx_list == TRUE) |> 
       distinct(vakio) |>
       mutate(has_target_species = TRUE),
     by = "vakio"
@@ -376,7 +436,7 @@ How much data is affected by missing biotope information?
 
 ```{r}
 # Summarize how many years each route is missing all biotope data
-biotope_missing_summary <- master_events |>
+biotope_missing_summary <- master_routes |>
   filter(has_no_biotope_data == TRUE) |>
   count(vakio, year, name = "times_missing")
 
@@ -388,7 +448,7 @@ coords_for_plot <- coords |>
 
 # What percentage of routes have this issue at least once?
 # And how many times have they been without biotope info?
-n_routes_total <- n_distinct(master_events$vakio)
+n_routes_total <- n_distinct(master_routes$vakio)
 n_routes_with_missing_data <- n_distinct(biotope_missing_summary$vakio)
 percent_affected <- round((n_routes_with_missing_data / n_routes_total) * 100, 2)
 
@@ -437,7 +497,7 @@ coords_for_plot |>
 How many routes are missing data each year?
 
 ```{r}
-missing_by_year <- master_events |>
+missing_by_year <- master_routes |>
   group_by(year) |>
   summarise(
     # Count of routes missing data that year
@@ -458,7 +518,7 @@ What is the spatial distribution of routes with target species?
 
 ```{r}
 # Summarize at the route level: does a route EVER have a target species?
-species_summary <- master_events |>
+species_summary <- master_routes |>
   group_by(vakio) |>
   summarise(has_target_species_ever = any(has_target_species))
 
@@ -486,24 +546,24 @@ If we remove routes with no biotope data, how much information do we lose of the
 
 ```{r}
 # Get the list of eventIDs that will be removed due to the biotope filter
-events_to_remove <- master_events |>
+events_to_remove <- master_routes |>
   filter(has_no_biotope_data == TRUE) |>
   pull(eventId) |>
   unique()
 
 # Flag occurrence data
 loss_analysis_data <- occurr_sect_route |> 
-  filter(scientificName %in% target_spp_in_route$scientificName) |>
+  filter(in_bakx_list == T) |>
   mutate(
     # Flag records based on whether their eventID is in the removal list
     biotope_logic = ifelse(eventId %in% events_to_remove, 0, 1)
   )
 
 # --- summary ---
-occurrence_data <-  table(scientificName = loss_analysis_data$scientificName,
+occurrence_data <-  table(acceptedName = loss_analysis_data$acceptedName,
                           biotope_logic = loss_analysis_data$biotope_logic) |>
   as.data.frame() |>
-  pivot_wider(id_cols = scientificName,
+  pivot_wider(id_cols = acceptedName,
               names_from = biotope_logic,
               values_from = Freq,
               names_prefix = "flag_") |>
@@ -511,10 +571,10 @@ occurrence_data <-  table(scientificName = loss_analysis_data$scientificName,
          occurrences_kept = flag_1)
 
 paircount_data <- loss_analysis_data |>
-  group_by(scientificName, biotope_logic) |>
+  group_by(acceptedName, biotope_logic) |>
   summarise(total_pairCount = sum(pairCount, na.rm = TRUE), .groups = 'drop') |>
   pivot_wider(
-    id_cols = scientificName,
+    id_cols = acceptedName,
     names_from = biotope_logic,
     values_from = total_pairCount,
     values_fill = 0,
@@ -526,8 +586,10 @@ paircount_data <- loss_analysis_data |>
 
 
 ```{r}
+#| label: data_loss_count
+#| tbl-cap: data loss count
 # Join and display the final table
-left_join(occurrence_data, paircount_data, by = "scientificName") |>
+left_join(occurrence_data, paircount_data, by = "acceptedName") |>
   mutate(
     total_occurrences = occurrences_lost + occurrences_kept,
     percent_occurrences_lost = round((occurrences_lost / total_occurrences) * 100, 2),
@@ -545,7 +607,7 @@ left_join(occurrence_data, paircount_data, by = "scientificName") |>
 
 ### Apply Filter
 ```{r}
-valid_events <- master_events |>
+valid_events <- master_routes |>
   filter(
     is_valid_date == TRUE,
     has_target_species == TRUE,
@@ -572,7 +634,7 @@ occurr_route <- occurr_route |>
 occurr_sect_route <- occurr_sect_route |>
   filter(
     eventId %in% valid_event_ids,
-    scientificName %in% target_spp_in_route$scientificName
+    in_bakx_list == T
   )
 ```
 
@@ -591,33 +653,37 @@ coords |>
 What is the distribution of bird orders among the target species after filtering?
 
 ```{r}
-# The code is the same, but the input is now correctly focused
-aves_order_data_barplot <- occurr_sect_route |> 
-  select(scientificName) |> 
-  distinct() |> 
-  left_join(target_spp_in_route, by = "scientificName") |>
-  filter(class == 'Aves') |>
-  dplyr::count(order, name = 'n') |>
-  arrange(desc(n))
-
-ggplot(aves_order_data_barplot, aes(x = reorder(order, -n), y = n, fill = order)) +
-  geom_col(color = 'black', show.legend = FALSE) +
-  labs(title = 'Distribution of Orders Among Target Bird Species',
-       x = 'Order',
-       y = 'Number of Species') +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        plot.title = element_text(hjust = 0.5, size = 14, face = 'bold')) +
-  geom_text(aes(label = n), vjust = -0.5, size = 3.5)
+# # The code is the same, but the input is now correctly focused
+# aves_order_data_barplot <- occurr_sect_route |> 
+#   select(scientificName) |> 
+#   distinct() |> 
+#   left_join(target_spp_in_route, by = "scientificName") |>
+#   filter(class == 'Aves') |>
+#   dplyr::count(order, name = 'n') |>
+#   arrange(desc(n))
+# 
+# ggplot(aves_order_data_barplot, aes(x = reorder(order, -n), y = n, fill = order)) +
+#   geom_col(color = 'black', show.legend = FALSE) +
+#   labs(title = 'Distribution of Orders Among Target Bird Species',
+#        x = 'Order',
+#        y = 'Number of Species') +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1),
+#         plot.title = element_text(hjust = 0.5, size = 14, face = 'bold')) +
+#   geom_text(aes(label = n), vjust = -0.5, size = 3.5)
 ```
 
 Which Target Species Were Lost After Filtering?
 
 ```{r}
 # Get a unique list of species present in the final, filtered dataset
-species_in_final_dataset <- unique(occurr_sect_route$scientificName)
+species_in_final_dataset <- occurr_sect_route |> 
+  pull(acceptedName) |> 
+  unique()
 
-target_species <- unique(target_spp_in_route$scientificName)
+target_species <- harmonized_species |> 
+  filter(in_routes_data == T, in_bakx_list == T) |> 
+  pull(acceptedName)
 
 # Compare original target list ('species') with the final list
 lost_species <- setdiff(target_species, species_in_final_dataset)
@@ -782,7 +848,9 @@ if(run){
 
 ```
 
-### Aggregate biotope information from vakio+biotope+biotopeSpecifier to vakio+biotope. The former is too finer. 
+### Aggregate biotope information 
+
+From vakio+biotope+biotopeSpecifier to vakio+biotope. The former is too finer, see @tbl-data_loss_count
 
 #### Dissolve poligons
 
@@ -825,7 +893,7 @@ for (i in 1:length(l3_polygon_paths)) {
 
 ```{r}
 occurr_biotope_route <- occurr_sect_route |>
-  group_by(vakio, year, biotope, scientificName) |>
+  group_by(vakio, year, biotope, acceptedName) |>
   summarise(
     pairCount = sum(pairCount, na.rm = TRUE),
     dissolved_strip_ids = paste(unique(biotopeStripId), collapse = ","),
@@ -852,8 +920,8 @@ covar_nm <- dict_covar |>
   pull(var_new) |> 
   unique()
 
-year_route_sampling <- occurr_sect_route |> 
-  group_by(year, vakio) |>
+year_route_samplingn <- occurr_biotope_route |> 
+  group_by(sampleUnit) |>
   summarise(total_sections = n(), .groups = 'drop')
 
 ```
@@ -862,7 +930,6 @@ year_route_sampling <- occurr_sect_route |>
 
 folder_name <- file.path("data", "intermediate_covariates") 
 
-
 run <- T
 
 if(run){
@@ -870,7 +937,7 @@ if(run){
   dir.create(folder_name, showWarnings = FALSE)
   output_rds_paths <- as.character()
   
-  metso_stands_df <- st_read("data/metso/treatment_control_stand.gpkg") |> 
+  metso_stands_df <- st_read(file.path("data","metso", "treatment_control_stand.gpkg"), quiet = T) |> 
   st_drop_geometry() |> 
   select(standid, metso)
   
@@ -885,6 +952,7 @@ if(run){
   rds_files <- list.files(rds_data_dir, pattern = "\\.rds$", recursive = TRUE, full.names = TRUE)
 
   for (i in 1:length(covar_nm)) {
+    # i <- 1
     
     covariate <-  covar_nm[i]
     
@@ -897,7 +965,10 @@ if(run){
       route_map = year_route_sampling
     )
     
-    if(is.null(filtered_data)) next
+    if(is.null(filtered_data)){
+      warning(paste("Covariate", covariate, "is null data"))
+      next
+    } 
   
     # writing a filtered data set just for coords because metso is a sample
     output_rds_path <- file.path(folder_name, paste0("filtered_cov_coords_", covariate, ".rds"))
@@ -908,6 +979,7 @@ if(run){
       filtered_data = filtered_data,
       metso_map = metso_stands_df
     )
+    rm(filtered_data);gc()
     
     is_binary <- dict_covar$binary[i]
     
@@ -916,6 +988,7 @@ if(run){
     } else {
       generate_covariate_plot(covariate, plot_data, folder_name)
     }
+    rm(plot_data );gc()
   }
   
 }else{
@@ -930,8 +1003,8 @@ if(run){
 
 ```{r}
 Y <- occurr_biotope_route |> 
-  select(sampleUnit, scientificName, pairCount) |> 
-  pivot_wider(id_cols = sampleUnit, names_from = scientificName, values_from = pairCount,
+  select(sampleUnit, acceptedName, pairCount) |> 
+  pivot_wider(id_cols = sampleUnit, names_from = acceptedName, values_from = pairCount,
               values_fn = sum, values_fill = 0) |> 
   select(-sampleUnit) |> 
   as.data.frame()
@@ -1004,27 +1077,41 @@ saveRDS(XData, "data/covariates/XData_hmsc.rds")
 Note: We have to check if we have to resolve names used in the phylogeny database and the finish bird survey.
 
 ```{r}
-mctavish_mcc <- treeGet(version = "1.4", taxonomy_year = "2023")
 
 spp_Y <- colnames(Y)
+
+mctavish_mcc <- treeGet(version = "1.4", taxonomy_year = "2023")
 
 mctavish_mcc$tip.label <- mctavish_mcc$tip.label |> 
   str_replace("_", " ")
 
 not_in_mctavish <- !(spp_Y %in% mctavish_mcc$tip.label)
 
-to_rename <- taxize::synonyms(spp_Y[not_in_mctavish], db = "itis")[[1]] |> 
-  select(acc_name) |> 
-  pull() |> 
-  unique()
+spp_Y.new <- spp_Y
 
-# "Sylvia curruca" change to "'Curruca curruca"
+for(i in 1:length(not_in_mctavish))(
+  #i <- 5
+  if(not_in_mctavish[i]){
+    spp_Y.i <- spp_Y[i]
+    to_rename <- taxize::synonyms(spp_Y.i, db = "itis")[[1]] |> 
+      select(acc_name) |> 
+      pull() |> 
+      unique() |> 
+      stringr::word(1, 2)
+    spp_Y.new[i] <- to_rename
+  }
+)
 
-spp_Y[which(spp_Y == spp_Y[not_in_mctavish])] <- to_rename
+# "Carduelis chloris" = "Chloris chloris"
+# "Carduelis flammea" = "Acanthis flammea"
+# "Carduelis spinus" = "Spinus spinus"
+# "Dendrocopos minor" = "Dryobates minor"
+# "Sylvia curruca" = "Curruca curruca"
+# "Tetrao tetrix" = "Lyrurus tetrix"
 
-phyloTree <- extractTree(species = spp_Y, version = 1.4)
+phyloTree <- extractTree(species = spp_Y.new, version = 1.4)
 
-colnames(Y) <- spp_Y
+phyloTree$tip.label <- spp_Y[match(str_replace(phyloTree$tip.label, "_", " ") , spp_Y.new)]
 
 ```
 
@@ -1037,6 +1124,7 @@ colnames(Y) <- spp_Y
 
 plot(phyloTree, cex = 0.7, no.margin = TRUE)
 
+
 ```
 
 
@@ -1044,11 +1132,11 @@ plot(phyloTree, cex = 0.7, no.margin = TRUE)
 
 ```{r}
 
-spp_Y <- data.frame("scientificName" = colnames(Y))
+spp_Y.new <- data.frame("scientificName" = spp_Y.new)
 
 TrData <- avonet |> 
   rename(scientificName = Species2) |>
-  right_join(spp_Y, by = "scientificName" ) |>  
+  right_join(spp_Y.new, by = "scientificName" ) |>  
   select(scientificName, Mass, Habitat, Habitat.Density, Trophic.Niche, Primary.Lifestyle, Migration) |> 
   as.data.frame()
 
@@ -1276,15 +1364,5 @@ save(models, file = file.path("models", "unfitted_models_NGPP_3rl.RData"))
 
 ```{r}
 sampleMcmc(m.abu, samples=2)
-```
-
-```{r}
-# Yx <- Y |> 
-#   pivot_longer(
-#     cols = everything(), # Pivotear todas las columnas excepto "id"
-#     names_to = "especie",
-#     values_to = "abundancia"
-#   ) |> 
-#   filter(abundancia != 0) |> 
 ```
 

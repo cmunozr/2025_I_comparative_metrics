@@ -209,10 +209,12 @@ for(i in 1:length(folder_links)){
 # Canopy cover whole stand, Stand age, Stand basal area, Total wood volume
 # Spruce volume
 # first run _utilities_download_shultz_covariates.py
+# to activate environment in vscode: C:/.compMetrics/Scripts/Activate.ps1
 # extract list of links from mail
 # run next
 
 luke_urls <- readClipboard() #comming from the mail
+prefered_disk <- "E:"
 
 for (i in 11:length(luke_urls)) {
   #i <- 10
@@ -240,7 +242,7 @@ for (i in 11:length(luke_urls)) {
     html_nodes("a") |>
     html_attr("href")
   
-  download_dir <- file.path("E:", "luke", yr_)
+  download_dir <- file.path(prefered_disk, "luke", yr_)
   
   dir.create(download_dir, showWarnings = F, recursive = T)
 

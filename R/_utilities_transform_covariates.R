@@ -106,7 +106,7 @@ crop_rasters_by_mask <- function(source_dir,
 }
 
 #-------------------
-filter_covariate_data <- function(covariate_name, files, sampled_ids, route_map) {
+filter_covariate_data <- function(covariate_name, files, sampled_ids, route_map, ids = c("standid", "sampleUnit")) {
   # Filter file paths to get only those relevant to the current covariate
   relevant_files <- files[str_detect(basename(files), covariate_name)]
   
@@ -122,18 +122,21 @@ filter_covariate_data <- function(covariate_name, files, sampled_ids, route_map)
     
     processed_chunk <- data_chunk |>
       filter(!is.na(value), value != 32766) |> # 32766 is NA in some GIS systems 
-      rename_with(~"polygon_id", .cols = any_of(c("standid", "vakio")))
+      rename_with(~"polygon_id", .cols = any_of(ids))
     
     if (!"polygon_id" %in% names(processed_chunk)) return(NULL)
     
     source_type <- processed_chunk$polygon_source[1]
     if (!is.na(source_type) && source_type == "metso") {
-      final_chunk <- processed_chunk %>% filter(polygon_id %in% sampled_ids)
+      final_chunk <- processed_chunk|> filter(polygon_id %in% sampled_ids)
     } else if (!is.na(source_type) && source_type == "coords") {
-      final_chunk <- semi_join(processed_chunk, route_map, by = c("polygon_id" = "vakio", "year"))
+      final_chunk <- semi_join(processed_chunk, route_map, by = c("polygon_id" = "sampleUnit"))
     } else {
       final_chunk <- NULL
     }
+    
+    final_chunk <- mutate(final_chunk, polygon_id = as.factor(polygon_id))
+    
     return(final_chunk)
   })
   
@@ -147,16 +150,18 @@ prepare_covariates_data_toplot <- function(filtered_data, metso_map) {
   if (is.null(filtered_data) || nrow(filtered_data) == 0) {
     return(NULL)
   }
+  metso_map <- metso_map |> 
+    mutate(standid = as.factor(standid))
   
   # Add category labels for plotting
-  plot_data <- filtered_data %>%
-    left_join(metso_map, by = c("polygon_id" = "standid")) %>%
+  plot_data <- filtered_data |>
+    left_join(metso_map, by = c("polygon_id" = "standid")) |>
     mutate(category = case_when(
       polygon_source == "coords" ~ "route buffer",
       metso == 1                   ~ "metso",
       metso == 0                   ~ "no metso"
-    )) %>%
-    filter(!is.na(category)) %>%
+    )) |> 
+    filter(!is.na(category)) |>
     mutate(category = factor(category, levels = c("route buffer", "metso", "no metso")))
   
   return(plot_data)
@@ -195,7 +200,7 @@ generate_covariate_plot <- function(covariate_name, data, folder) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
   
-  output_filename <- file.path(folder, paste0("plot_", covariate_name, ".png"))
+  output_filename <- file.path(folder, paste0("plot_", covariate_name, ".jpeg"))
   ggsave(output_filename, p, width = 12, height = 8, dpi = 300)
   message(paste("Saved plot to:", output_filename))
   
@@ -206,8 +211,8 @@ generate_covariate_plot <- function(covariate_name, data, folder) {
 generate_binary_plot <- function(covariate_name, data, folder) {
   message(paste("Generating BAR CHART for binary covariate:", covariate_name))
   
-  plot_data <- data %>%
-    filter(variable == covariate_name) %>%
+  plot_data <- data |>
+    filter(variable == covariate_name) |>
     mutate(value = as.factor(value))
   
   if (nrow(plot_data) == 0) {
@@ -233,7 +238,7 @@ generate_binary_plot <- function(covariate_name, data, folder) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
   
-  output_filename <- file.path(folder, paste0("plot_", covariate_name, ".png"))
+  output_filename <- file.path(folder, paste0("plot_", covariate_name, ".jpeg"))
   ggsave(output_filename, p, width = 12, height = 8, dpi = 300)
   message(paste("Saved plot to:", output_filename))
 }
@@ -365,25 +370,60 @@ get_raster_crs <- function(raster_path) {
 
 
 
-## Extracts raw information values from covarites for a polygon or set of polygons
-## Iterates over a data.frame of covariates information
+#' Extract Raster Values for Polygons by Tile
+#'
+#' @description
+#' Extracts pixel values from a set of raster files for a given set of polygons.
+#' The process is optimized for memory efficiency by iterating through raster tiles
+#' and saving intermediate results to disk.
+#'
+#' @details
+#' This function matches polygons to their corresponding raster tiles (based on UTM
+#' grid codes) before extraction. It includes a "dry run" mode via the `only_paths`
+#' parameter, which allows you to generate the list of expected output file paths
+#' without performing the computationally expensive extraction. This is useful for
+#' planning and debugging workflows.
+#'
+#' @param polygons_sf An `sf` object containing the polygons for which to extract
+#'   data. Must include columns for `year` and UTM tile identifiers (`UTM200`, `UTM10`).
+#' @param raster_info_df A data frame with metadata for each raster file to be
+#'   processed. It must include columns like `dataset`, `var`, `year`, `proc_path`
+#'   (the file path to the raster), `raster_crs`, and UTM tile identifiers.
+#' @param folder A string specifying the root directory where the output files
+#'   (in an "intermediate_by_tile" subdirectory) will be saved.
+#' @param id_column A string with the name of the column in `polygons_sf` that
+#'   contains the unique polygon identifier to be included in the final output.
+#' @param only_paths A logical value. If `TRUE`, the function will perform a "dry run"
+#'   and return the expected output file paths without processing any data. If `FALSE`
+#'   (the default), it will perform the full extraction and save the files.
+#'
+#' @return A character vector of the file paths that were created (if `only_paths = FALSE`)
+#'   or that would be created (if `only_paths = TRUE`).
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#'   # Assuming 'master_covariates' and 'coords_utm_join' are pre-loaded
+#'   list_of_groups <- master_covariates |>
+#'     dplyr::group_by(dataset, var, year) |>
+#'     dplyr::group_split()
+#'
+#'   # Perform a dry run to get file paths without processing
+#'   expected_files <- extract_raw_values(
+#'     polygons_sf = coords_utm_join,
+#'     raster_info_df = list_of_groups[[1]],
+#'     only_paths = TRUE
+#'   )
+#'
+#'   # Perform the full extraction
+#'   created_files <- extract_raw_values(
+#'     polygons_sf = coords_utm_join,
+#'     raster_info_df = list_of_groups[[1]],
+#'     only_paths = FALSE
+#'   )
+#' }
 
-##raster_info_df
-## dataset (name of the set, character)
-## var (specific name of the variable, character)
-## file (path to the raster layer, character)
-## year (numeric)
-## UTM200 (UTM 200 code if the raster is divided in tiles, character)
-## UTM10 (UTM 10 code if the raster is divided in tiles, character)
-
-## polygons_sf
-## set (type of polygon, character)
-## UTM200 (location in UTM 200 tiles of the polygon, character)
-## UTM10 (location in UTM 10 tiles of the polygon, character)
-
-## value (path of RDS containing raw information)
-
-extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_column = "vakio") {
+extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_column = "vakio", only_paths = F) {
   
   message(paste("Fetching from", raster_info_df$dataset[1], "variable", raster_info_df$var[1], "year",
                 raster_info_df$year[1], "with polygon set", polygons_sf$set[1]))
@@ -393,9 +433,15 @@ extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_co
   folder_name <- file.path(folder, "intermediate_by_tile", paste0(raster_info_df$dataset[1], "-", polygons_sf$set[1]))
   dir.create(folder_name, showWarnings = FALSE, recursive = TRUE)
   
-  polygons_reprojected <- polygons_sf |>
-    filter(year == raster_info_df$year[1]) |>
-    st_transform(crs = target_crs) 
+  if(!only_paths){
+    polygons_reprojected <- polygons_sf |>
+      filter(year == raster_info_df$year[1]) |>
+      st_transform(crs = target_crs) 
+  }else{
+    polygons_reprojected <- polygons_sf |> 
+      st_drop_geometry() |> 
+      filter(year == raster_info_df$year[1]) 
+  }
   
   created_files <- c()
   
@@ -427,33 +473,37 @@ extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_co
       next
     }
     
-    suppressWarnings({
-      raw_data_for_tile <- exact_extract(
-        x = rast(raster_info$proc_path),
-        y = polygons_for_this_tile,
-        fun = NULL,
-        include_cols = "poly_id",
-        progress = F
-      )
-    })
-    
-    raw_data_for_tile <- bind_rows(raw_data_for_tile) |>
-      mutate(variable = raster_info$var,
-             dataset = raster_info$dataset,
-             year = raster_info$year) |>
-      left_join(
-        st_drop_geometry(polygons_reprojected) |> select(all_of(id_column), poly_id),
-        by = "poly_id"
-      )
-    
-    
     tile_filename <- file.path(folder_name, nm)
     
-    saveRDS(raw_data_for_tile, file = tile_filename)
-    
+    if(!only_paths){
+      
+      suppressWarnings({
+        raw_data_for_tile <- exact_extract(
+          x = rast(raster_info$proc_path),
+          y = polygons_for_this_tile,
+          fun = NULL,
+          include_cols = "poly_id",
+          progress = F
+        )
+      })
+      
+      raw_data_for_tile <- bind_rows(raw_data_for_tile) |>
+        mutate(variable = raster_info$var,
+               dataset = raster_info$dataset,
+               year = raster_info$year) |>
+        left_join(
+          st_drop_geometry(polygons_reprojected) |> select(all_of(id_column), poly_id),
+          by = "poly_id"
+        )
+      
+      saveRDS(raw_data_for_tile, file = tile_filename)
+      rm(raw_data_for_tile);gc
+      
+    }
+
     created_files <- c(created_files, tile_filename)
     
-    rm(raw_data_for_tile, polygons_for_this_tile); gc()
+    rm(polygons_for_this_tile); gc()
   }
   
   return(created_files)

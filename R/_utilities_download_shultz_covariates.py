@@ -162,37 +162,49 @@ all_map_boxes = [
 # The specific themes, with year-specific templates.
 # Each key (common name) maps to a dictionary of year-specific templates or a 'default'.
 desired_themes_template = {
-    "Stand mean diameter": {
-        "2009": "Mean diameter of stand {} (cm)",
-        "default": "Stand mean diameter of {} (cm)"
-    },
-    "Stand mean height": {
-        "2009": "Mean height of stand {} (dm)", 
-        "default": "Stand mean height {} (dm)"
-    },
-    "Canopy cover broad-leaved trees": {
-        "2009": "Canopy cover of broad leaved trees {} (%)",
-        "default": "Canopy cover of broad-leaved trees {} (%)"
-    },
-    "Canopy cover": {
-        "2009": "Canopy cover {} (%)",
-        "default": "Canopy cover {} (%)"
-    },
-    "Stand age": {
-        "2009": "Stand age of growing stock {} (year)",
-        "default": "Stand age {} (year)"
-    },
-    "Stand basal area": {
-        "2009": "Stand basal area {} (m2/ha)", 
-        "default": "Stand basal area {} (m2/ha)"
-    },
-    "Volume, the growing stock": {
-        "2009": "Volume of the growing stock {} (m3/ha)",
-        "default": "Volume, the growing stock {} (m3/ha)"
-    },
-    "Volume, spruce": {
-        "2009": "Spruce volume {} (m3/ha)",
-        "default": "Volume, spruce {} (m3/ha)"
+    #"Stand mean diameter": {
+    #    "2009": "Mean diameter of stand {} (cm)",
+    #    "default": "Stand mean diameter of {} (cm)"
+    #},
+    #"Stand mean height": {
+    #    "2009": "Mean height of stand {} (dm)", 
+    #    "default": "Stand mean height {} (dm)"
+    #},
+    #"Canopy cover broad-leaved trees": {
+    #    "2009": "Canopy cover of broad leaved trees {} (%)",
+    #    "default": "Canopy cover of broad-leaved trees {} (%)"
+    #},
+    #"Canopy cover": {
+    #    "2009": "Canopy cover {} (%)",
+    #    "default": "Canopy cover {} (%)"
+    #},
+    #"Stand age": {
+    #    "2009": "Stand age of growing stock {} (year)",
+    #    "default": "Stand age {} (year)"
+    #},
+    #"Stand basal area": {
+    #    "2009": "Stand basal area {} (m2/ha)", 
+    #    "default": "Stand basal area {} (m2/ha)"
+    #},
+    #"Volume, the growing stock": {
+    #    "2009": "Volume of the growing stock {} (m3/ha)",
+    #    "default": "Volume, the growing stock {} (m3/ha)"
+    #},
+    #"Volume, spruce": {
+    #    "2009": "Spruce volume {} (m3/ha)",
+    #    "default": "Volume, spruce {} (m3/ha)"
+    #}, 
+    "Volume, birch 2009 (m3/ha)": {
+        "2009": "Birch volume {} (m3/ha)",
+        "default": "Volume, birch {} (m3/ha)"
+    }, 
+    "Volume, pine 2009 (m3/ha)": {
+        "2009": "Pine volume {} (m3/ha)",
+        "default": "Volume, pine {} (m3/ha)"
+    }, 
+    "Volume, other 2009 (m3/ha)": {
+        "2009": "Other broad leaved trees volume {} (m3/ha)",
+        "default": "Volume, other broad-leaved trees {} (m3/ha)"
     }
 }
 
