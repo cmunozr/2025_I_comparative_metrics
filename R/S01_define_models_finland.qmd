@@ -225,7 +225,7 @@ occurr_sect_route <- occurr_sect_route |>
   
 ```
 
-### Taxonomical retrieving
+### Species information retrieving
 
 Species information in the FBS routes. There is no taxonomic data, so it needs to be retrieved from finbif.
 
@@ -239,7 +239,7 @@ run <-  T
 
 if(run == T){
 
-  tax_in_route_raw <- list() 
+  finbif_info_raw <- list() 
   
   spp <- spp_in_route |> 
     pull(scientificName) 
@@ -258,98 +258,136 @@ if(run == T){
     
     if(is.null(resp.i$vernacularName$en)) resp.i$vernacularName$en <- NA
     
-    tax_in_route_raw[[i]] <- data.frame("taxonId" = resp.i$id, "inputName" = spp.i, "outputName" = resp.i$scientificName, "englishName" = resp.i$vernacularName$en,
-                                        "taxonRank" = resp.i$taxonRank, "is.species" = resp.i$species, "is.finnish" = resp.i$finnish,
-                                        "group" = resp.i$informalGroups[[1]]$name$en) 
+    finbif_info_raw[[i]] <- data.frame("taxonId" = resp.i$id, "acceptedName_finbif" = resp.i$scientificName, "englishName" = resp.i$vernacularName$en,
+                                        "taxonRank" = resp.i$taxonRank, "is.species" = resp.i$species, "group" = resp.i$informalGroups[[1]]$name$en) 
   }
   
-  tax_in_route_raw <- tax_in_route_raw |> 
+  finbif_info_raw <- finbif_info_raw |> 
     bind_rows() |> 
     mutate(count = spp_in_route$count)
   
-  saveRDS(object = tax_in_route_raw, file = "data/fbs/tax_raw_data.rds")
+  saveRDS(object = finbif_info_raw, file = "data/fbs/tax_raw_data.rds")
 
   rm(spp.i, resp.i, i)
   
 }else{
   
-  tax_in_route_raw <- readRDS(file = "data/fbs/tax_raw_data.rds")
+  finbif_info_raw <- readRDS(file = "data/fbs/tax_raw_data.rds")
   
 }
 
-tax_in_route <- tax_in_route_raw |>
-  filter(is.species == TRUE, group == "Birds", taxonRank != "MX.hybrid", taxonRank != "MX.form") |>
-  mutate(outputName = ifelse(taxonRank == "MX.subspecies",
-                                        stringr::word(outputName, 1, 2),
-                                        outputName
+finbif_info <- finbif_info_raw |>
+  mutate(acceptedName_finbif = ifelse(taxonRank == "MX.subspecies",
+                                        stringr::word(acceptedName_finbif, 1, 2),
+                                        acceptedName_finbif
                                         )
-         ) |>
-  select(
-    original_route_name = inputName,
-    accepted_finbif_name = outputName,
-    taxonId
-  ) |>
-  distinct()
+         )
+
+occurr_sect_route <- occurr_sect_route |> 
+  left_join(finbif_info, by = "taxonId")
+```
+
+### Resolving bird names to international standard
+
+
+```{r}
+
+route_species <- finbif_info |> 
+  filter(is.species == TRUE, group == "Birds", taxonRank != "MX.hybrid", taxonRank != "MX.form")
+
+run <- F
+if(run){
+  itis_routes_raw <- lapply(route_species$acceptedName_finbif, function(species_name) {
+  tryCatch(
+    {
+      tsn <- taxize::get_tsn(species_name, accepted = FALSE)
+      accepted_info <- taxize::itis_acceptname(tsn)
+      accepted_info$submittedname <- species_name
+      
+      return(accepted_info)
+    },
+    error = function(e) {
+      return(
+        data.frame(submittedtsn = NA, acceptedname = NA, acceptedtsn = NA, author = NA, submittedname = species_name)
+        )
+      }
+    )
+  })
+  itis_routes_raw <- dplyr::bind_rows(itis_routes_raw)
+  saveRDS(itis_routes_raw, file.path("data", "fbs", "itis_routes_raw.rds"))
+}else{
+  itis_routes_raw <- readRDS(file.path("data", "fbs", "itis_routes_raw.rds"))
+}
+
+itis_routes <- itis_routes_raw |> 
+  bind_cols(route_species) |> 
+  mutate(acceptedname_itis = ifelse(is.na(acceptedname),
+                               acceptedName_finbif,
+                               acceptedname
+                               ),
+         acceptedname_itis = stringr::word(acceptedname_itis, 1, 2) # in itis some accepted names are subspecies
+         ) |> 
+  select(taxonId, submittedname, acceptedname_itis)
+  
 ```
 
 
 ```{r}
 
-tax_bakx_raw <- list()
-
-# Loop through each species in the Bakx et al. list
-for (i in 1:nrow(bakx_species)) {
-  
-  spp.i <- bakx_species$Latin_name[i]
-  
-  resp.i <- tryCatch({
-    finbif::finbif_taxa(spp.i, type = "exact")$content[[1]]
-  }, error = function(e) {
-    NULL
+run <- F
+if(run){
+  itis_bakx_raw <- lapply(bakx_species$Latin_name, function(species_name) {
+  tryCatch(
+    {
+      tsn <- taxize::get_tsn(species_name, accepted = FALSE)
+      accepted_info <- taxize::itis_acceptname(tsn)
+      accepted_info$submittedname <- species_name
+      
+      return(accepted_info)
+    },
+    error = function(e) {
+      return(
+        data.frame(submittedtsn = NA, acceptedname = NA, acceptedtsn = NA, author = NA, submittedname = species_name)
+        )
+      }
+    )
   })
-  
-  if (!is.null(resp.i)) {
-    tax_bakx_raw[[i]] <- data.frame(
-      original_bakx_name = spp.i,
-      accepted_finbif_name = resp.i$scientificName,
-      taxonId = resp.i$id
-    )
-  } else {
-    tax_bakx_raw[[i]] <- data.frame(
-      original_bakx_name = spp.i,
-      accepted_finbif_name = NA,
-      taxonId = NA
-    )
-  }
+  itis_bakx_raw <- dplyr::bind_rows(itis_bakx_raw)
+  saveRDS(itis_bakx_raw, file.path("data", "fbs", "itis_bakx_raw.rds"))
+}else{
+  itis_bakx_raw <- readRDS(file.path("data", "fbs", "itis_bakx_raw.rds"))
 }
 
-tax_in_bakx <- bind_rows(tax_bakx_raw)
+itis_bakx <- itis_bakx_raw |> 
+  mutate(acceptedname_itis = ifelse(is.na(acceptedname),
+                               submittedname,
+                               acceptedname
+                               )
+         ) |> 
+  select(submittedname, acceptedname_itis)
 
 ```
 
 ```{r}
 harmonized_species <- full_join(
-  tax_in_route, 
-  tax_in_bakx, 
-  by = "taxonId", 
+  itis_routes, 
+  itis_bakx, 
+  by = "acceptedname_itis", 
   suffix = c("_routes", "_bakx")
 )
 
 harmonized_species <- harmonized_species |>
   mutate(
-    in_routes_data = !is.na(original_route_name),
-    in_bakx_list = !is.na(original_bakx_name),
-    acceptedName = ifelse(!is.na(accepted_finbif_name_routes), 
-                           accepted_finbif_name_routes, 
-                           accepted_finbif_name_bakx)
+    in_routes = !is.na(submittedname_routes),
+    in_bakx = !is.na(submittedname_bakx),
+    acceptedName = acceptedname_itis
   ) |>
   select(
     taxonId,
+    submittedname_bakx,
     acceptedName,
-    in_routes_data,
-    in_bakx_list,
-    original_route_name,
-    original_bakx_name
+    in_routes,
+    in_bakx
   )
 
 ```
@@ -357,12 +395,12 @@ harmonized_species <- harmonized_species |>
 Once harmonized both datasets using finbif we found that 
 
 ```{r}
-table("routes" = harmonized_species$in_routes_data, "bakx" = harmonized_species$in_bakx_list)
+table("routes" = harmonized_species$in_routes, "bakx" = harmonized_species$in_bakx)
 ```
 We are missing the next birds from Bakx et al (2023):
 
 ```{r}
-harmonized_species$original_bakx_name[!harmonized_species$in_routes_data]
+harmonized_species$submittedname_bakx[!harmonized_species$in_routes]
 
 ```
 
@@ -379,6 +417,8 @@ occurr_sect_route <- occurr_sect_route |>
 
 ### Create Master route Table
 
+  filter(is.species == TRUE, group == "Birds", taxonRank != "MX.hybrid", taxonRank != "MX.form") |>
+
 ```{r}
 
 master_routes <- routes |>
@@ -392,7 +432,7 @@ master_routes <- routes |>
   # Check which routes contain at least one observation of a target species.
   left_join(
     occurr_sect_route |>
-      filter(in_bakx_list == TRUE) |> 
+      filter(in_bakx == TRUE) |> # this flag sums is.species, group == birds, in_bakx
       distinct(vakio) |>
       mutate(has_target_species = TRUE),
     by = "vakio"
@@ -553,7 +593,7 @@ events_to_remove <- master_routes |>
 
 # Flag occurrence data
 loss_analysis_data <- occurr_sect_route |> 
-  filter(in_bakx_list == T) |>
+  filter(in_bakx == T) |>
   mutate(
     # Flag records based on whether their eventID is in the removal list
     biotope_logic = ifelse(eventId %in% events_to_remove, 0, 1)
@@ -634,7 +674,7 @@ occurr_route <- occurr_route |>
 occurr_sect_route <- occurr_sect_route |>
   filter(
     eventId %in% valid_event_ids,
-    in_bakx_list == T
+    in_bakx == T
   )
 ```
 
@@ -682,7 +722,7 @@ species_in_final_dataset <- occurr_sect_route |>
   unique()
 
 target_species <- harmonized_species |> 
-  filter(in_routes_data == T, in_bakx_list == T) |> 
+  filter(in_routes == T, in_bakx == T) |> 
   pull(acceptedName)
 
 # Compare original target list ('species') with the final list
@@ -930,7 +970,7 @@ year_route_samplingn <- occurr_biotope_route |>
 
 folder_name <- file.path("data", "intermediate_covariates") 
 
-run <- T
+run <- F
 
 if(run){
   
@@ -1009,8 +1049,6 @@ Y <- occurr_biotope_route |>
   select(-sampleUnit) |> 
   as.data.frame()
 
-Y <- Y[, order(colnames(Y))]
-
 ```
 
 ```{r}
@@ -1087,31 +1125,27 @@ mctavish_mcc$tip.label <- mctavish_mcc$tip.label |>
 
 not_in_mctavish <- !(spp_Y %in% mctavish_mcc$tip.label)
 
-spp_Y.new <- spp_Y
+spp_Y_new <- spp_Y
 
 for(i in 1:length(not_in_mctavish))(
   #i <- 5
   if(not_in_mctavish[i]){
     spp_Y.i <- spp_Y[i]
     to_rename <- taxize::synonyms(spp_Y.i, db = "itis")[[1]] |> 
-      select(acc_name) |> 
+      select(syn_name) |> 
       pull() |> 
       unique() |> 
       stringr::word(1, 2)
-    spp_Y.new[i] <- to_rename
+    spp_Y_new[i] <- to_rename
   }
 )
 
-# "Carduelis chloris" = "Chloris chloris"
-# "Carduelis flammea" = "Acanthis flammea"
-# "Carduelis spinus" = "Spinus spinus"
-# "Dendrocopos minor" = "Dryobates minor"
-# "Sylvia curruca" = "Curruca curruca"
-# "Tetrao tetrix" = "Lyrurus tetrix"
+# "Coloeus monedula" -> "Corvus monedula"
+# "Phylloscopus sibillatrix" -> "Phylloscopus sibilatrix"  
 
-phyloTree <- extractTree(species = spp_Y.new, version = 1.4)
+phyloTree <- extractTree(species = spp_Y_new, version = 1.4)
 
-phyloTree$tip.label <- spp_Y[match(str_replace(phyloTree$tip.label, "_", " ") , spp_Y.new)]
+phyloTree$tip.label <- spp_Y[match(str_replace(phyloTree$tip.label, "_", " ") , spp_Y_new)]
 
 ```
 
@@ -1127,24 +1161,23 @@ plot(phyloTree, cex = 0.7, no.margin = TRUE)
 
 ```
 
-
 ## Species Trait Data (T)
 
 ```{r}
 
-spp_Y.new <- data.frame("scientificName" = spp_Y.new)
+spp_Y_new <- data.frame("scientificName" = spp_Y_new)
 
 TrData <- avonet |> 
   rename(scientificName = Species2) |>
-  right_join(spp_Y.new, by = "scientificName" ) |>  
-  select(scientificName, Mass, Habitat, Habitat.Density, Trophic.Niche, Primary.Lifestyle, Migration) |> 
+  right_join(spp_Y_new, "scientificName") |>  
+  select(scientificName, Trophic.Niche, Primary.Lifestyle, Migration) |> 
   as.data.frame()
+
+TrData$scientificName <- spp_Y[match(TrData$scientificName, spp_Y_new$scientificName)]
 
 row.names(TrData) <- TrData$scientificName 
  
 TrData <- select(TrData, -scientificName)
-
-TrData <- TrData[order(row.names(TrData)), ]
 
 ```
 
