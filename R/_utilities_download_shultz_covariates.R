@@ -204,10 +204,10 @@ for(i in 1:length(folder_links)){
 
 #---------------------
 # download from LUKE: 
-# https://kartta.luke.fi/opendata/valinta.html
+# http://www.nic.funet.fi/index/geodata/luke/vmi/
 # Average stand diameter, Average stand length, Canopy cover broadleaves
 # Canopy cover whole stand, Stand age, Stand basal area, Total wood volume
-# Spruce volume
+# Spruce volume, pine volume, birch volume, 
 # first run _utilities_download_shultz_covariates.py
 # to activate environment in vscode: C:/.compMetrics/Scripts/Activate.ps1
 # extract list of links from mail
