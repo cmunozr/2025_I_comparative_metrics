@@ -9,6 +9,9 @@ library(maps)
 library(ggplot2)
 
 source("R/_utilities_transform_covariates.R")
+dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";") # External 
+
+set.seed(11072024)
 
 #--------------
 # Prepare paths and organize information for each set of covariates
@@ -37,33 +40,19 @@ tree_high_europe <-
   filter(year %in% c(2009, 2011, 2013, 2015, 2017, 2019, 2021))
 
 
-## Luke (Multi Source National Forest Inventory) UTM-200 tiles. https://kartta.luke.fi/opendata/valinta.html. See _utilities_download_covariates.py code
+## Luke (Multi Source National Forest Inventory) before UTM-200 tiles. http://www.nic.funet.fi/index/geodata/luke/vmi/. See _utilities_download_covariates.R code
 
-luke <- find_root_folder("luke")
-full_path <- list.files(luke, "*.zip$", full.names = T, recursive = F)
-
-# Check and split if the utm code actually has multiple utm 200 zones, example: KL2 
-split_utm_code <- function(code) {
-  if (str_detect(code, "[A-Z]{2,}")) {
-    letters_part <- str_extract(code, "[A-Za-z]+")
-    number_part <- str_extract(code, "\\d+")
-    individual_letters <- str_split_1(letters_part, "")
-    return(paste0(individual_letters, number_part))
-  } else {
-    return(code)
-  }
-}
+luke <- find_root_folder("luke_")
+full_path <- list.files(luke, "*.tif$", full.names = T, recursive = F)
 
 luke <- tibble(path = full_path) |>
   mutate(
     dataset = "luke",
-    var = str_extract(basename(path), "^(.*)_[^_]*$", group = 1),
+    var = str_remove(basename(path), ".tif"),
     year = basename(dirname(path)),
-    UTM200 = str_extract(basename(path), "(?<=_)[^_.]+(?=\\.)"),
+    UTM200 = NA,
     UTM10 = NA
   ) |> 
-  mutate(UTM200 = purrr::map(UTM200, split_utm_code)) |> 
-  unnest(UTM200) |> 
   select(dataset, var, path, year, UTM200, UTM10)|> 
   mutate(year = as.numeric(year)) |> 
   arrange(year)|> 
@@ -108,6 +97,15 @@ metso_utm_join <- metso |>
   st_join(y = utm_10) |> 
   rename(UTM10 = lehtitunnus) |> 
   select(standid, metso, set, UTM200, UTM10)
+
+sampling_metso <- T
+
+if(sampling_metso){
+  metso_utm_join <- metso_utm_join |> 
+    group_by(metso) |>
+    sample_n(size = 10000, replace = FALSE) |>
+    ungroup()  
+}
 
 metso_utm_join$poly_id <- 1:nrow(metso_utm_join) # id
 
@@ -192,7 +190,7 @@ list_of_groups <- master_covariates |>
   group_by(dataset, var, year) |> 
   group_split()
 
-run <- F
+run <- T
 
 if(run){
   coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x, id_column = "sampleUnit"))
@@ -207,41 +205,23 @@ rm(list = setdiff(ls(), toKeep));gc()
 
 #--------------------
 
-# Aggregate data of covariates from the different tiles
+# Aggregate Tile Covariate Data for All Polygon Types
 
-## because problems in variable names, I needed to construct a dictionary
+root_output_dir <- file.path("D:", "intermediate_aggregated")
 
-dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";") # External 
-root_name <- file.path("D:", "intermediate_aggregated")
-dir.create(root_name, showWarnings = F)
-polygon_type <- "coords" #  "metso" = metso_raw_data, "coords" = coords_raw_data #<---------- REPLACE
+aggregate_tile_covariates(
+  raw_data_list = coords_raw_data,
+  polygon_type = coords_utm_join$set[1],
+  dict_covar = dict_covar,
+  output_root_dir = root_output_dir,
+  df = st_drop_geometry(coords_utm_join)
+)
 
-folder_name <- file.path(root_name, polygon_type)
-dir.create(folder_name, showWarnings = F)
+aggregate_covariates( # havent run yet
+  raw_data_list = metso_raw_data,
+  polygon_type = metso_utm_join$set[1],
+  dict_covar = dict_covar,
+  output_root_dir = root_output_dir,
+  df = st_drop_geometry(metso_utm_join)
+)
 
-for(a in 1:length(coords_raw_data)){ #<---------- REPLACE
-  #a <- 5
-  message(paste("running", a, "of", length(coords_raw_data))) #<---------- REPLACE
-  coords_raw_data[[a]]
-  
-  dfa <- purrr::map_dfr(.x = coords_raw_data[[a]], #<---------- REPLACE
-                      .f = ~ compact(readRDS(str_replace(.x, pattern = "results", replacement = "D:")))
-                      )
-  
-  if(!is.na(dfa$variable[1])){
-    index <- which(dfa$variable[1] == dict_covar$var_error)[1]
-    if(dfa$dataset[1] == "luke"){
-      dfa$variable <- dict_covar$var_new[index]  
-    }else{
-      dfa$variable <- dfa$variable
-    }
-  }else{
-    dfa$variable <- "Tree_removal_latest_date"
-  }
-  
-  dfa$polygon_source <- polygon_type
-  
-  file_name <-  file.path(folder_name, paste0(dfa$variable[1], "_", dfa$year[1], "_", polygon_type, ".rds"))
-  saveRDS(object = dfa, file = file_name)
-  rm(dfa); gc()
-}

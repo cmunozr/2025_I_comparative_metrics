@@ -125,7 +125,7 @@ set.seed(11072024)
 ```{r}
 transform_Y_to_abunCpres <- function(data) {
   data |> 
-    mutate(across(everything(), ~ ifelse(. == 0, NA, scale(log(.)))))
+    mutate(across(everything(), ~ ifelse(. == 0, NA, .)))
 }
 ```
 
@@ -173,9 +173,14 @@ Traits information
 avonet <- read.xlsx("data/traits/AVONET/TraitData/AVONET2_eBird.xlsx", sheet = 2)
 ```
 
-Dictionary of processed covariates (Shultz)
+Dictionary of covariates (Shultz)
 ```{r}
 dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";")
+```
+
+Mapping function covariates
+```{r}
+mapping_functions <- read.xlsx("data/covariates/mapping_covariate_functions.xlsx", sheet = 1)
 ```
 
 Multi Source Forest National Inventory available data years
@@ -235,7 +240,7 @@ spp_in_route <- occurr_sect_route |>
   summarise(count = n(), .groups = "drop") |> 
   filter(scientificName != "") 
 
-run <-  T
+run <- F
 
 if(run == T){
 
@@ -411,6 +416,35 @@ occurr_sect_route <- occurr_sect_route |>
   
 ```
 
+### Forest biotope
+
+Categories under forest biotope 
+
+- K SPRUCE FOREST (main species: spruce)
+- M PINE FOREST (main species: pine)
+- S MIXED FOREST (roughly equal mix of coniferous and deciduous trees)
+- L DECIDUOUS FOREST (main species: deciduous trees)
+- J NOBLE BROADLEAF FOREST (oak, beech, etc.)
+- P SHRUBLAND (under 5 meters tall; alpine birch scrub is still considered forest)
+- R PINE FEN (peatland with pine; drained fens often counted as shrublands)
+
+Categories out of biotope forest
+- H CLEAR-CUT AREA
+- N MIRE OR WETLAND
+- V FARMLAND AND SHORE MEADOWS
+- A SETTLEMENT
+- T FELL AND ALVAR
+- X OTHER
+
+
+```{r}
+biotope_forest <- c("K", "M", "S", "L", "J", "P", "R")
+
+occurr_sect_route <- occurr_sect_route |> 
+  mutate(is_biotope_forest = biotope %in% biotope_forest )
+
+```
+
 
 ## Exploratory Data Analysis & Quality Checks
 
@@ -420,7 +454,6 @@ occurr_sect_route <- occurr_sect_route |>
   filter(is.species == TRUE, group == "Birds", taxonRank != "MX.hybrid", taxonRank != "MX.form") |>
 
 ```{r}
-
 master_routes <- routes |>
   # FLAG 1: Temporal Filter ---
   # Time window: late Spring/Summer routes of selected years ( because data availability of the multi source national forest inventory, MS-NFI)
@@ -433,17 +466,25 @@ master_routes <- routes |>
   left_join(
     occurr_sect_route |>
       filter(in_bakx == TRUE) |> # this flag sums is.species, group == birds, in_bakx
-      distinct(vakio) |>
+      distinct(vakio, year) |>
       mutate(has_target_species = TRUE),
-    by = "vakio"
+    by = c("vakio", "year")
   ) |>
   #
   # FLAG 3: Biotope Data Quality ---
+  # check for routes that has forest biotope
+  left_join(
+    occurr_sect_route |>
+      filter(is_biotope_forest == TRUE) |> # this flag sums is.species, group == birds, in_bakx
+      distinct(vakio, year) |>
+      mutate(has_target_biotope = TRUE),
+    by = c("vakio", "year")
+  ) |>
   # Check for routes that are missing biotope information in any given year.
   #
   left_join(
     occurr_sect_route |>
-      group_by(year, vakio) |>
+      group_by(vakio, year) |>
       summarise(
         sections_missing_biotope = sum(biotope == ""),
         total_sections = n(),
@@ -451,8 +492,8 @@ master_routes <- routes |>
       ) |>
       # A route is invalid if all its sections are missing biotope info
       mutate(has_no_biotope_data = (sections_missing_biotope == total_sections)) |>
-      filter(has_no_biotope_data) |>
-      distinct(vakio, .keep_all = TRUE), # Keep only the invalid routes to flag them
+      mutate(has_incomplete_biotope_data = (sections_missing_biotope > 0)) |> 
+      filter(has_incomplete_biotope_data), # Keep only the invalid routes to flag them
     by = c("vakio", "year")
   ) |>
   #
@@ -463,10 +504,11 @@ master_routes <- routes |>
     length_difference = abs(linelength - spatial_length),
     is_length_discrepant = (length_difference > 50)
   ) |>
-  #
   mutate(
-    has_target_species = !is.na(has_target_species),
-    has_no_biotope_data = !is.na(has_no_biotope_data)
+    has_target_species = tidyr::replace_na(has_target_species, FALSE),
+    has_no_biotope_data = tidyr::replace_na(has_no_biotope_data, FALSE),
+    has_incomplete_biotope_data = tidyr::replace_na(has_incomplete_biotope_data, FALSE),
+    has_target_biotope = tidyr::replace_na(has_target_biotope, FALSE)
   )
 ```
 
@@ -478,7 +520,7 @@ How much data is affected by missing biotope information?
 # Summarize how many years each route is missing all biotope data
 biotope_missing_summary <- master_routes |>
   filter(has_no_biotope_data == TRUE) |>
-  count(vakio, year, name = "times_missing")
+  count(vakio, name = "times_missing")
 
 # Join this summary to the spatial data for mapping
 coords_for_plot <- coords |>
@@ -587,7 +629,7 @@ If we remove routes with no biotope data, how much information do we lose of the
 ```{r}
 # Get the list of eventIDs that will be removed due to the biotope filter
 events_to_remove <- master_routes |>
-  filter(has_no_biotope_data == TRUE) |>
+  filter(has_no_biotope_data == TRUE | has_target_biotope == FALSE) |>
   pull(eventId) |>
   unique()
 
@@ -651,7 +693,8 @@ valid_events <- master_routes |>
   filter(
     is_valid_date == TRUE,
     has_target_species == TRUE,
-    has_no_biotope_data == FALSE,
+    has_no_biotope_data == FALSE, 
+    has_target_biotope == TRUE,
     is_length_discrepant == FALSE
   )
 
@@ -674,7 +717,8 @@ occurr_route <- occurr_route |>
 occurr_sect_route <- occurr_sect_route |>
   filter(
     eventId %in% valid_event_ids,
-    in_bakx == T
+    in_bakx == TRUE, 
+    is_biotope_forest == TRUE
   )
 ```
 
@@ -831,7 +875,8 @@ if(run){
             to = biotope_route_a$r_endMeters[r]
           )
   
-          # A standard buffer on the raw, angular route lines can create unrealistic polygon artifacts around sharp and "spicule type" corners.
+          # A standard buffer on the raw, angular route lines can create unrealistic polygon 
+          # artifacts around sharp and "spicule type" corners.
           # To solve this, we split each section and create sub-buffers and then join them.
           
           segments <- nngeo::st_segments(line_section, progress = F)
@@ -944,99 +989,81 @@ occurr_biotope_route <- occurr_sect_route |>
   mutate(
     sampleUnit = paste(vakio, year, biotope, sep = "_")
   )
-```
 
+```
 
 ### Process Environmental Covariates
 
-Online repositories are not deployed as Web Feature Service in which we can work "in-situ". It was needed to download the data sets. Data sets are massive and splitted over several storage units. To consult how they were downloaded please refer to scripts "_utilities_download_covariates.R" and "_utilities_download_covariates.py". Dowloaded files were processing following the "_utilities_fetch_covariates.R" script.
+Online repositories are not deployed as Web Feature Service in which we can work "in-situ". It was needed to download the data sets. Data sets are massive and splitted over several storage units. To consult how they were downloaded please refer to script "_utilities_download_covariates.R". Dowloaded files were processing following the "_utilities_fetch_covariates.R" script.
 
-Raw data of each route with a 150m buffer and from metso/non metso stands is extracted with the script "_utilities_fetch_covariates.R". Once with this information 
-we can compare each type of unit to inform potential risk of exrapolation. We sample 10000 stands for each type (metso/non metso) and all the route buffers.
-
-```{r}
-
-covar_nm <- dict_covar |> 
-  pull(var_new) |> 
-  unique()
-
-year_route_samplingn <- occurr_biotope_route |> 
-  group_by(sampleUnit) |>
-  summarise(total_sections = n(), .groups = 'drop')
-
-```
+Raw data of each route with a 150m buffer and from metso/non metso stands is extracted with the script "_utilities_fetch_covariates.R". Once with this information  we can compare each type of unit to inform potential risk of exrapolation. We sample 10000 stands for each type (metso/non metso) and all the route buffers.
 
 ```{r}
 
-folder_name <- file.path("data", "intermediate_covariates") 
+folder_name <- file.path("data", "covariates", "pre_processed") 
 
 run <- F
 
 if(run){
   
-  dir.create(folder_name, showWarnings = FALSE)
-  output_rds_paths <- as.character()
+  plotting <- F
   
-  metso_stands_df <- st_read(file.path("data","metso", "treatment_control_stand.gpkg"), quiet = T) |> 
-  st_drop_geometry() |> 
-  select(standid, metso)
+  dir.create(folder_name, showWarnings = F)
   
-  sampled_stand_ids <- metso_stands_df |> 
-    group_by(metso) |>
-    sample_n(size = 10000, replace = FALSE) |>
-    ungroup() |>
-    pull(standid)
+  covar_nm <- dict_covar |> 
+    filter(to_download == 1) |> 
+    pull(var_shultz) |> 
+    unique()
+  
+  output_rds_paths <- NA_character_
   
   rds_data_dir <- file.path("D:","intermediate_aggregated")
-
+  
   rds_files <- list.files(rds_data_dir, pattern = "\\.rds$", recursive = TRUE, full.names = TRUE)
-
+  
   for (i in 1:length(covar_nm)) {
-    # i <- 1
+    # i <- 13
     
-    covariate <-  covar_nm[i]
+    covar_nm_i <- covar_nm[i] 
     
-    message(paste("--- Processing covariate:", covariate, "---"))
-  
-    filtered_data <- filter_covariate_data(
-      covariate_name = covariate,
-      files = rds_files,
-      sampled_ids = sampled_stand_ids,
-      route_map = year_route_sampling
-    )
+    message(paste("processing", i, "of", length(covar_nm), "variables", "(", covar_nm_i, ")" ))
     
-    if(is.null(filtered_data)){
-      warning(paste("Covariate", covariate, "is null data"))
+    relevant_files <- rds_files[str_detect(basename(rds_files), covar_nm_i)]
+    
+    if(length(relevant_files) == 0){
       next
-    } 
-  
-    # writing a filtered data set just for coords because metso is a sample
-    output_rds_path <- file.path(folder_name, paste0("filtered_cov_coords_", covariate, ".rds"))
-    saveRDS(filter(filtered_data, polygon_source == "coords"), file = output_rds_path) 
-    output_rds_paths[i] <- output_rds_path
+      } 
     
-    plot_data <- prepare_covariates_data_toplot(
-      filtered_data = filtered_data,
-      metso_map = metso_stands_df
-    )
-    rm(filtered_data);gc()
+    covar_data_i <- lapply(relevant_files, readRDS) |> 
+      bind_rows() # it binds metso and route data, can be big, watch out
+    file_path <- file.path(folder_name,  paste0(covar_nm_i, ".rds"))
+    saveRDS(covar_data_i, file = file_path)
     
-    is_binary <- dict_covar$binary[i]
+    output_rds_paths[i] <- file_path
     
-    if (is_binary) {
-      generate_binary_plot(covariate, plot_data, folder_name)
-    } else {
-      generate_covariate_plot(covariate, plot_data, folder_name)
+    if(plotting){ # not fixed with the new structure
+      plot_data <- prepare_covariates_data_toplot(
+        filtered_data = covar_data_i
+      )
+      
+      is_binary <- dict_covar$binary[i]
+      
+      if (is_binary) {
+        generate_binary_plot(covariate, plot_data, folder_name)
+      } else {
+        generate_covariate_plot(covariate, plot_data, folder_name)
+      }
+      rm(plot_data );gc()
     }
-    rm(plot_data );gc()
   }
+  
+  output_rds_paths <- na.omit(output_rds_paths)
   
 }else{
   output_rds_paths <- list.files(folder_name, pattern = ".rds$", recursive = T, full.names = T)
 }
 
 ```
-
 ## Model Input Assembly
 
 ### Species Occurrence Matrix (Y)
@@ -1048,7 +1075,6 @@ Y <- occurr_biotope_route |>
               values_fn = sum, values_fill = 0) |> 
   select(-sampleUnit) |> 
   as.data.frame()
-
 ```
 
 ```{r}
@@ -1059,56 +1085,122 @@ hist(P, xlab = "Species prevalence (P)",xlim=c(0,1))
 
 Most species exhibit low prevalence, clustering towards the rare end of the spectrum, while a few species show a significantly higher prevalence, indicating they are common across the sampled areas, even an species is occurring in the `r max(P)` of sites (`r names(which(P == max(P)))`).
 
+```{r}
+Y <- transform_Y_to_abunCpres(Y)
+```
+
+
 ### XData
 
 Now we are going to derive polygon-Level statistics from the raw values of the covariates.  We use the covariate data dictionary to filter each variable as either continuous or binary. Next, the two variable types are handled differently: for each polygon and year, continuous variables are summarized with a weighted mean and standard deviation, min and max, while binary variables are summarized by calculating the weighted proportion of '1's. 
 
 ```{r}
-covar_data <- purrr::map_dfr(.x = output_rds_paths, .f = ~ compact(readRDS(.x))) |>
-  select(-c(poly_id, dataset, polygon_source)) 
+folder_name <- file.path("data", "covariates") 
 
-binary_vars <- dict_covar |> 
-  filter(binary == 1) |> 
-  pull(var_new)
+run <- F
 
-continuous_vars <- dict_covar|>
-  filter(binary == 0)|>
-  pull(var_new)
-
-binary_summary <- covar_data|>
-  filter(variable %in% binary_vars)|>
-  group_by(polygon_id, year, variable)|>
-  summarise(
-    prop = weighted.mean(value, coverage_fraction, na.rm = TRUE),
-    count = ceiling(sum(coverage_fraction[value == 1], na.rm = TRUE)),
-    .groups = 'drop'
-  ) |> 
-  pivot_longer(cols = -c(polygon_id, year, variable), values_to = "value") |> 
-  pivot_wider(id_cols = c(polygon_id, year),  names_from = c(variable, name))
-
-continuous_summary <- covar_data|>
-  filter(variable %in% continuous_vars)|>
-  group_by(polygon_id, year, variable)|>
-  summarise(
-    mean = weighted.mean(value, coverage_fraction, na.rm = TRUE),
-    max = max(value, na.rm = TRUE),
-    sd = weighted_sd(value, coverage_fraction, na.rm = TRUE),
-    median = matrixStats::weightedMedian(value, w = coverage_fraction, na.rm = TRUE),
-    iqr = diff(Hmisc::wtd.quantile(value, weights = coverage_fraction, probs = c(0.25, 0.75), na.rm = TRUE)),
-    .groups = 'drop'
-  ) |> 
-  pivot_longer(cols = -c(polygon_id, year, variable), values_to = "value") |> 
-  pivot_wider(id_cols = c(polygon_id, year),  names_from = c(variable, name))
-
-XData <- full_join(
-  binary_summary,
-  continuous_summary,
-  by = c("polygon_id", "year")
-)  
-
-saveRDS(XData, "data/covariates/XData_hmsc.rds")
+if(run){
+  
+  unique_vars_to_process <- tools::file_path_sans_ext(basename(output_rds_paths))
+  names(output_rds_paths) <- unique_vars_to_process
+  
+  # --- The Unified Loop (Corrected) ---
+  all_results_list <- list()
+  
+  for (var_name in unique_vars_to_process) {
+    
+    if (!(var_name %in% mapping_functions$var_pre_processed)) next
+    
+    current_file_path <- output_rds_paths[var_name]
+    
+    message("Processing variables from: ", basename(current_file_path), "\n")
+    
+    raw_data <- readRDS(current_file_path)
+    
+    plan_for_this_file <- mapping_functions %>% 
+      filter(var_pre_processed == var_name)
+    
+    var_by_polygon <- raw_data |> 
+      group_by(polygon_id) |> 
+      group_modify(~ {
+        current_group_data <- .
+        # .y contains the group's key, in this case, a tibble with the polygon_id
+        group_key <- .y 
+        results <- list()
+        
+        for (i in 1:nrow(plan_for_this_file)) {
+          task <- plan_for_this_file[i, ]
+          
+          args <- list()
+          
+          # --- This is the corrected section ---
+          if (task$function_to %in% c("old_grow", "old_grow_ratio", "old_grow_agesum")) {
+            args$stand_age <- current_group_data$value
+            # We now explicitly pass the polygon_id from the group key
+            args$polygon_id <- group_key$polygon_id
+          } else if (task$function_to %in% c("weighted_mean", "weighted_sd")) {
+            args$x <- current_group_data$value
+            args$w <- current_group_data$coverage_fraction
+          } else if (task$function_to == "ratio") {
+            args$cov_frac <- current_group_data$coverage_fraction
+            args$val <- current_group_data$value
+          } else if (task$function_to == "max_") {
+            args$x <- current_group_data$value
+          } else if (task$function_to == "bin") {
+            if (task$var_pre_processed %in% names(results)) {
+              args$x <- results[[task$var_pre_processed]]
+            } else {
+              args$x <- current_group_data$value
+            }
+          }
+          
+          if (!is.na(task$aux_value)) {
+            args$aux <- as.numeric(task$aux_value)
+          }
+          
+          results[[task$var_target]] <- do.call(task$function_to, args)
+        }
+        
+        as_tibble(results)
+      })
+    
+    all_results_list[[var_name]] <- var_by_polygon
+  }
+  
+  XData <- all_results_list |> 
+    purrr::compact() |> 
+    reduce(full_join, by = "polygon_id") |> 
+    right_join(y = distinct(select(occurr_biotope_route, sampleUnit)), join_by("polygon_id" == "sampleUnit")) |> 
+    rename("sampleUnit" = "polygon_id")
+  
+  saveRDS(XData, file = file.path(folder_name, "XData_hmsc.rds"))
+  
+}else{
+  
+  XData <- readRDS(file.path(folder_name, "XData_hmsc.rds"))
+    
+}
 ```
 
+
+```{r}
+#| fig-width: 10
+#| fig-height: 10
+#| 
+corr_matrix <- cor(na.omit(XData[,-1])) ################# WATCHOUT SOME ARE NA, NO COVER FOR MSI-NFI ############
+col_palette <- colorRampPalette(c("#4477AA", "#FFFFFF", "#BB4444"))(200)
+
+corrplot::corrplot(
+  corr_matrix, 
+  type = "upper",
+  method = "color",
+  col = col_palette,        # Apply our custom color palette
+  addCoef.col = "black",    # Add the correlation coefficients in black text
+  tl.col = "black", 
+  tl.cex = 0.6, 
+  number.cex = 0.6
+)
+```
 
 ###  Phylogenetic Tree (phyloTree)
 
@@ -1125,20 +1217,27 @@ mctavish_mcc$tip.label <- mctavish_mcc$tip.label |>
 
 not_in_mctavish <- !(spp_Y %in% mctavish_mcc$tip.label)
 
-spp_Y_new <- spp_Y
+run <- F
+if(run){
+  spp_Y_new <- spp_Y
 
-for(i in 1:length(not_in_mctavish))(
-  #i <- 5
-  if(not_in_mctavish[i]){
-    spp_Y.i <- spp_Y[i]
-    to_rename <- taxize::synonyms(spp_Y.i, db = "itis")[[1]] |> 
-      select(syn_name) |> 
-      pull() |> 
-      unique() |> 
-      stringr::word(1, 2)
-    spp_Y_new[i] <- to_rename
-  }
-)
+  for(i in 1:length(not_in_mctavish))(
+    #i <- 5
+    if(not_in_mctavish[i]){
+      spp_Y.i <- spp_Y[i]
+      to_rename <- taxize::synonyms(spp_Y.i, db = "itis")[[1]] |> 
+        select(syn_name) |> 
+        pull() |> 
+        unique() |> 
+        stringr::word(1, 2)
+      spp_Y_new[i] <- to_rename
+    }
+  )
+  writeLines(spp_Y_new, file.path("data", "spp_Y_new_forPhylo.txt"))
+}else{
+  spp_Y_new <- readLines(file.path("data", "spp_Y_new_forPhylo.txt"))
+}
+
 
 # "Coloeus monedula" -> "Corvus monedula"
 # "Phylloscopus sibillatrix" -> "Phylloscopus sibilatrix"  

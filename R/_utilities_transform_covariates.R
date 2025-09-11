@@ -105,62 +105,18 @@ crop_rasters_by_mask <- function(source_dir,
   return(output_files)
 }
 
-#-------------------
-filter_covariate_data <- function(covariate_name, files, sampled_ids, route_map, ids = c("standid", "sampleUnit")) {
-  # Filter file paths to get only those relevant to the current covariate
-  relevant_files <- files[str_detect(basename(files), covariate_name)]
-  
-  if (length(relevant_files) == 0) {
-    message(paste("No data files found for covariate:", covariate_name))
-    return(NULL)
-  }
-  
-  # Map over the relevant files, reading and processing each one
-  covariate_data_list <- lapply(relevant_files, function(file) {
-    
-    data_chunk <- readRDS(file)
-    
-    processed_chunk <- data_chunk |>
-      filter(!is.na(value), value != 32766) |> # 32766 is NA in some GIS systems 
-      rename_with(~"polygon_id", .cols = any_of(ids))
-    
-    if (!"polygon_id" %in% names(processed_chunk)) return(NULL)
-    
-    source_type <- processed_chunk$polygon_source[1]
-    if (!is.na(source_type) && source_type == "metso") {
-      final_chunk <- processed_chunk|> filter(polygon_id %in% sampled_ids)
-    } else if (!is.na(source_type) && source_type == "coords") {
-      final_chunk <- semi_join(processed_chunk, route_map, by = c("polygon_id" = "sampleUnit"))
-    } else {
-      final_chunk <- NULL
-    }
-    
-    final_chunk <- mutate(final_chunk, polygon_id = as.factor(polygon_id))
-    
-    return(final_chunk)
-  })
-  
-  bind_rows(covariate_data_list)
-}
-
 #-----------------
 
-prepare_covariates_data_toplot <- function(filtered_data, metso_map) {
-  # Check for valid input
-  if (is.null(filtered_data) || nrow(filtered_data) == 0) {
-    return(NULL)
-  }
-  metso_map <- metso_map |> 
-    mutate(standid = as.factor(standid))
+prepare_covariates_data_toplot <- function(covar_data) {
   
   # Add category labels for plotting
   plot_data <- filtered_data |>
-    left_join(metso_map, by = c("polygon_id" = "standid")) |>
     mutate(category = case_when(
-      polygon_source == "coords" ~ "route buffer",
-      metso == 1                   ~ "metso",
-      metso == 0                   ~ "no metso"
-    )) |> 
+        polygon_source == "coords" ~ "route buffer",
+        metso == 1                   ~ "metso",
+        metso == 0                   ~ "no metso"
+        )
+      ) |> 
     filter(!is.na(category)) |>
     mutate(category = factor(category, levels = c("route buffer", "metso", "no metso")))
   
@@ -169,16 +125,16 @@ prepare_covariates_data_toplot <- function(filtered_data, metso_map) {
 
 #-----------------
 
-generate_covariate_plot <- function(covariate_name, data, folder) {
+generate_covariate_plot <- function(covar_name, covar_data, folder) {
 
-  message(paste("Generating violin-plot for:", covariate_name))
+  message(paste("Generating violin-plot for:", covar_name))
   
-  plot_data <- data |>
-    filter(variable == covariate_name, !is.na(value))
+  plot_data <- covar_data |>
+    filter(variable == covar_name, !is.na(value))
   
   # Ensure there's data to plot
   if (nrow(plot_data) == 0) {
-    message(paste("No data available for", covariate_name, "- skipping."))
+    message(paste("No data available for", covar_name, "- skipping."))
     return(NULL)
   }
   
@@ -200,7 +156,7 @@ generate_covariate_plot <- function(covariate_name, data, folder) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
   
-  output_filename <- file.path(folder, paste0("plot_", covariate_name, ".jpeg"))
+  output_filename <- file.path(folder, paste0("plot_", covar_name, ".jpeg"))
   ggsave(output_filename, p, width = 12, height = 8, dpi = 300)
   message(paste("Saved plot to:", output_filename))
   
@@ -243,21 +199,7 @@ generate_binary_plot <- function(covariate_name, data, folder) {
   message(paste("Saved plot to:", output_filename))
 }
 
-#---------------------
-
-# To calculate weighted standard deviation
-weighted_sd <- function(x, w, na.rm = TRUE) {
-  if (na.rm) {
-    complete_cases <- !is.na(x) & !is.na(w)
-    x <- x[complete_cases]
-    w <- w[complete_cases]
-  }
-  # Calculate the weighted mean
-  w_mean <- weighted.mean(x, w)
-  # Calculate the weighted standard deviation
-  sqrt(sum(w * (x - w_mean)^2) / sum(w))
-}
-
+#-----------------
 #' Extends an sf LINESTRING by a specified distance.
 #'
 #' @param line An sf object containing a single LINESTRING.
@@ -423,12 +365,20 @@ get_raster_crs <- function(raster_path) {
 #'   )
 #' }
 
-extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_column = "vakio", only_paths = F) {
+extract_raw_values <- function(polygons_sf = metso_utm_join[1:100, ], raster_info_df = list_of_groups[[1]], folder = "D:", id_column = "vakio", only_paths = F) {
   
   message(paste("Fetching from", raster_info_df$dataset[1], "variable", raster_info_df$var[1], "year",
                 raster_info_df$year[1], "with polygon set", polygons_sf$set[1]))
   
   target_crs <- raster_info_df$raster_crs[1]
+  
+  if(polygons_sf$set[1] == "metso"){
+    polygons_sf <- polygons_sf |> 
+      mutate(year = raster_info_df$year[1])
+    progress_bar <- T
+  }else{
+    progress_bar <- F
+  }
   
   folder_name <- file.path(folder, "intermediate_by_tile", paste0(raster_info_df$dataset[1], "-", polygons_sf$set[1]))
   dir.create(folder_name, showWarnings = FALSE, recursive = TRUE)
@@ -483,7 +433,7 @@ extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_co
           y = polygons_for_this_tile,
           fun = NULL,
           include_cols = "poly_id",
-          progress = F
+          progress = progress_bar
         )
       })
       
@@ -507,4 +457,261 @@ extract_raw_values <- function(polygons_sf, raster_info_df, folder = "D:", id_co
   }
   
   return(created_files)
+}
+
+# Check and split if the utm code actually has multiple utm 200 zones, example: KL2 
+split_utm_code <- function(code) {
+  if (str_detect(code, "[A-Z]{2,}")) {
+    letters_part <- str_extract(code, "[A-Za-z]+")
+    number_part <- str_extract(code, "\\d+")
+    individual_letters <- str_split_1(letters_part, "")
+    return(paste0(individual_letters, number_part))
+  } else {
+    return(code)
+  }
+}
+
+#----------------
+#' Aggregate and Save Covariate Data
+#'
+#' This function reads raw covariate data from a list of file paths, processes it,
+#' standardizes variable names using a dictionary, and saves the final data frame
+#' as an RDS file.
+#'
+#' @param raw_data_list A list where each element is a character vector of
+#'   paths to RDS files for a specific covariate group.
+#' @param polygon_type A character string, either "coords" or "metso",
+#'   indicating the type of polygon data being processed. This is also used for
+#'   naming the output folder and files.
+#' @param dict_covar A data frame used as a dictionary to standardize
+#'   covariate variable names. It should contain columns like 'file_name' and
+#'   'var_shultz'.
+#' @param output_root_dir A character string specifying the root directory
+#'   where the aggregated files will be saved.
+#' @param path_pattern A character string with the pattern in the file path to
+#'   be replaced. Default is "results".
+#' @param path_replacement A character string for the replacement in the file
+#'   path. Default is "D:".
+#'
+#' @return The function is used for its side effect of writing files to disk and
+#'   will invisibly return a character vector of the paths to the saved files.
+#'
+aggregate_tile_covariates <- function(raw_data_list,
+                                      polygon_type,
+                                      dict_covar,
+                                      output_root_dir,
+                                      path_pattern = "results",
+                                      path_replacement = "D:",
+                                      df) {
+  
+  folder_name <- file.path(output_root_dir, polygon_type)
+  dir.create(folder_name, showWarnings = FALSE, recursive = TRUE)
+  
+  id_cols <- c("standid", "sampleUnit")
+  
+  saved_files <- c()
+  
+  for (i in 1:length(raw_data_list)) {
+    message(paste("Processing", polygon_type, "group", i, "of", length(raw_data_list)))
+    
+    file_paths <- raw_data_list[[i]]
+    
+    dfa <- purrr::map_dfr(
+      .x = file_paths,
+      .f = ~ purrr::compact(readRDS(stringr::str_replace(.x, pattern = path_pattern, replacement = path_replacement)))
+    )
+    
+    if (nrow(dfa) == 0) {
+      message(paste("  - Skipping group", i, "as it contains no data."))
+      next
+    }
+    
+    dfa <- dfa |>
+      # Remove rows with NA values or a specific GIS NA value (32766).
+      dplyr::filter(!is.na(value), value != 32766) |>
+      dplyr::rename_with(~"polygon_id", .cols = dplyr::any_of(id_cols))
+    
+    # Translate Variable Names using the Dictionary
+    dfa_var <- dfa$variable[1]
+    
+    if (!is.na(dfa_var)) {
+      if (dfa$dataset[1] == "luke") {
+        index <- which(paste0(dfa_var, "_") == dict_covar$file_name)
+        dfa$variable <- dict_covar$var_shultz[index]
+      }else{
+        index <- which(paste0(dfa_var) == dict_covar$file_name)
+        dfa$variable <- dict_covar$var_shultz[index]
+      }
+    } else {
+      dfa$variable <- "tree_removal_latest_date"
+    }
+    
+    dfa$polygon_source <- polygon_type
+    
+    join_column_name <- if (polygon_type == "metso") "standid" else "sampleUnit"
+    
+    dfa <- semi_join(dfa, df, by = c("polygon_id" = join_column_name)) |> 
+      dplyr::mutate(polygon_id = as.factor(polygon_id))
+    
+    output_file_name <- paste0(
+      dfa$variable[1], "_",
+      dfa$year[1], "_",
+      polygon_type,
+      ".rds"
+    )
+    output_file_path <- file.path(folder_name, output_file_name)
+    
+    saveRDS(object = dfa, file = output_file_path)
+    saved_files <- c(saved_files, output_file_path)
+    
+    rm(dfa)
+    gc()
+  }
+  
+  return(invisible(saved_files))
+}
+
+#----------------------
+# Weighted standard deviation using 'coverage_fraction' as weight
+# This function now expects 'x' (value) and 'w' (coverage_fraction)
+weighted_sd <- function(x, w, na.rm = TRUE) {
+  if (na.rm) {
+    complete_cases <- !is.na(x) & !is.na(w)
+    x <- x[complete_cases]
+    w <- w[complete_cases]
+  }
+  if (length(x) == 0) return(NA) # Return NA if no valid data
+  w_mean <- stats::weighted.mean(x, w, na.rm = FALSE)
+  sqrt(sum(w * (x - w_mean)^2) / sum(w))
+}
+
+#----------------------
+# Ratio calculation
+# This function expects 'cov_frac' and a 'val' column (which is the 'value' column for these vars)
+# The original logic returns the sum of coverage fractions where value is 1
+ratio <- function(cov_frac, val, na.rm = TRUE) {
+  if (na.rm) {
+    complete_cases <- !is.na(cov_frac) & !is.na(val)
+    cov_frac <- cov_frac[complete_cases]
+    val <- val[complete_cases]
+  }
+  if (length(cov_frac) == 0) return(NA)
+  sum(cov_frac[val == 1])
+}
+
+#------------------------
+# Weighted mean using 'coverage_fraction' as weight
+weighted_mean <- function(x, w, na.rm = TRUE) {
+  if (na.rm) {
+    complete_cases <- !is.na(x) & !is.na(w)
+    x <- x[complete_cases]
+    w <- w[complete_cases]
+  }
+  if (length(x) == 0) return(NA)
+  stats::weighted.mean(x, w, na.rm = FALSE)
+}
+
+#----------------------
+# Maximum value
+max_ <- function(x, na.rm = TRUE) {
+  if (length(x[!is.na(x)]) == 0) return(NA)
+  max(x, na.rm = na.rm)
+}
+
+#-----------------------
+# Binary indicator
+bin <- function(x, aux, na.rm = TRUE) {
+  if (na.rm) {
+    x <- x[!is.na(x)]
+  }
+  if (length(x) == 0) return(NA)
+  # Check if ANY value meets the condition
+  ifelse(any(x >= aux), 1, 0)
+}
+
+#----------------------
+#' Determine the Old-Growth Age Threshold Based on Biotope Class
+#'
+#' This function extracts the primary biotope class from a polygon identifier
+#' and returns the corresponding age threshold for old-growth forest classification.
+#' The age thresholds are hard-coded based on established values for Finnish forest
+#' types (Forsius et al., 2021; Shultz et al., 2025).
+#'
+#' @param polygon_id A character string representing the polygon's unique ID,
+#'   where the last character is the biotope class code (e.g., "43_2009_K").
+#'
+#' @return A numeric value representing the age threshold in years.
+#'
+#' @details
+#' The function uses a `case_when` statement to apply specific rules:
+#'
+#' - **K - KUUSIMETSÄ (Spruce Forest):** This category represents forests where
+#'   spruce is the dominant tree species. The model applies a **100-year** age
+#'   threshold, a direct classification that correctly identifies mature spruce
+#'   stands based on established ecological standards for this forest type.
+#'
+#' - **M - MÄNTYMETSÄ (Pine Forest):** This code is for forests dominated by pine.
+#'   The model applies a **120-year** age threshold. This classification ensures
+#'   that only pine forests that have reached a significant age, characteristic
+#'   of old-growth conditions for this species, are identified.
+#'
+#' - **S - SEKAMETSÄ (Mixed Forest):** This category is for mixed forests with a
+#'   combination of coniferous and deciduous trees. To prevent overestimation in
+#'   these ecologically complex habitats, a conservative approach is taken by applying
+#'   the highest age threshold (**120 years**, equivalent to pine). This ensures
+#'   only exceptionally old and structurally developed mixed stands are flagged.
+#'
+#' - **L & J - LEHTIMETSÄ & JALOPUUMETSÄ (Deciduous & Noble Broadleaf Forest):**
+#'   These codes represent forests dominated by broadleaf species. They are grouped
+#'   and assigned a **60-year** age threshold, correctly treating deciduous
+#'   habitats as a distinct category with unique aging dynamics.
+#'
+#' - **P - PENSASTO (Shrubland):** This category includes areas dominated by shrubs
+#'   and young trees. While a woody habitat, it generally lacks mature trees.
+#'   Assigning the high **120-year "pine" threshold** is a conservative method
+#'   that correctly results in a non-old-growth classification in almost all cases.
+#'
+#' - **R - RÄME, NEVA, LETTO (Pine Mire, Bog, Rich Fen):** This category represents
+#'   peatland habitats often dominated by slow-growing, stunted pines. Applying
+#'   the **120-year "pine" threshold** is an ecologically sound choice, accounting
+#'   for the fact that trees in these mire systems must reach an advanced age to be
+#'   considered part of an old-growth ecosystem.
+#'
+#' - **Other Biotopes:** Any other biotope code (e.g., `H` for clear-cut, `A` for
+#'   agricultural land) is assigned an effectively impossible threshold of `9999`
+#'   years, ensuring they are correctly classified as non-forest for this analysis.
+#'
+get_age_threshold <- function(polygon_id) {
+  biotope_class <- stringr::str_sub(polygon_id, -1)
+  case_when(
+    biotope_class %in% c("M", "S", "P", "R") ~ 120,
+    biotope_class == "K"                      ~ 100,
+    biotope_class %in% c("L", "J")           ~ 60,
+    TRUE                                      ~ 9999
+  )
+}
+
+#----------------------
+# Returns 1 if ANY pixel in the polygon meets its specific age threshold.
+old_grow <- function(stand_age, polygon_id) {
+  age_threshold <- get_age_threshold(polygon_id[1]) # All IDs in a group are the same
+  is_old <- stand_age >= age_threshold
+  return(as.integer(any(is_old, na.rm = TRUE)))
+}
+
+#----------------------
+# Returns the proportion (0.0 to 1.0) of pixels that meet their age threshold.
+old_grow_ratio <- function(stand_age, polygon_id) {
+  age_threshold <- get_age_threshold(polygon_id[1])
+  is_old <- stand_age >= age_threshold
+  return(mean(is_old, na.rm = TRUE))
+}
+
+#----------------------
+# Returns the sum of the ages of ONLY the pixels that meet their threshold.
+old_grow_agesum <- function(stand_age, polygon_id) {
+  age_threshold <- get_age_threshold(polygon_id[1])
+  # Subset the ages that meet the condition before summing
+  ages_to_sum <- stand_age[stand_age >= age_threshold]
+  return(sum(ages_to_sum, na.rm = TRUE))
 }
