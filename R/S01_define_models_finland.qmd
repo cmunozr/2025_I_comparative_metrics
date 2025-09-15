@@ -104,10 +104,11 @@ library(ggrepel)
 library(gt)
 library(exactextractr)
 library(patchwork)
-library(dplyr)
 library(units)
 library(clootl) # devtools::install_github("eliotmiller/clootl")
 library(finbif) # https://github.com/luomus/finbif; usethis::edit_r_environ()
+library(car)
+library(dplyr)
 ```
 
 ### Global Options & Helper Functions
@@ -199,13 +200,6 @@ if(run){
 set_avesdata_repo_path(path = "data/AvesData-main/", overwrite = T)
 
 ```
-```{r}
-run <- F
-if(run){
-  download.file("https://www.avilist.org/wp-content/uploads/2025/06/AviList-v2025-11Jun-extended.xlsx", destfile = "data/AviList-v2025-11Jun-extended.xlsx", mode = "wb")  
-}
-avilist <- read.xlsx("data/AviList-v2025-11Jun-extended.xlsx", sheet = 1)
-```
 
 ## FBS Data Preprocessing & Cleaning
 
@@ -294,7 +288,6 @@ occurr_sect_route <- occurr_sect_route |>
 
 ### Resolving bird names to international standard
 
-
 ```{r}
 
 route_species <- finbif_info |> 
@@ -332,7 +325,7 @@ itis_routes <- itis_routes_raw |>
                                ),
          acceptedname_itis = stringr::word(acceptedname_itis, 1, 2) # in itis some accepted names are subspecies
          ) |> 
-  select(taxonId, submittedname, acceptedname_itis)
+  dplyr::select(taxonId, submittedname, acceptedname_itis)
   
 ```
 
@@ -369,7 +362,7 @@ itis_bakx <- itis_bakx_raw |>
                                acceptedname
                                )
          ) |> 
-  select(submittedname, acceptedname_itis)
+  dplyr::select(submittedname, acceptedname_itis)
 
 ```
 
@@ -387,7 +380,7 @@ harmonized_species <- harmonized_species |>
     in_bakx = !is.na(submittedname_bakx),
     acceptedName = acceptedname_itis
   ) |>
-  select(
+  dplyr::select(
     taxonId,
     submittedname_bakx,
     acceptedName,
@@ -451,8 +444,6 @@ occurr_sect_route <- occurr_sect_route |>
 
 ### Create Master route Table
 
-  filter(is.species == TRUE, group == "Birds", taxonRank != "MX.hybrid", taxonRank != "MX.form") |>
-
 ```{r}
 master_routes <- routes |>
   # FLAG 1: Temporal Filter ---
@@ -465,7 +456,7 @@ master_routes <- routes |>
   # Check which routes contain at least one observation of a target species.
   left_join(
     occurr_sect_route |>
-      filter(in_bakx == TRUE) |> # this flag sums is.species, group == birds, in_bakx
+      filter(in_bakx == TRUE) |> # this flag summarize labels is.species, group == birds, and in_bakx
       distinct(vakio, year) |>
       mutate(has_target_species = TRUE),
     by = c("vakio", "year")
@@ -475,7 +466,7 @@ master_routes <- routes |>
   # check for routes that has forest biotope
   left_join(
     occurr_sect_route |>
-      filter(is_biotope_forest == TRUE) |> # this flag sums is.species, group == birds, in_bakx
+      filter(is_biotope_forest == TRUE) |>
       distinct(vakio, year) |>
       mutate(has_target_biotope = TRUE),
     by = c("vakio", "year")
@@ -504,13 +495,24 @@ master_routes <- routes |>
     length_difference = abs(linelength - spatial_length),
     is_length_discrepant = (length_difference > 50)
   ) |>
+  ## FLag 5: some routes are not covered by the MS-NFI, there is a need to automatize the flag
+  left_join(
+    occurr_sect_route |>
+      filter((vakio %in% c(431, 456, 576) & year == 2009) | (vakio %in% c(489, 608) & year == 2011)) |> 
+      distinct(vakio, year) |> 
+      mutate(no_data_NFI = TRUE),
+    by = c("vakio", "year")
+  ) |> 
   mutate(
     has_target_species = tidyr::replace_na(has_target_species, FALSE),
     has_no_biotope_data = tidyr::replace_na(has_no_biotope_data, FALSE),
     has_incomplete_biotope_data = tidyr::replace_na(has_incomplete_biotope_data, FALSE),
-    has_target_biotope = tidyr::replace_na(has_target_biotope, FALSE)
+    has_target_biotope = tidyr::replace_na(has_target_biotope, FALSE),
+    no_data_NFI = tidyr::replace_na(no_data_NFI, FALSE)
   )
+
 ```
+
 
 ### Exploratory Analysis of Filter Criteria
 
@@ -695,7 +697,8 @@ valid_events <- master_routes |>
     has_target_species == TRUE,
     has_no_biotope_data == FALSE, 
     has_target_biotope == TRUE,
-    is_length_discrepant == FALSE
+    is_length_discrepant == FALSE,
+    no_data_NFI == FALSE
   )
 
 # Extract the unique IDs for the valid events and routes
@@ -704,9 +707,6 @@ valid_vakio_ids <- unique(valid_events$vakio)
 
 #
 # --- DATA CLEANING ---
-
-coords <- coords |>
-  filter(vakio %in% valid_vakio_ids)
 
 routes <- routes |>
   filter(eventId %in% valid_event_ids)
@@ -717,9 +717,18 @@ occurr_route <- occurr_route |>
 occurr_sect_route <- occurr_sect_route |>
   filter(
     eventId %in% valid_event_ids,
-    in_bakx == TRUE, 
+    in_bakx == TRUE, # flags at the level of biotope, cannot handle inside the master df
     is_biotope_forest == TRUE
   )
+
+coords <- coords |>
+  filter(vakio %in% valid_vakio_ids,
+         vakio != 572)
+  # vakio 572 has a peculiarity, it is a vakio that has one specie in bakx 
+  # it means has_target_species == TRUE and has_target_biotope == TRUE and also
+  # has_target_biotope == TRUE. However they dont appear at the same time in the
+  # occurrence data. The flag is misleading here. 
+
 ```
 
 
@@ -739,7 +748,7 @@ What is the distribution of bird orders among the target species after filtering
 ```{r}
 # # The code is the same, but the input is now correctly focused
 # aves_order_data_barplot <- occurr_sect_route |> 
-#   select(scientificName) |> 
+#   dplyr::select(scientificName) |> 
 #   distinct() |> 
 #   left_join(target_spp_in_route, by = "scientificName") |>
 #   filter(class == 'Aves') |>
@@ -806,14 +815,14 @@ if(run){
   arrange(year, vakio)
 
   for (y in 1:length(ms_nfi_years)) {
-    #y <- 7
+    #y <- 6
     current_year <- ms_nfi_years[y]
     message(paste("--- Processing year:", current_year, "---"))
   
     all_buffers_for_year <- list()
   
     for (a in 1:nrow(coords)) {
-      # 
+      # a <- 470
       route_id <- coords$vakio[a]
       
       log_row_index <- which(biotope_polygon_L3_log$vakio == route_id & biotope_polygon_L3_log$year == current_year)
@@ -827,7 +836,7 @@ if(run){
   
       biotope_route_a <- occurr_sect_route |>
         filter(year == current_year, vakio == route_id) |>
-        select(vakio, biotopeStripId, startMeters, endMeters, meters, biotope, biotopeSpecifier) |>
+        dplyr::select(vakio, biotopeStripId, startMeters, endMeters, meters, biotope, biotopeSpecifier) |>
         distinct() |> 
         arrange(startMeters) |> 
         mutate(
@@ -853,7 +862,7 @@ if(run){
         biotope_polygon_L3_log$was_extended[log_row_index] <- FALSE
       }
       
-      if (nrow(biotope_route_a) > 1) {
+      if (nrow(biotope_route_a) >= 1) {
         
         biotope_polygon_L3_log$was_processed[log_row_index] <- TRUE
         
@@ -955,7 +964,7 @@ for (i in 1:length(l3_polygon_paths)) {
   # Dissolve the geometries
   # We group by the route ID (vakio) and the Level 2 biotope code
   polygons_l2 <- polygons_l3 |>
-    group_by(vakio, biotope) |>
+    group_by(vakio, year, biotope) |>
     # st_union() merges all geometries within each group
     summarise(
       geometry = st_union(geom),
@@ -990,6 +999,10 @@ occurr_biotope_route <- occurr_sect_route |>
     sampleUnit = paste(vakio, year, biotope, sep = "_")
   )
 
+```
+
+```{r}
+unique(occurr_biotope_route$sampleUnit) |> length()
 ```
 
 ### Process Environmental Covariates
@@ -1070,10 +1083,10 @@ if(run){
 
 ```{r}
 Y <- occurr_biotope_route |> 
-  select(sampleUnit, acceptedName, pairCount) |> 
+  dplyr::select(sampleUnit, acceptedName, pairCount) |> 
   pivot_wider(id_cols = sampleUnit, names_from = acceptedName, values_from = pairCount,
               values_fn = sum, values_fill = 0) |> 
-  select(-sampleUnit) |> 
+  dplyr::select(-sampleUnit) |> 
   as.data.frame()
 ```
 
@@ -1087,6 +1100,7 @@ Most species exhibit low prevalence, clustering towards the rare end of the spec
 
 ```{r}
 Y <- transform_Y_to_abunCpres(Y)
+Y <- Y[, order(colnames(Y))]
 ```
 
 
@@ -1170,8 +1184,9 @@ if(run){
   XData <- all_results_list |> 
     purrr::compact() |> 
     reduce(full_join, by = "polygon_id") |> 
-    right_join(y = distinct(select(occurr_biotope_route, sampleUnit)), join_by("polygon_id" == "sampleUnit")) |> 
-    rename("sampleUnit" = "polygon_id")
+    right_join(y = distinct(dplyr::select(occurr_biotope_route, sampleUnit)), join_by("polygon_id" == "sampleUnit")) |> 
+    ungroup() |> 
+    select(-polygon_id)
   
   saveRDS(XData, file = file.path(folder_name, "XData_hmsc.rds"))
   
@@ -1181,26 +1196,46 @@ if(run){
     
 }
 ```
-
+#### Multicollinearity analysis
 
 ```{r}
-#| fig-width: 10
-#| fig-height: 10
-#| 
-corr_matrix <- cor(na.omit(XData[,-1])) ################# WATCHOUT SOME ARE NA, NO COVER FOR MSI-NFI ############
-col_palette <- colorRampPalette(c("#4477AA", "#FFFFFF", "#BB4444"))(200)
-
-corrplot::corrplot(
-  corr_matrix, 
-  type = "upper",
-  method = "color",
-  col = col_palette,        # Apply our custom color palette
-  addCoef.col = "black",    # Add the correlation coefficients in black text
-  tl.col = "black", 
-  tl.cex = 0.6, 
-  number.cex = 0.6
-)
+predictor_data <- XData[,-1]
 ```
+
+```{r}
+vif_threshold <- 10
+vif_removed_variables <- c()
+
+
+repeat {
+  if (ncol(predictor_data) < 2) {
+    print("Loop stopped: Not enough variables left to calculate VIF.")
+    break
+  }
+  
+  formula_str <- paste(names(predictor_data)[1], "~ .")
+  temp_model <- lm(as.formula(formula_str), data = predictor_data)
+  
+  vifs <- vif(temp_model)
+  
+  max_vif <- max(vifs)
+  
+  if (max_vif < vif_threshold) {
+    vif_keep_variables <- names(predictor_data)
+    break
+  } else {
+    var_to_remove <- names(which.max(vifs))
+    vif_removed_variables <- c(vif_removed_variables, var_to_remove)
+    predictor_data <- predictor_data[, !(names(predictor_data) %in% var_to_remove)]
+  }
+}
+```
+
+```{r}
+XData <- XData |> 
+  dplyr::select(any_of(vif_keep_variables)) 
+```
+
 
 ###  Phylogenetic Tree (phyloTree)
 
@@ -1226,7 +1261,7 @@ if(run){
     if(not_in_mctavish[i]){
       spp_Y.i <- spp_Y[i]
       to_rename <- taxize::synonyms(spp_Y.i, db = "itis")[[1]] |> 
-        select(syn_name) |> 
+        dplyr::select(syn_name) |> 
         pull() |> 
         unique() |> 
         stringr::word(1, 2)
@@ -1269,52 +1304,48 @@ spp_Y_new <- data.frame("scientificName" = spp_Y_new)
 TrData <- avonet |> 
   rename(scientificName = Species2) |>
   right_join(spp_Y_new, "scientificName") |>  
-  select(scientificName, Trophic.Niche, Primary.Lifestyle, Migration) |> 
+  dplyr::select(Mass, scientificName, Trophic.Niche, Primary.Lifestyle, Migration) |> 
   as.data.frame()
 
 TrData$scientificName <- spp_Y[match(TrData$scientificName, spp_Y_new$scientificName)]
 
+TrData <- TrData |> 
+  arrange(scientificName)
+
 row.names(TrData) <- TrData$scientificName 
  
-TrData <- select(TrData, -scientificName)
+TrData <- TrData |> 
+  dplyr::select(-scientificName)
 
 ```
+
 
 ## Set up the model
 
 ### Study desing
 
 ```{r}
-studyDesign <- localityYear |> 
-  select(karta, yr, sampleUnit) |> 
+
+studyDesign <- lapply(l2_output_paths$path_L2, sf::read_sf) |> 
+  bind_rows() |> 
+  st_drop_geometry() |> 
+  dplyr::select(vakio, year, sampleUnit) |> 
   mutate(across(everything(), as.factor)) |> 
   as.data.frame()
 
-row.names(studyDesign) <- paste0(studyDesign$karta, ":", studyDesign$yr, ":" ,studyDesign$sampleUnit)
+row.names(studyDesign) <- paste0(studyDesign$sampleUnit)
 
-xy <- coordSampleUnits |> 
-  select(-c(yr, punkt, sampleUnit)) |> 
-  st_transform("EPSG:4326")|>  
-    mutate(
-    long = sf::st_coordinates(.)[,1],
-    lat = sf::st_coordinates(.)[,2]
-  ) |> 
-  st_drop_geometry() |> 
-  distinct() |> 
-  as.data.frame()
+xy <- coords |> 
+  dplyr::select(vakio) |> 
+  st_transform("EPSG:4326") |>
+  st_centroid() |> 
+  st_coordinates() 
 
-le <-  levels(studyDesign$karta)
-xy.karta <-  matrix(nrow=length(le), ncol=2)  
-rownames(xy.karta) <-  le
+rownames(xy) <-  levels(studyDesign$vakio)
 
-for(i in 1:length(le)){
-  xy.cle <- xy[which(xy$karta == le[i]), c("long", "lat")]
-  xy.karta[le[i],] <- colMeans(xy.cle)
-}
+colnames(xy) <-  c("long", "lat")
 
-colnames(xy.karta) <-  c("long", "lat")
-
-write.csv(xy.karta, "xy.karta.csv", row.names = T)
+write.csv(xy, file.path("data", "xy.csv"), row.names = T)
 
 ```
 
@@ -1323,178 +1354,54 @@ write.csv(xy.karta, "xy.karta.csv", row.names = T)
 ```{r}
 
 rL.sampleUnit <- HmscRandomLevel(units = levels(studyDesign$sampleUnit))
-rL.year <- HmscRandomLevel(units = levels(studyDesign$yr))
-
+rL.year <- HmscRandomLevel(units = levels(studyDesign$year))
+rL.locality <-  HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
 ```
 
-Clean Environment
-
-```{r}
-toKeep <- c("model", "modeltype","XData", "XFormula", "TrData", "TrFormula", "phyloTree", "Y", "rL.sampleUnit", "rL.locality", "rL.year", "studyDesign",
-            "sampleUnits", "transform_Y_to_abunCpres", "xy.karta")
-rm(list = setdiff(ls(), toKeep))
-gc()
-
-```
 
 ```{r}
 
-colnames(XData)
+colnames(XData) ## CAN AUTOMATIZE THIS? Maybe in the dictionary? and using the vif_keep_variables?
 
-XFormula <- ~ Klass + AGE_XX_P + BEECHVOL_XX_P + CONTORTAVOL_XX_P + BIRCHVOL_XX_P + DECIDUOUSVOL_XX_P + HEIGHT_XX_P + OAKVOL_XX_P + PINEVOL_XX_P + SPRUCEVOL_XX_P + TOTALVOL_XX_P + BIOMASS_XX_P + poly(wc2.1_30s_bio_5, degree = 2) + poly(wc2.1_30s_bio_18, degree = 2)
-
+XFormula <- ~ average_stand_diameter_gt15_mean + average_stand_diameter_gt20_mean + average_stand_length_gt200_mean + average_stand_length_gt250_mean + old_grow_indicator + canopy_cover_whole_stand + canopy_cover_whole_stand_gt60_mean + canopy_cover_broadleaves + volume_spruce_gt150 + tree_extent + tree_height_mean + tree_height_stdev + tree_remove 
 
 ```
 
 
 ```{r}
-TrFormula <- ~ log(Mass) + Habitat +  Trophic.Niche + Habitat.Density + Primary.Lifestyle + Migration
+colnames(TrData)
+TrFormula <- ~ log(Mass) + Trophic.Niche + Primary.Lifestyle + Migration
 
 ```
 
 ### Define model
 
-#### Three random levels and full gausian process
-
-
-```{r}
-rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE)
-```
-
-
-```{r}
-m.abu = Hmsc(Y = Y,
- XData = XData, XFormula = XFormula,
- TrData = TrData, TrFormula = TrFormula,
- phyloTree = phyloTree,
- distr = "lognormal poisson", 
- studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
- )
-
-m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
- XData = XData, XFormula = XFormula,
- TrData = TrData, TrFormula = TrFormula,
- phyloTree = phyloTree,
- distr = "lognormal poisson", 
- studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
- )
-
-m.pa = Hmsc(Y = 1*(Y>0),
- XData = XData, XFormula = XFormula,
- TrData = TrData, TrFormula = TrFormula,
- phyloTree = phyloTree,
- distr = "probit", 
- studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
- )
-```
-
-
-```{r}
-model <- "sbsF_full"
-modeltype <- c("abu", "aCp", "pa")
-
-dir.create("models", showWarnings = F)
-models <-  list(m.abu, m.abuCpres, m.pa )
-names(models) <- paste0(model, "_", modeltype)
-save(models, file = file.path("models", "unfitted_models_full.RData"))
-```
-
-#### To make the process faster: spatial level and temporal level only and NNGP in GPU proccessing
-
-```{r}
-rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
-```
-
-
-```{r}
-m.abu = Hmsc(Y = Y,
- XData = XData, XFormula = XFormula,
- TrData = TrData, TrFormula = TrFormula,
- phyloTree = phyloTree,
- distr = "lognormal poisson",
- studyDesign = studyDesign,
- ranLevels = list("karta" = rL.locality, "yr" = rL.year)
- )
-
-m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
- XData = XData, XFormula = XFormula,
- TrData = TrData, TrFormula = TrFormula,
- phyloTree = phyloTree,
- distr = "lognormal poisson", 
- studyDesign = studyDesign, 
- ranLevels = list("karta" = rL.locality, "yr" = rL.year)
- )
-
-m.pa = Hmsc(Y = 1*(Y>0),
- XData = XData, XFormula = XFormula,
- TrData = TrData, TrFormula = TrFormula,
- phyloTree = phyloTree,
- distr = "probit", 
- studyDesign = studyDesign, 
- ranLevels = list("karta" = rL.locality, "yr" = rL.year)
- )
-```
-
-
-```{r}
-model <- "sbsF_ngpp_2rl"
-modeltype <- c("abu", "aCp", "pa")
-
-dir.create("models", showWarnings = F)
-models <-  list(m.abu, m.abuCpres, m.pa)
-names(models) <- paste0(model, "_", modeltype)
-save(models, file = file.path("models", "unfitted_models_NGPP.RData"))
-```
-
 #### Three random levels: spatial, samling unit, and temporal level and NNGP in GPU proccessing
 
 ```{r}
-rL.locality <-  HmscRandomLevel(sData = xy.karta, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
-```
 
-
-```{r}
-m.abu = Hmsc(Y = Y,
+m.abuCpres = Hmsc(Y = Y,
  XData = XData, XFormula = XFormula,
  TrData = TrData, TrFormula = TrFormula,
  phyloTree = phyloTree,
  distr = "lognormal poisson", 
- studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
+ studyDesign = studyDesign, ranLevels = list("vakio" = rL.locality, "year" = rL.year, "sampleUnit" = rL.sampleUnit)
  )
-
-m.abuCpres = Hmsc(Y = transform_Y_to_abunCpres(Y),
- XData = XData, XFormula = XFormula,
- TrData = TrData, TrFormula = TrFormula,
- phyloTree = phyloTree,
- distr = "lognormal poisson", 
- studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
- )
-
-m.pa = Hmsc(Y = 1*(Y>0),
- XData = XData, XFormula = XFormula,
- TrData = TrData, TrFormula = TrFormula,
- phyloTree = phyloTree,
- distr = "probit", 
- studyDesign = studyDesign, ranLevels = list("karta" = rL.locality, "yr" = rL.year, "sampleUnit" = rL.sampleUnit)
- )
-
-
-m.abu$call
 
 ```
 
 ```{r}
-model <- "sbsF_ngpp_3rl"
-modeltype <- c("abu", "aCp", "pa")
+model <- "fbsF_001"
+modeltype <- "aCp"
 
 dir.create("models", showWarnings = F)
-models <-  list(m.abu, m.abuCpres, m.pa)
+models <-  m.abuCpres
 names(models) <- paste0(model, "_", modeltype)
-save(models, file = file.path("models", "unfitted_models_NGPP_3rl.RData"))
+save(models, file = file.path("models", paste0("unfitted_", model, ".RData")))
 ```
 
 
 ```{r}
-sampleMcmc(m.abu, samples=2)
+sampleMcmc(m.abuCpres, samples=2)
 ```
 

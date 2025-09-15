@@ -1,18 +1,18 @@
 library(terra)
 library(sf)
 library(exactextractr)
-library(dplyr)
-library(tidyr)
 library(purrr)
 library(stringr)
 library(maps)
 library(ggplot2)
+library(tidyr)
+library(dplyr)
 
 source("R/_utilities_transform_covariates.R")
 dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";") # External 
 
 set.seed(11072024)
-
+select
 #--------------
 # Prepare paths and organize information for each set of covariates
 
@@ -53,7 +53,7 @@ luke <- tibble(path = full_path) |>
     UTM200 = NA,
     UTM10 = NA
   ) |> 
-  select(dataset, var, path, year, UTM200, UTM10)|> 
+  dplyr::select(dataset, var, path, year, UTM200, UTM10)|> 
   mutate(year = as.numeric(year)) |> 
   arrange(year)|> 
   filter(year %in% c(2009, 2011, 2013, 2015, 2017, 2019, 2021))
@@ -71,7 +71,7 @@ latvus <- tibble(path = full_path) |>
     UTM200 = NA,
     UTM10 = str_extract(basename(path), "(?<=_)[^_.]+(?=\\_)")
   ) |> 
-  select(dataset, var, path, year, UTM200, UTM10) |> 
+  dplyr::select(dataset, var, path, year, UTM200, UTM10) |> 
   mutate(year = as.numeric(year)) |> 
   arrange(year)|> 
   filter(year %in% c(2009, 2011, 2013, 2015, 2017, 2019, 2021))
@@ -89,14 +89,14 @@ utm_10 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm10")
 utm_200 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm200") # external
 
 metso_utm_join <- metso |> 
-  select(standid, metso) |> 
+  dplyr::select(standid, metso) |> 
   mutate(set = "metso") |> 
   st_transform(st_crs(utm_200)) |> 
   st_join(y = utm_200) |> 
   rename(UTM200 = lehtitunnus) |> 
   st_join(y = utm_10) |> 
   rename(UTM10 = lehtitunnus) |> 
-  select(standid, metso, set, UTM200, UTM10)
+  dplyr::select(standid, metso, set, UTM200, UTM10)
 
 sampling_metso <- T
 
@@ -111,14 +111,14 @@ metso_utm_join$poly_id <- 1:nrow(metso_utm_join) # id
 
 coords_utm_join <- lapply(X = coords, FUN = function(X){
     X.i <- X |> 
-      select(sampleUnit, vakio, year) |> 
+      dplyr::select(sampleUnit, vakio, year) |> 
       mutate(set = "coords") |> 
       st_transform(st_crs(utm_200)) |> 
       st_join(y = utm_200) |> 
       rename(UTM200 = lehtitunnus) |> 
       st_join(y = utm_10) |> 
       rename(UTM10 = lehtitunnus) |> 
-      select(sampleUnit, vakio, year, set, UTM200, UTM10) |> 
+      dplyr::select(sampleUnit, vakio, year, set, UTM200, UTM10) |> 
       st_buffer(dist = 150) 
     X.i$poly_id <- 1:nrow(X.i) #id
     return(X.i)
@@ -129,8 +129,8 @@ coords_utm_join <- lapply(X = coords, FUN = function(X){
 
 # Checking extent of latvus, probably it would be better before download !!!! SOMETHING TO LEARN HERE (MASSIVE DATASET 300 GB at least)
 
-zones <- c(10, 200)
-datasets <- c("latvus", "luke")
+zones <- c(10)
+datasets <- c("latvus")
 
 for(i in 1:length(datasets)){
   
@@ -145,7 +145,7 @@ for(i in 1:length(datasets)){
   
   utm_zone_dataset_coords <- lapply(X = coords_utm_join, FUN = function(X){
     temp <- utm_zone_dataset |> 
-      left_join(st_drop_geometry(select(X, -year)), by = utm_col_name, relationship = "many-to-many") |>
+      left_join(st_drop_geometry(dplyr::select(X, -year)), by = utm_col_name, relationship = "many-to-many") |>
       filter(poly_id > 0)
     return(temp)
   } 
@@ -224,4 +224,3 @@ aggregate_covariates( # havent run yet
   output_root_dir = root_output_dir,
   df = st_drop_geometry(metso_utm_join)
 )
-
