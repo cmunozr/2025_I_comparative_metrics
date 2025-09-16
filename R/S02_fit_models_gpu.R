@@ -12,7 +12,7 @@ localDir <- "C:/Users/Carlos Munoz/Documents/Ph.D/6_courses/2025_I_comparative_m
 modelDir <- file.path(localDir, "models")
 dir.create(modelDir, recursive = TRUE, showWarnings = F)
 
-name_unfitted_models <- "unfitted_models_NGPP_3rl"
+name_unfitted_models <- "unfitted_fbsF_001"
 unfitted_models_file <- file.path(modelDir, paste0(name_unfitted_models, ".RData"))
 output_cmds_file <- file.path(modelDir, paste0("python_commands_",name_unfitted_models, "log.txt"))
 
@@ -23,8 +23,8 @@ nm <- length(models)
 # --- Define MCMC Sampling Parameters ---
 
 if (.Platform$OS.type == "windows") {
-  samples_list <- c(5, 250, 1000, 1000) #, 250, 250)
-  thin_list <- c(1, 1, 100, 1000) #, 1, 10)
+  samples_list <- c(5, 1000, 1000) #, 250, 250)
+  thin_list <- c(1, 100, 1000) #, 1, 10)
 } else {
   samples_list <- c(5) # 100,1000, 10000)
   thin_list <- c(1) # 100,1000, 10000)
@@ -131,6 +131,9 @@ while (Lst <= length(samples_list)) {
               input_path_for_python <- file.path("/scratch", "asimov", "munozcs", "models", model_output_base, paste0(model_output_base, ".rds")) #### MANUAL CHANGE
               output_path_for_python <- file.path("/scratch", "asimov", "munozcs", "models", model_output_base, paste0(model_output_base, "_post_chain", sprintf("%.2d", cInd - 1), "_file.rds")) #### MANUAL CHANGE
               
+              input_path_for_python <- file.path("models", model_output_base, paste0(model_output_base, ".rds")) #### MANUAL CHANGE
+              output_path_for_python <- file.path("models", model_output_base, paste0(model_output_base, "_post_chain", sprintf("%.2d", cInd - 1), "_file.rds")) #### MANUAL CHANGE
+              
               chain_cmd_args <- paste("-m hmsc.run_gibbs_sampler",
                                       "--input", shQuote(input_path_for_python), # Initialized model from R
                                       "--output", shQuote(output_path_for_python),
@@ -160,9 +163,9 @@ while (Lst <= length(samples_list)) {
               chain_cmd_args_list[[cInd]] <- full_python_command_with_nohup
               
               # --- Execute the command for each chain ---
-              # Note: If you want to execute these commands directly from R, you would use system()
+              # Note: If we want to execute these commands directly from R, we would use system()
               # For example: system(full_python_command_with_nohup, wait = FALSE)
-              # However, your current setup writes them to a log file, which is good for HPC.
+              # However, current setup writes them to a log file, which is good for HPC.
               cat(full_python_command_with_nohup, file = output_cmds_file, append = TRUE, sep = "\n")
               
           }

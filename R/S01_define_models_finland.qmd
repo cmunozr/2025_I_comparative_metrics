@@ -1395,7 +1395,7 @@ model <- "fbsF_001"
 modeltype <- "aCp"
 
 dir.create("models", showWarnings = F)
-models <-  m.abuCpres
+models <-  list(m.abuCpres)
 names(models) <- paste0(model, "_", modeltype)
 save(models, file = file.path("models", paste0("unfitted_", model, ".RData")))
 ```
@@ -1404,4 +1404,3 @@ save(models, file = file.path("models", paste0("unfitted_", model, ".RData")))
 ```{r}
 sampleMcmc(m.abuCpres, samples=2)
 ```
-
