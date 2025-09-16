@@ -1,0 +1,33 @@
+GPU instructions
+
+0. Establish what server you will use and how many GPUs are available to work with, you will need a string and a number to use in step 1, ex: "kingma", 2
+
+0.1 Prepare environment and installation in the server
+
+python -m venv hmsc-venv
+source hmsc-venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install git+https://github.com/hmsc-r/hmsc-hpc.git@main
+python -m pip install tensorflow-probability==0.24.0
+export TF_CPP_MIN_LOG_LEVEL=3
+python -c 'import tensorflow as tf; print(tf.constant(1))'
+python -c 'import hmsc
+deactivate
+
+1. Initiate the RDS and create the GPU calls, follow instructions there
+
+S02_fit_models_gpu.R
+
+2. Using filezilla, copy the folder of each model sampling run to the server in the folder that you use in the last script.
+
+3. Make them executable in linux
+
+chmod +x /home/avesta/munozcs/Documents/run_gpu_*.sh
+
+4. Run the python command using something like: 
+
+nohup /home/avesta/munozcs/Documents/run_gpu_0.sh & nohup /home/avesta/munozcs/Documents/run_gpu_1.sh &
+
+5. Wait until finishing, revise nohup_chains log. transfer to local pc. Import the chains to the Hmsc model used, using:
+
+S02B_import_computed_posterior_gpu.R
