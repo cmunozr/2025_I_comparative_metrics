@@ -144,7 +144,7 @@ options(timeout = 9999)
 run_download_mactavish <- F
 run_get_finbif <- F
 run_itis_routes <- F
-run_itis_bakx <- T
+run_itis_bakx <- F
 run_polygon_buffers <- T
 run_process_covariates <- T
 run_calculate_XData <- T
@@ -369,7 +369,8 @@ itis_bakx <- itis_bakx_raw |>
   mutate(acceptedname_itis = ifelse(is.na(acceptedname),
                                submittedname,
                                acceptedname
-                               )
+                               ),
+         acceptedname_itis = stringr::word(acceptedname_itis, 1, 2) # in itis some accepted names are subspecies
          ) |> 
   dplyr::select(submittedname, acceptedname_itis)
 
@@ -1045,76 +1046,6 @@ occurr_biotope_route <- occurr_sect_route |>
 unique(occurr_biotope_route$sampleUnit) |> length()
 ```
 
-### Process Environmental Covariates
-
-Online repositories are not deployed as Web Feature Service in which we can work "in-situ". It was needed to download the data sets. Data sets are massive and splitted over several storage units. To consult how they were downloaded please refer to script "_utilities_download_covariates.R". Dowloaded files were processing following the "_utilities_fetch_covariates.R" script.
-
-Raw data of each route with a 150m buffer and from metso/non metso stands is extracted with the script "_utilities_fetch_covariates.R". Once with this information  we can compare each type of unit to inform potential risk of exrapolation. We sample 10000 stands for each type (metso/non metso) and all the route buffers.
-
-```{r}
-
-folder_name <- file.path("data", "covariates", "pre_processed") 
-
-if(run_process_covariates){
-  
-  plotting <- F
-  
-  dir.create(folder_name, showWarnings = F)
-  
-  covar_nm <- dict_covar |> 
-    filter(to_download == 1) |> 
-    pull(var_shultz) |> 
-    unique()
-  
-  output_rds_paths <- NA_character_
-  
-  rds_data_dir <- file.path("D:","intermediate_aggregated")
-  
-  rds_files <- list.files(rds_data_dir, pattern = "\\.rds$", recursive = TRUE, full.names = TRUE)
-  
-  for (i in 1:length(covar_nm)) {
-    # i <- 13
-    
-    covar_nm_i <- covar_nm[i] 
-    
-    message(paste("processing", i, "of", length(covar_nm), "variables", "(", covar_nm_i, ")" ))
-    
-    relevant_files <- rds_files[str_detect(basename(rds_files), covar_nm_i)]
-    
-    if(length(relevant_files) == 0){
-      next
-      } 
-    
-    covar_data_i <- lapply(relevant_files, readRDS) |> 
-      bind_rows() # it binds metso and route data, can be big, watch out
-    file_path <- file.path(folder_name,  paste0(covar_nm_i, ".rds"))
-    saveRDS(covar_data_i, file = file_path)
-    
-    output_rds_paths[i] <- file_path
-    
-    if(plotting){ # not fixed with the new structure
-      plot_data <- prepare_covariates_data_toplot(
-        filtered_data = covar_data_i
-      )
-      
-      is_binary <- dict_covar$binary[i]
-      
-      if (is_binary) {
-        generate_binary_plot(covariate, plot_data, folder_name)
-      } else {
-        generate_covariate_plot(covariate, plot_data, folder_name)
-      }
-      rm(plot_data );gc()
-    }
-  }
-  
-  output_rds_paths <- na.omit(output_rds_paths)
-  
-}else{
-  output_rds_paths <- list.files(folder_name, pattern = ".rds$", recursive = T, full.names = T)
-}
-
-```
 ## Model Input Assembly
 
 ### Species Occurrence Matrix (Y)
@@ -1144,10 +1075,16 @@ Y <- Y[, order(colnames(Y))]
 
 ### XData
 
+Online repositories are not deployed as Web Feature Service in which we can work "in-situ". It was needed to download the data sets. Data sets are massive and splitted over several storage units. To consult how they were downloaded please refer to script "_utilities_download_covariates.R". Dowloaded files were processing following the "_utilities_fetch_covariates.R" script.
+
+Raw data of each route with a 150m buffer and from metso/non metso stands is extracted with the script "_utilities_fetch_covariates.R". Once with this information  we can compare each type of unit to inform potential risk of exrapolation. We sample 10000 stands for each type (metso/non metso) and all the route buffers.
+
 Now we are going to derive polygon-Level statistics from the raw values of the covariates.  We use the covariate data dictionary to filter each variable as either continuous or binary. Next, the two variable types are handled differently: for each polygon and year, continuous variables are summarized with a weighted mean and standard deviation, min and max, while binary variables are summarized by calculating the weighted proportion of '1's. 
 
 ```{r}
+
 folder_name <- file.path("data", "covariates") 
+output_rds_paths <- list.files(file.path(folder_name, "pre_processed"), pattern = "coords.rds$", recursive = TRUE, full.names = TRUE)
 
 if(run_calculate_XData){
   

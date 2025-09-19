@@ -110,31 +110,31 @@ crop_rasters_by_mask <- function(source_dir,
 prepare_covariates_data_toplot <- function(covar_data) {
   
   # Add category labels for plotting
-  plot_data <- filtered_data |>
+  plot_data <- covar_data |>
     mutate(category = case_when(
-        polygon_source == "coords" ~ "route buffer",
+        polygon_source == "coords" ~ "route_buffer",
         metso == 1                   ~ "metso",
-        metso == 0                   ~ "no metso"
+        metso == 0                   ~ "no_metso"
         )
       ) |> 
     filter(!is.na(category)) |>
-    mutate(category = factor(category, levels = c("route buffer", "metso", "no metso")))
+    mutate(category = factor(category, levels = c("route_buffer", "metso", "no_metso")))
   
   return(plot_data)
 }
 
 #-----------------
 
-generate_covariate_plot <- function(covar_name, covar_data, folder) {
+generate_covariate_plot <- function(covariate_name, data, folder) {
 
-  message(paste("Generating violin-plot for:", covar_name))
+  message(paste("Generating violin-plot for:", covariate_name))
   
-  plot_data <- covar_data |>
-    filter(variable == covar_name, !is.na(value))
+  plot_data <- data |>
+    filter(variable == covariate_name, !is.na(value))
   
   # Ensure there's data to plot
   if (nrow(plot_data) == 0) {
-    message(paste("No data available for", covar_name, "- skipping."))
+    message(paste("No data available for", covariate_name, "- skipping."))
     return(NULL)
   }
   
@@ -156,7 +156,7 @@ generate_covariate_plot <- function(covar_name, covar_data, folder) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
   
-  output_filename <- file.path(folder, paste0("plot_", covar_name, ".jpeg"))
+  output_filename <- file.path(folder, paste0("plot_", covariate_name, ".jpeg"))
   ggsave(output_filename, p, width = 12, height = 8, dpi = 300)
   message(paste("Saved plot to:", output_filename))
   
@@ -256,29 +256,58 @@ st_extend_line <- function(line, distance, end = "end") {
 
 #--------------------------
 
-#### Functions used to organize and fetch data from the raw covariates
-
-## Get root folder to creathe the paths for a set of covariates, example: "latvus". 
-## It iterates over all the hard disks available
+#' Find a data folder by searching across multiple hard disks/mount points.
+#' This function works on Windows, Linux, and macOS.
+#'
+#' @param folder_name The name of the directory to search for (e.g., "tree_high_Europe").
+#' @return The full path to the folder if found, otherwise it throws an error.
 
 find_root_folder <- function(folder_name) {
-  drive_info <- shell('wmic logicaldisk get name', intern = TRUE)
-  search_roots <- trimws(grep("^[A-Z]:", drive_info, value = TRUE))
   
-  found_paths <- c()
-  for (root_path in search_roots) {
-    path_to_check <- file.path(root_path, folder_name)
-    if (dir.exists(path_to_check)) {
-      folders <- list.dirs(path_to_check, recursive = F, full.names = T)
-      if(length(folders) == 0){
-        found_paths <- c(found_paths, path_to_check)
-      }else{
-        found_paths <- c(found_paths, folders)  
+  os <- Sys.info()['sysname']
+  
+  found_path <- NULL
+  
+  if (os == "Windows") {
+    drive_info <- shell('wmic logicaldisk get name', intern = TRUE)
+    search_roots <- trimws(grep("^[A-Z]:", drive_info, value = TRUE))
+    
+    for (root_path in search_roots) {
+      path_to_check <- file.path(root_path, folder_name)
+      if (dir.exists(path_to_check)) {
+        found_path <- path_to_check
+        break
       }
-      
     }
+    
+  } else if (os %in% c("Linux", "Darwin")) {
+
+    search_locations <- c("/mnt", "/media", "/srv", "~")
+    
+    potential_parent_dirs <- unlist(lapply(search_locations, function(loc) {
+      suppressWarnings(list.dirs(loc, recursive = FALSE, full.names = TRUE))
+    }))
+    
+    all_search_paths <- c(potential_parent_dirs, search_locations)
+    
+    for (path in all_search_paths) {
+      full_path_to_check <- file.path(path, folder_name)
+      if (dir.exists(full_path_to_check)) {
+        found_path <- full_path_to_check
+        break # Exit the loop once the folder is found
+      }
+    }
+    
+  } else {
+    stop("Unsupported operating system: ", os)
   }
-  return(found_paths)
+  
+  if (!is.null(found_path)) {
+    message(paste("Success! Found data at:", found_path))
+    return(found_path)
+  } else {
+    stop(paste("Could not find the folder '", folder_name, "'. Please check the path.", sep=""))
+  }
 }
 
 #--------------
@@ -311,6 +340,7 @@ get_raster_crs <- function(raster_path) {
 }
 
 
+#-------------
 
 #' Extract Raster Values for Polygons by Tile
 #'
@@ -331,7 +361,7 @@ get_raster_crs <- function(raster_path) {
 #' @param raster_info_df A data frame with metadata for each raster file to be
 #'   processed. It must include columns like `dataset`, `var`, `year`, `proc_path`
 #'   (the file path to the raster), `raster_crs`, and UTM tile identifiers.
-#' @param folder A string specifying the root directory where the output files
+#' @param root_output_dir A string specifying the root directory where the output files
 #'   (in an "intermediate_by_tile" subdirectory) will be saved.
 #' @param id_column A string with the name of the column in `polygons_sf` that
 #'   contains the unique polygon identifier to be included in the final output.
@@ -365,7 +395,11 @@ get_raster_crs <- function(raster_path) {
 #'   )
 #' }
 
-extract_raw_values <- function(polygons_sf = metso_utm_join[1:100, ], raster_info_df = list_of_groups[[1]], folder = "D:", id_column = "vakio", only_paths = F) {
+extract_raw_values <- function(polygons_sf, 
+                               raster_info_df, 
+                               root_output_dir, 
+                               id_column, 
+                               only_paths) {
   
   message(paste("Fetching from", raster_info_df$dataset[1], "variable", raster_info_df$var[1], "year",
                 raster_info_df$year[1], "with polygon set", polygons_sf$set[1]))
@@ -380,7 +414,7 @@ extract_raw_values <- function(polygons_sf = metso_utm_join[1:100, ], raster_inf
     progress_bar <- F
   }
   
-  folder_name <- file.path(folder, "intermediate_by_tile", paste0(raster_info_df$dataset[1], "-", polygons_sf$set[1]))
+  folder_name <- file.path(root_output_dir, "intermediate_by_tile", paste0(raster_info_df$dataset[1], "-", polygons_sf$set[1]))
   dir.create(folder_name, showWarnings = FALSE, recursive = TRUE)
   
   if(!only_paths){
@@ -459,6 +493,8 @@ extract_raw_values <- function(polygons_sf = metso_utm_join[1:100, ], raster_inf
   return(created_files)
 }
 
+#---------------------
+
 # Check and split if the utm code actually has multiple utm 200 zones, example: KL2 
 split_utm_code <- function(code) {
   if (str_detect(code, "[A-Z]{2,}")) {
@@ -496,19 +532,16 @@ split_utm_code <- function(code) {
 #' @return The function is used for its side effect of writing files to disk and
 #'   will invisibly return a character vector of the paths to the saved files.
 #'
-aggregate_tile_covariates <- function(raw_data_list,
-                                      polygon_type,
-                                      dict_covar,
-                                      output_root_dir,
-                                      path_pattern = "results",
-                                      path_replacement = "D:",
-                                      df) {
+aggregate_covariates <- function(raw_data_list,
+                                 polygon_type,
+                                 dict_covar,
+                                 output_root_dir,
+                                 df) {
   
-  folder_name <- file.path(output_root_dir, polygon_type)
+  folder_name <- file.path(output_root_dir, "intermediate_aggregated", polygon_type)
   dir.create(folder_name, showWarnings = FALSE, recursive = TRUE)
   
   id_cols <- c("standid", "sampleUnit")
-  
   saved_files <- c()
   
   for (i in 1:length(raw_data_list)) {
@@ -518,7 +551,7 @@ aggregate_tile_covariates <- function(raw_data_list,
     
     dfa <- purrr::map_dfr(
       .x = file_paths,
-      .f = ~ purrr::compact(readRDS(stringr::str_replace(.x, pattern = path_pattern, replacement = path_replacement)))
+      .f = ~ purrr::compact(readRDS(.x))
     )
     
     if (nrow(dfa) == 0) {
@@ -531,14 +564,13 @@ aggregate_tile_covariates <- function(raw_data_list,
       dplyr::filter(!is.na(value), value != 32766) |>
       dplyr::rename_with(~"polygon_id", .cols = dplyr::any_of(id_cols))
     
-    # Translate Variable Names using the Dictionary
     dfa_var <- dfa$variable[1]
     
     if (!is.na(dfa_var)) {
       if (dfa$dataset[1] == "luke") {
         index <- which(paste0(dfa_var, "_") == dict_covar$file_name)
         dfa$variable <- dict_covar$var_shultz[index]
-      }else{
+      } else {
         index <- which(paste0(dfa_var) == dict_covar$file_name)
         dfa$variable <- dict_covar$var_shultz[index]
       }
@@ -550,7 +582,7 @@ aggregate_tile_covariates <- function(raw_data_list,
     
     join_column_name <- if (polygon_type == "metso") "standid" else "sampleUnit"
     
-    dfa <- semi_join(dfa, df, by = c("polygon_id" = join_column_name)) |> 
+    dfa <- semi_join(dfa, df, by = c("polygon_id" = join_column_name)) |>
       dplyr::mutate(polygon_id = as.factor(polygon_id))
     
     output_file_name <- paste0(
@@ -559,6 +591,7 @@ aggregate_tile_covariates <- function(raw_data_list,
       polygon_type,
       ".rds"
     )
+    
     output_file_path <- file.path(folder_name, output_file_name)
     
     saveRDS(object = dfa, file = output_file_path)

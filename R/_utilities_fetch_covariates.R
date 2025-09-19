@@ -8,11 +8,19 @@ library(ggplot2)
 library(tidyr)
 library(dplyr)
 
-source("R/_utilities_transform_covariates.R")
-dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";") # External 
+os <- Sys.info()['sysname']
+
+if (os == "Windows") {
+  output_base_path <- "D:"
+} else if (os %in% c("Linux", "Darwin")) {
+  output_base_path <- "/mnt/storage/"
+}  
+
+source(file.path("R","_utilities_transform_covariates.R"))
+dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";") # External 
 
 set.seed(11072024)
-select
+
 #--------------
 # Prepare paths and organize information for each set of covariates
 
@@ -42,8 +50,8 @@ tree_high_europe <-
 
 ## Luke (Multi Source National Forest Inventory) before UTM-200 tiles. http://www.nic.funet.fi/index/geodata/luke/vmi/. See _utilities_download_covariates.R code
 
-luke <- find_root_folder("luke_")
-full_path <- list.files(luke, "*.tif$", full.names = T, recursive = F)
+luke <- find_root_folder("luke")
+full_path <- list.files(luke, "*.tif$", full.names = T, recursive = T)
 
 luke <- tibble(path = full_path) |>
   mutate(
@@ -61,7 +69,7 @@ luke <- tibble(path = full_path) |>
 ## Latvus (Canopy model) UTM 10 tiles. https://avoin.metsakeskus.fi/aineistot/Latvusmalli/Karttalehti/. See _utilities_download_covariates.R code
 
 latvus <- find_root_folder("latvus")
-full_path <- list.files(latvus, "*.tif$", full.names = T, recursive = F)
+full_path <- list.files(latvus, "*.tif$", full.names = T, recursive = T)
 
 latvus <- tibble(path = full_path) |> 
   mutate(
@@ -83,10 +91,10 @@ latvus <- tibble(path = full_path) |>
 coords <- list.files(file.path("data", "fbs"), pattern = "route_sections_L2", full.names = T) |> # external
   lapply(st_read)
 
-metso <- st_read("data/metso/treatment_control_stand.gpkg") # external
+metso <- st_read(file.path("data", "metso", "treatment_control_stand.gpkg")) # external
 
-utm_10 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm10") # external
-utm_200 <- st_read("data/utm35_zones/TM35_karttalehtijako.gpkg", layer = "utm200") # external
+utm_10 <- st_read(file.path("data", "utm35_zones", "TM35_karttalehtijako.gpkg"), layer = "utm10") # external
+utm_200 <- st_read(file.path("data", "utm35_zones", "TM35_karttalehtijako.gpkg"), layer = "utm200") # external
 
 metso_utm_join <- metso |> 
   dplyr::select(standid, metso) |> 
@@ -98,14 +106,14 @@ metso_utm_join <- metso |>
   rename(UTM10 = lehtitunnus) |> 
   dplyr::select(standid, metso, set, UTM200, UTM10)
 
-sampling_metso <- T
-
-if(sampling_metso){
-  metso_utm_join <- metso_utm_join |> 
-    group_by(metso) |>
-    sample_n(size = 10000, replace = FALSE) |>
-    ungroup()  
-}
+# sampling_metso <- T
+# 
+# if(sampling_metso){
+#   metso_utm_join <- metso_utm_join |> 
+#     group_by(metso) |>
+#     sample_n(size = 10000, replace = FALSE) |>
+#     ungroup()  
+# }
 
 metso_utm_join$poly_id <- 1:nrow(metso_utm_join) # id
 
@@ -171,8 +179,7 @@ for(i in 1:length(datasets)){
 #-----------------------
 
 master_covariates <- bind_rows(tree_high_europe, luke)
-write.csv(master_covariates, "data/master_covariates_temp.csv", row.names = F)
-
+write.csv(master_covariates, file.path("data", "master_covariates_temp.csv"), row.names = F)
 coords_utm_join <- bind_rows(coords_utm_join)
 
 #-----------------------
@@ -193,34 +200,143 @@ list_of_groups <- master_covariates |>
 run <- T
 
 if(run){
-  coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x, id_column = "sampleUnit"))
-  metso_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(metso_utm_join, .x, id_column = "standid"))
+  coords_raw_data <- purrr::map(list_of_groups, 
+                                ~extract_raw_values(coords_utm_join[1000:2000, ], .x, 
+                                                    root_output_dir = output_base_path, 
+                                                    id_column = "sampleUnit",
+                                                    only_paths = F))
+  metso_raw_data <- purrr::map(list_of_groups, 
+                               ~extract_raw_values(metso_utm_join[1000:2000, ], .x,
+                                                   root_output_dir = output_base_path, 
+                                                   id_column = "standid",
+                                                   only_paths = F))
 }else{
-  coords_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(coords_utm_join, .x, id_column = "sampleUnit", only_paths = T))
-  metso_raw_data <- purrr::map(list_of_groups, ~extract_raw_values(metso_utm_join, .x, id_column = "standid", only_paths = T))
+  coords_raw_data <- purrr::map(list_of_groups, 
+                                ~extract_raw_values(coords_utm_join, .x, 
+                                                    root_output_dir = output_base_path, 
+                                                    id_column = "sampleUnit", 
+                                                    only_paths = T))
+  metso_raw_data <- purrr::map(list_of_groups, 
+                               ~extract_raw_values(metso_utm_join, .x, 
+                                                   root_output_dir = output_base_path, 
+                                                   id_column = "standid", 
+                                                   only_paths = T))
 }
-
-toKeep <- c("coords_raw_data", "metso_raw_data", "utm_10", "utm_200", "master_covariates")
-rm(list = setdiff(ls(), toKeep));gc()
 
 #--------------------
 
 # Aggregate Tile Covariate Data for All Polygon Types
 
-root_output_dir <- file.path("D:", "intermediate_aggregated")
-
-aggregate_tile_covariates(
+aggregate_covariates(
   raw_data_list = coords_raw_data,
   polygon_type = coords_utm_join$set[1],
   dict_covar = dict_covar,
-  output_root_dir = root_output_dir,
+  output_root_dir = output_base_path,
   df = st_drop_geometry(coords_utm_join)
 )
 
-aggregate_covariates( # havent run yet
+aggregate_covariates(
   raw_data_list = metso_raw_data,
   polygon_type = metso_utm_join$set[1],
   dict_covar = dict_covar,
-  output_root_dir = root_output_dir,
+  output_root_dir = output_base_path,
   df = st_drop_geometry(metso_utm_join)
 )
+
+#-------------------
+
+toKeep <- c("dict_covar", "output_base_path", "coords_utm_join", "metso_utm_join",
+            "prepare_covariates_data_toplot", "generate_covariate_plot")
+rm(list = setdiff(ls(), toKeep));gc()
+
+# transform to year separated data to one consolidated for covariate for all polygon type
+
+folder_name <- file.path("data", "covariates", "pre_processed") 
+
+dir.create(folder_name, showWarnings = F)
+  
+covar_nm <- dict_covar |> 
+  filter(to_download == 1) |> 
+  pull(var_shultz) |> 
+  unique()
+
+rds_data_dir <- file.path(output_base_path,"intermediate_aggregated")
+  
+polygon_types <- c(coords_utm_join$set[1], metso_utm_join$set[1])
+
+for(p in 1:length(polygon_types)){
+
+  rds_files <- list.files(rds_data_dir, pattern = paste0(polygon_types[p], ".rds$"), recursive = TRUE, full.names = TRUE)
+  
+  for (i in 1:length(covar_nm)) {
+    # i <- 1
+    covar_nm_i <- covar_nm[i] 
+    message(paste("processing", i, "of", length(covar_nm), "variables", "(", covar_nm_i, ")" ))
+    
+    relevant_files <- rds_files[str_detect(basename(rds_files), covar_nm_i)]
+    
+    if(length(relevant_files) == 0){
+      next
+    } 
+    
+    covar_data_i <- lapply(relevant_files, readRDS) |> 
+      bind_rows()
+    
+    file_path <- file.path(folder_name,  paste0(covar_nm_i, "_", polygon_types[p], ".rds"))
+    saveRDS(covar_data_i, file = file_path)
+  }
+}
+
+#--------------------
+
+toKeep <- c("covar_nm", "coords_utm_join", "metso_utm_join", "dict_covar", "folder_name",
+            "prepare_covariates_data_toplot", "generate_covariate_plot" )
+rm(list = setdiff(ls(), toKeep));gc()
+
+# processing to plot sample
+
+rds_files <- list.files(folder_name, pattern = ".rds$", recursive = TRUE, full.names = TRUE)
+  
+for (i in 1:length(covar_nm)) {
+  
+  covar_nm_i <- covar_nm[i] 
+  
+  message(paste("processing for plot", i, "of", length(covar_nm), "variables", "(", covar_nm_i, ")" ))
+  
+  relevant_files <- rds_files[str_detect(basename(rds_files), covar_nm_i)]
+  
+  coords <- readRDS(str_subset(relevant_files, coords_utm_join$set[1]))
+  
+  n_ <- coords$polygon_id |> unique() |> length()
+  
+  metso_ <- readRDS(str_subset(relevant_files, metso_utm_join$set[1])) |> 
+    mutate(polygon_id = as.integer(polygon_id))
+  
+  ids_ <- metso_utm_join |>
+    st_drop_geometry() |> # Drop the geometry column first
+    mutate(poly_id = as.integer(poly_id)) |> 
+    group_by(metso) |>
+    slice_sample(n = n_, replace = FALSE) |>
+    ungroup()
+  
+  metso_ <- left_join(metso_, ids_, join_by("polygon_id" == "poly_id")) |> 
+    filter(!is.na(metso)) |> 
+    mutate(polygon_id = as.factor(polygon_id))
+
+  covar_data_i <- bind_rows(coords, metso_) |> 
+    dplyr::select(colnames(coords), metso)
+  
+  rm(coords, metso_); gc()
+  
+  covar_data_i <- prepare_covariates_data_toplot(covar_data = covar_data_i)
+  
+  is_binary <- dict_covar[which(dict_covar$var_shultz == covar_data_i$variable[1]), "binary"] |> 
+    as.logical()
+  
+  if (is_binary) {
+    generate_binary_plot(covariate_name = covar_data_i$variable[1], data = covar_data_i, folder = folder_name)
+  } else {
+    generate_covariate_plot(covariate_name = covar_data_i$variable[1], data = covar_data_i, folder = folder_name)
+  }  
+}
+
