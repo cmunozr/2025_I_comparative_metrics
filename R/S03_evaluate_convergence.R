@@ -60,7 +60,7 @@ num_trace_plots = 5 # Number of random parameters to plot trace for in each grou
 ##################################################################################################
 localDir = "."
 modelDir = file.path(localDir, "models")
-modelFile = "fitted_models_NGPP.RData"
+modelFile = "fitted_fbsF_001.RData"
 resultDir = file.path(localDir, "results")
 if (!dir.exists(resultDir)) dir.create(resultDir)
 ##################################################################################################

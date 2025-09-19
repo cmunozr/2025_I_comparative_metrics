@@ -20,8 +20,8 @@ dir.models <- "models"
 
 ## RUN BY CHAINS
 
-load("models/unfitted_models_NGPP.RData")
-nm_to_save <- "fitted_models_NGPP.RData"
+load("models/unfitted_fbsF_001.RData")
+nm_to_save <- "fitted_fbsF_001.RData"
 
 nm <- names(models)
 
@@ -61,7 +61,7 @@ for(i in 1:length(nm)){
 
 save(models, file = file.path(dir.models, nm_to_save))
 
-rm(list=ls())
+rm(list=ls());gc()
 
 
 

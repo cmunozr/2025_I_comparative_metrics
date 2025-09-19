@@ -138,6 +138,20 @@ source("R/_utilities_transform_covariates.R")
 options(timeout = 9999)
 ```
 
+### Run helper (time consuming tasks)
+
+```{r}
+run_download_mactavish <- F
+run_get_finbif <- F
+run_itis_routes <- F
+run_itis_bakx <- T
+run_polygon_buffers <- T
+run_process_covariates <- T
+run_calculate_XData <- T
+run_syn_for_mctavish <- T
+```
+
+
 ## Data loading
 
 ### Load Finnish Bird Survey (FBS) Data
@@ -193,8 +207,7 @@ ms_nfi_years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
 Phylogenetic information
 
 ```{r}
-run <- F
-if(run){
+if(run_download_mactavish){
   get_avesdata_repo(path="data/") # 1GB more or less
 }
 set_avesdata_repo_path(path = "data/AvesData-main/", overwrite = T)
@@ -234,9 +247,7 @@ spp_in_route <- occurr_sect_route |>
   summarise(count = n(), .groups = "drop") |> 
   filter(scientificName != "") 
 
-run <- F
-
-if(run == T){
+if(run_get_finbif){
 
   finbif_info_raw <- list() 
   
@@ -293,8 +304,7 @@ occurr_sect_route <- occurr_sect_route |>
 route_species <- finbif_info |> 
   filter(is.species == TRUE, group == "Birds", taxonRank != "MX.hybrid", taxonRank != "MX.form")
 
-run <- F
-if(run){
+if(run_itis_routes){
   itis_routes_raw <- lapply(route_species$acceptedName_finbif, function(species_name) {
   tryCatch(
     {
@@ -332,8 +342,7 @@ itis_routes <- itis_routes_raw |>
 
 ```{r}
 
-run <- F
-if(run){
+if(run_itis_bakx){
   itis_bakx_raw <- lapply(bakx_species$Latin_name, function(species_name) {
   tryCatch(
     {
@@ -690,6 +699,7 @@ left_join(occurrence_data, paircount_data, by = "acceptedName") |>
 
 
 ### Apply Filter
+
 ```{r}
 valid_events <- master_routes |>
   filter(
@@ -704,8 +714,47 @@ valid_events <- master_routes |>
 # Extract the unique IDs for the valid events and routes
 valid_event_ids <- unique(valid_events$eventId)
 valid_vakio_ids <- unique(valid_events$vakio)
+```
 
-#
+Spatial distribution of valid routes in Finland
+
+```{r}
+
+all_routes_data <- coords |> 
+  mutate(category = "All Routes")
+
+valid_routes_data <- coords |> 
+  filter(vakio %in% valid_vakio_ids, vakio != 572) |> 
+  mutate(category = "Valid")
+
+map_data <- bind_rows(
+  all_routes_data,
+  valid_routes_data
+)
+
+route_color_mapping <- c(
+  "All Routes" = "red",
+  "Valid" = "black"
+)
+
+ggplot() +
+  geom_sf(data = fin) +
+  geom_sf(data = coords,
+          aes(color = "All Routes")) +
+  geom_sf(data = filter(coords, vakio %in% valid_vakio_ids, vakio != 572),
+          aes(color = "Valid")) + 
+  scale_color_manual(
+    values = route_color_mapping,
+    labels = c("All Routes" = "Removed", 
+               "Valid" = "Valid")
+  ) +
+  labs(
+    title = "Spatial Distribution of Routes after Filtering",
+    color = "Category"
+  )
+```
+
+```{r}
 # --- DATA CLEANING ---
 
 routes <- routes |>
@@ -731,14 +780,6 @@ coords <- coords |>
 
 ```
 
-
-```{r}
-# Plot the map
-coords |>
-  ggplot() +
-  geom_sf(data = fin) +
-  geom_sf()
-```
 
 #### Species analysis
 
@@ -798,8 +839,7 @@ if (length(lost_species) > 0) {
 
 ```{r}
 
-run <- F # want to recalculate buffers?
-if(run){
+if(run_polygon_buffers){
   
   biotope_polygon_L3_log <- tidyr::expand_grid(
   vakio = coords$vakio,
@@ -1015,9 +1055,7 @@ Raw data of each route with a 150m buffer and from metso/non metso stands is ext
 
 folder_name <- file.path("data", "covariates", "pre_processed") 
 
-run <- F
-
-if(run){
+if(run_process_covariates){
   
   plotting <- F
   
@@ -1111,9 +1149,7 @@ Now we are going to derive polygon-Level statistics from the raw values of the c
 ```{r}
 folder_name <- file.path("data", "covariates") 
 
-run <- F
-
-if(run){
+if(run_calculate_XData){
   
   unique_vars_to_process <- tools::file_path_sans_ext(basename(output_rds_paths))
   names(output_rds_paths) <- unique_vars_to_process
@@ -1200,11 +1236,15 @@ if(run){
 
 ```{r}
 predictor_data <- XData[,-1]
+#  dplyr::select(-old_grow_indicator_ratio, -old_grow_indicator_agesum)
+
 ```
 
 ```{r}
 vif_threshold <- 10
 vif_removed_variables <- c()
+vif_history <- list() # List to store VIF values at each step
+iteration <- 1
 
 
 repeat {
@@ -1218,6 +1258,10 @@ repeat {
   
   vifs <- vif(temp_model)
   
+  vif_history[[iteration]] <- as.data.frame(vifs) %>%
+    rownames_to_column("Variable") %>%
+    rename(VIF = vifs)
+  
   max_vif <- max(vifs)
   
   if (max_vif < vif_threshold) {
@@ -1227,9 +1271,37 @@ repeat {
     var_to_remove <- names(which.max(vifs))
     vif_removed_variables <- c(vif_removed_variables, var_to_remove)
     predictor_data <- predictor_data[, !(names(predictor_data) %in% var_to_remove)]
+    
+    iteration <- iteration + 1
   }
 }
 ```
+
+```{r}
+#| label: fig-vif_analysis
+#| fig-width: 14
+#| fig-height: 12
+#| fig-cap: "VIF Analysis"
+vif_plot_data <- bind_rows(vif_history, .id = "Iteration")
+vif_plot_data$Iteration <- as.factor(vif_plot_data$Iteration)
+
+ggplot(vif_plot_data, aes(x = Variable, y = VIF)) +
+  geom_col() +
+  geom_hline(yintercept = vif_threshold, color = "red", linetype = "dashed", size = 0.5) +
+  labs(
+    title = "VIF Trajectory of Each Variable by Iteration",
+    subtitle = "Bars are grouped by variable; colors indicate the analysis step",
+    x = "Predictor Variable",
+    y = "Variance Inflation Factor (VIF)"
+  ) +
+  facet_wrap(~Iteration, scales = "free_x") +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1)
+  )
+  
+```
+
 
 ```{r}
 XData <- XData |> 
@@ -1252,8 +1324,7 @@ mctavish_mcc$tip.label <- mctavish_mcc$tip.label |>
 
 not_in_mctavish <- !(spp_Y %in% mctavish_mcc$tip.label)
 
-run <- F
-if(run){
+if(run_syn_for_mctavish){
   spp_Y_new <- spp_Y
 
   for(i in 1:length(not_in_mctavish))(
