@@ -2,9 +2,9 @@ library(jsonify)
 library(Hmsc)
 
 chains <- 4
-thin <- 100
+thin <- 1000
 samples <- 1000
-transient <- 50000
+transient <- 500000
 dir.models <- "models"
 
 # DEFAULT RUN
@@ -21,7 +21,7 @@ dir.models <- "models"
 ## RUN BY CHAINS
 
 load("models/unfitted_fbsF_001.RData")
-nm_to_save <- "fitted_fbsF_001.RData"
+nm_to_save <- "fitted_fbsF_002.RData"
 
 nm <- names(models)
 

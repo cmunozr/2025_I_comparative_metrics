@@ -8,7 +8,7 @@ library(jsonify)
 # 1: Simple TXT file (one command runs all chains).
 # 2: Detailed TXT file (one command per chain).
 # 3: Generate executable .sh scripts for each GPU.
-execution_mode <- 1
+execution_mode <- 3
 
 # -- HPC & MCMC Parameters --
 config <- list(
@@ -36,7 +36,7 @@ paths <- list(
 dir.create(paths$models_dir, recursive = TRUE, showWarnings = FALSE)
 
 # -- Model & Output File Definitions --
-unfitted_models_filename <- "unfitted_fbsF_001"
+unfitted_models_filename <- "unfitted_fbsF_003"
 paths$unfitted_models_file <- file.path(paths$models_dir, paste0(unfitted_models_filename, ".RData"))
 paths$python_commands_file <- file.path(paths$models_dir, paste0("python_commands_", unfitted_models_filename, "log.txt"))
 
@@ -45,8 +45,8 @@ n_models <- length(models)
 
 # --- 3. Define the Parameter Grid for MCMC Sampling ---
 mcmc_parameter_grid <- data.frame(
-  samples = c(1000),
-  thin = c(1000)
+  samples = c(1000, 1000),
+  thin = c(100, 1000)
 )
 
 # -----------------------------------------------

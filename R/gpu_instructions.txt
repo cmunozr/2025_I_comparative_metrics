@@ -1,6 +1,6 @@
 GPU instructions
 
-0. Establish what server you will use and how many GPUs are available to work with, you will need a string and a number to use in step 1, ex: "kingma", 2
+0. Establish what server you will use and how many GPUs are available to work with, you will need a string and a number to use in step 1, ex: "kingma", 2 (gpus)
 
 0.1 Prepare environment and installation in the server
 
