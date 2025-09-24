@@ -1088,10 +1088,10 @@ output_rds_paths <- list.files(file.path(folder_name, "pre_processed"), pattern 
 
 if(run_calculate_XData){
   
-  unique_vars_to_process <- tools::file_path_sans_ext(basename(output_rds_paths))
+  unique_vars_to_process <- tools::file_path_sans_ext(basename(output_rds_paths)) |> 
+    str_replace("_coords", "")
   names(output_rds_paths) <- unique_vars_to_process
   
-  # --- The Unified Loop (Corrected) ---
   all_results_list <- list()
   
   for (var_name in unique_vars_to_process) {
@@ -1120,7 +1120,6 @@ if(run_calculate_XData){
           
           args <- list()
           
-          # --- This is the corrected section ---
           if (task$function_to %in% c("old_grow", "old_grow_ratio", "old_grow_agesum")) {
             args$stand_age <- current_group_data$value
             # We now explicitly pass the polygon_id from the group key
@@ -1172,8 +1171,8 @@ if(run_calculate_XData){
 #### Multicollinearity analysis
 
 ```{r}
-predictor_data <- XData[,-1]
-#  dplyr::select(-old_grow_indicator_ratio, -old_grow_indicator_agesum)
+predictor_data <- XData[,-1] |> 
+  dplyr::select(-old_grow_indicator_ratio, -old_grow_indicator_agesum)
 
 ```
 
@@ -1224,7 +1223,7 @@ vif_plot_data$Iteration <- as.factor(vif_plot_data$Iteration)
 
 ggplot(vif_plot_data, aes(x = Variable, y = VIF)) +
   geom_col() +
-  geom_hline(yintercept = vif_threshold, color = "red", linetype = "dashed", size = 0.5) +
+  geom_hline(yintercept = vif_threshold, color = "red", linetype = "dashed", linewidth = 0.5) +
   labs(
     title = "VIF Trajectory of Each Variable by Iteration",
     subtitle = "Bars are grouped by variable; colors indicate the analysis step",
@@ -1399,7 +1398,7 @@ m.abuCpres = Hmsc(Y = Y,
 ```
 
 ```{r}
-model <- "fbsF_001"
+model <- "fbsF_002"
 modeltype <- "aCp"
 
 dir.create("models", showWarnings = F)

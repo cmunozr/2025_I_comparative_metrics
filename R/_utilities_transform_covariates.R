@@ -262,7 +262,7 @@ st_extend_line <- function(line, distance, end = "end") {
 #' @param folder_name The name of the directory to search for (e.g., "tree_high_Europe").
 #' @return The full path to the folder if found, otherwise it throws an error.
 
-find_root_folder <- function(folder_name) {
+find_root_folder <- function(folder_name, opt = output_base_path )  {
   
   os <- Sys.info()['sysname']
   
@@ -282,7 +282,7 @@ find_root_folder <- function(folder_name) {
     
   } else if (os %in% c("Linux", "Darwin")) {
 
-    search_locations <- c("/mnt", "/media", "/srv", "~")
+    search_locations <- c(opt, "/mnt", "/media", "/srv", "~")
     
     potential_parent_dirs <- unlist(lapply(search_locations, function(loc) {
       suppressWarnings(list.dirs(loc, recursive = FALSE, full.names = TRUE))

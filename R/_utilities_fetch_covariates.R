@@ -13,7 +13,7 @@ os <- Sys.info()['sysname']
 if (os == "Windows") {
   output_base_path <- "D:"
 } else if (os %in% c("Linux", "Darwin")) {
-  output_base_path <- "/mnt/storage/"
+  output_base_path <- "/media/pitm/My Passport/"
 }  
 
 source(file.path("R","_utilities_transform_covariates.R"))
@@ -26,7 +26,7 @@ set.seed(11072024)
 
 ## Three high Europe. Global no tiles. https://glad.umd.edu/users/Potapov/Europe_TCH/Tree_Height/. See _utilities_download_covariates.R code
 
-tree_high_europe <- find_root_folder("tree_high_Europe")
+tree_high_europe <- find_root_folder(folder_name = "tree_high_Europe")
 full_path <- list.files(tree_high_europe, "*.tif$", full.names = T, recursive = F)
 
 tree_high_europe <-
@@ -105,15 +105,6 @@ metso_utm_join <- metso |>
   st_join(y = utm_10) |> 
   rename(UTM10 = lehtitunnus) |> 
   dplyr::select(standid, metso, set, UTM200, UTM10)
-
-# sampling_metso <- T
-# 
-# if(sampling_metso){
-#   metso_utm_join <- metso_utm_join |> 
-#     group_by(metso) |>
-#     sample_n(size = 10000, replace = FALSE) |>
-#     ungroup()  
-# }
 
 metso_utm_join$poly_id <- 1:nrow(metso_utm_join) # id
 
@@ -201,12 +192,12 @@ run <- T
 
 if(run){
   coords_raw_data <- purrr::map(list_of_groups, 
-                                ~extract_raw_values(coords_utm_join[1000:2000, ], .x, 
+                                ~extract_raw_values(coords_utm_join, .x, 
                                                     root_output_dir = output_base_path, 
                                                     id_column = "sampleUnit",
                                                     only_paths = F))
   metso_raw_data <- purrr::map(list_of_groups, 
-                               ~extract_raw_values(metso_utm_join[1000:2000, ], .x,
+                               ~extract_raw_values(metso_utm_join, .x,
                                                    root_output_dir = output_base_path, 
                                                    id_column = "standid",
                                                    only_paths = F))
@@ -246,7 +237,7 @@ aggregate_covariates(
 #-------------------
 
 toKeep <- c("dict_covar", "output_base_path", "coords_utm_join", "metso_utm_join",
-            "prepare_covariates_data_toplot", "generate_covariate_plot")
+            "prepare_covariates_data_toplot", "generate_covariate_plot", "generate_binary_plot")
 rm(list = setdiff(ls(), toKeep));gc()
 
 # transform to year separated data to one consolidated for covariate for all polygon type
@@ -290,7 +281,7 @@ for(p in 1:length(polygon_types)){
 #--------------------
 
 toKeep <- c("covar_nm", "coords_utm_join", "metso_utm_join", "dict_covar", "folder_name",
-            "prepare_covariates_data_toplot", "generate_covariate_plot" )
+            "prepare_covariates_data_toplot", "generate_covariate_plot" , "generate_binary_plot")
 rm(list = setdiff(ls(), toKeep));gc()
 
 # processing to plot sample
@@ -305,12 +296,22 @@ for (i in 1:length(covar_nm)) {
   
   relevant_files <- rds_files[str_detect(basename(rds_files), covar_nm_i)]
   
+  if(length(relevant_files) == 0){
+    next
+  } 
+  
   coords <- readRDS(str_subset(relevant_files, coords_utm_join$set[1]))
   
   n_ <- coords$polygon_id |> unique() |> length()
   
   metso_ <- readRDS(str_subset(relevant_files, metso_utm_join$set[1])) |> 
     mutate(polygon_id = as.integer(polygon_id))
+  
+  n_of_metso_stands_  <-  length(unique(metso_utm_join$standid))
+  
+  if(n_ > n_of_metso_stands_){
+    n_ <- n_of_metso_stands_
+  }
   
   ids_ <- metso_utm_join |>
     st_drop_geometry() |> # Drop the geometry column first
