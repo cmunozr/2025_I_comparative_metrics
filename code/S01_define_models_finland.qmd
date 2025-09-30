@@ -114,6 +114,11 @@ library(dplyr)
 ### Global Options & Helper Functions
 
 ```{r}
+source(file.path("code", "config_model.r"))
+```
+
+
+```{r}
 options("GDAL_DATA" = Sys.getenv("GDAL_DATA")) # Ensure GDAL_DATA is set if needed
 options("OSR_USE_NON_DEPRECATED" = "NO")
 ```
@@ -131,7 +136,7 @@ transform_Y_to_abunCpres <- function(data) {
 ```
 
 ```{r}
-source("R/_utilities_transform_covariates.R")
+source(file.path("code", "_utilities_transform_covariates.R"))
 ```
 
 ```{r}
@@ -147,8 +152,8 @@ run_itis_routes <- F
 run_itis_bakx <- F
 run_polygon_buffers <- F
 run_process_covariates <- F
-run_calculate_XData <- T
-run_syn_for_mctavish <- T
+run_calculate_XData <- F
+run_syn_for_mctavish <- F
 ```
 
 ## Data loading
@@ -158,19 +163,19 @@ run_syn_for_mctavish <- T
 
 ```{r}
 # coordinates 
-coords <- st_read("data/fbs/vakiolinja/Vakiolinjat_routes.geojson") |> 
+coords <- st_read(file.path("data", "fbs", "vakiolinja", "Vakiolinjat_routes.geojson")) |> 
   st_transform(2393)
 
 # routes (names and dates)
-routes <- read.csv("data/fbs/vakiolinja/vakiolinja1_20250626.csv")
+routes <- read.csv(file.path("data", "fbs", "vakiolinja", "vakiolinja1_20250626.csv"))
 
 # occurrences by route (spp key, and counts in points and lines)
 
-occurr_route <- read.csv("data/fbs/vakiolinja/vakiolinja2_20250626.csv") 
+occurr_route <- read.csv(file.path("data", "fbs", "vakiolinja", "vakiolinja2_20250626.csv")) 
 
 # occurrences by section route (spp key, and counts in points and lines)
 
-occurr_sect_route <- read.csv("data/fbs/vakiolinja/vakiolinja3_20250626.csv") 
+occurr_sect_route <- read.csv(file.path("data", "fbs", "vakiolinja", "vakiolinja3_20250626.csv"))
 
 ```
 
@@ -179,22 +184,22 @@ occurr_sect_route <- read.csv("data/fbs/vakiolinja/vakiolinja3_20250626.csv")
 Species list from Bakx et al, 2023.
 
 ```{r}
-bakx_species <- read.xlsx(xlsxFile = "data/ecs24559-sup-0001-appendixs1.xlsx", sheet = 1)
+bakx_species <- read.xlsx(xlsxFile = file.path("data", "ecs24559-sup-0001-appendixs1.xlsx"), sheet = 1)
 ```
 
 Traits information
 ```{r}
-avonet <- read.xlsx("data/traits/AVONET/TraitData/AVONET2_eBird.xlsx", sheet = 2)
+avonet <- read.xlsx(file.path("data", "traits", "AVONET", "TraitData", "AVONET2_eBird.xlsx"), sheet = 2)
 ```
 
 Dictionary of covariates (Shultz)
 ```{r}
-dict_covar <- read.csv("data/covariates/dictionary_covariates.csv", sep = ";")
+dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";")
 ```
 
 Mapping function covariates
 ```{r}
-mapping_functions <- read.xlsx("data/covariates/mapping_covariate_functions.xlsx", sheet = 1)
+mapping_functions <- read.xlsx(file.path("data", "covariates", "mapping_covariate_functions.xlsx"), sheet = 1)
 ```
 
 Multi Source Forest National Inventory available data years
@@ -207,9 +212,9 @@ Phylogenetic information
 
 ```{r}
 if(run_download_mactavish){
-  get_avesdata_repo(path="data/") # 1GB more or less
+  get_avesdata_repo(path = file.path("data")) # 1GB more or less
 }
-set_avesdata_repo_path(path = "data/AvesData-main/", overwrite = T)
+set_avesdata_repo_path(path = file.path("data", "AvesData-main"), overwrite = T)
 
 ```
 
@@ -275,13 +280,13 @@ if(run_get_finbif){
     bind_rows() |> 
     mutate(count = spp_in_route$count)
   
-  saveRDS(object = finbif_info_raw, file = "data/fbs/tax_raw_data.rds")
+  saveRDS(object = finbif_info_raw, file = file.path("data", "fbs", "tax_raw_data.rds"))
 
   rm(spp.i, resp.i, i)
   
 }else{
   
-  finbif_info_raw <- readRDS(file = "data/fbs/tax_raw_data.rds")
+  finbif_info_raw <- readRDS(file = file.path("data", "fbs", "tax_raw_data.rds"))
   
 }
 
@@ -397,7 +402,7 @@ harmonized_species <- harmonized_species |>
     in_bakx
   )
 
-write.xlsx(harmonized_species, "data/fbs/harmonized_species.xlsx", sheet = 1)
+write.xlsx(harmonized_species, file.path("data", "fbs", "harmonized_species.xlsx"), sheet = 1)
 ```
 
 Once harmonized both datasets using finbif we found that 
@@ -1381,8 +1386,6 @@ rL.locality <-  HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nN
 
 ```{r}
 
-# colnames(XData) ## CAN AUTOMATIZE THIS? Maybe in the dictionary? and using the vif_keep_variables?
-# 
 # XFormula <- average_stand_diameter_gt15_mean + average_stand_diameter_gt20_mean + average_stand_length_gt200_mean + average_stand_length_gt250_mean + old_grow_indicator + canopy_cover_whole_stand + canopy_cover_whole_stand_gt60_mean + canopy_cover_broadleaves + volume_spruce_gt150 + tree_extent + tree_height_mean + tree_height_stdev + tree_remove 
 
 XFormula <- paste0("~ ", paste(colnames(XData), collapse = " + ")) |> 
@@ -1403,7 +1406,7 @@ TrFormula <- ~ log(Mass) + Trophic.Niche + Primary.Lifestyle + Migration
 
 ```{r}
 
-m.abuCpres = Hmsc(Y = Y,
+m <- Hmsc(Y = Y,
  XData = XData, XFormula = XFormula,
  TrData = TrData, TrFormula = TrFormula,
  phyloTree = phyloTree,
@@ -1414,15 +1417,13 @@ m.abuCpres = Hmsc(Y = Y,
 ```
 
 ```{r}
-model <- "fbsF_003"
-modeltype <- "aCp"
-
 dir.create("models", showWarnings = F)
-models <-  list(m.abuCpres)
-names(models) <- paste0(model, "_", modeltype)
-save(models, file = file.path("models", paste0("unfitted_", model, ".RData")))
+models <-  list(m)
+names(models) <- run_config$model_id
+output_filename <- file.path("models", paste0("unfitted_", run_config$model_id, ".RData"))
+save(models, file = output_filename)
 ```
 
 ```{r}
-sampleMcmc(m.abuCpres, samples=2)
+sampleMcmc(m, samples=2)
 ```

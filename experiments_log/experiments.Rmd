@@ -1,0 +1,39 @@
+---
+title: "experiments"
+author: "Carlos Munoz"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This file is the Narrative Journal. It is the logbook. The aim is to write down thoughts, hypotheses, plans, and conclusions in order to document the scientific reasoning behind of models that we have experimented. With this we can trace why we decided to create a specific model in the first place, what we learned from the model, and what your plan is for next running and models.
+
+
+Structure of an entry
+
+- Date
+- Model ID at what is refering
+- Miscelaneus notes
+- Potential ideas to test (hypothesis)
+- Action plan
+
+## Example
+
+### September 23, 2025
+#### Evaluating Model `fbs_M002`
+
+**Miscelaneus notes:** The first full run of `fbs_M002` (see `Run_ID: fbs_R002`) showed poor MCMC convergence. The PSRF values for many covariates related to stand diameter were consistently above 1.2.
+
+[cite_start]**Ideas to test:** Looking at the VIF analysis again in `S01_define_models_finland.qmd`, I suspect there's still too much multicollinearity between `average_stand_diameter_gt15_mean` and `average_stand_diameter_gt20_mean`[cite: 100, 101]. The model is likely struggling to distinguish their effects.
+
+**Action Plan:**
+1.  Create a new model definition, `fbs_M003`.
+2.  In this new model, I will remove the `average_stand_diameter_gt15_mean` covariate entirely, keeping only the `_gt20` version.
+3.  I will document this change in the `S01` script and the **Model Definition Log**.
+4.  Then, I will configure and launch the first run of `fbs_M003`.
+
+## Entries
+

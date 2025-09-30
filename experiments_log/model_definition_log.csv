@@ -1,0 +1,3 @@
+﻿model_id;data_created;sampling_units;Y_count;Y_response;X_covar_count;X_formula;T_data;C_data;random_levels;random_levels_locality;notes
+fbs_M001;20250919;6196;67;aCp;13;;;McTavish et al, 2025;ranLevels = list(vakio = rL.locality, year= rL.year, sampleUnit = rL.sampleUnit);HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8);
+fbs_M002;20250924;6196;61;aCp;12;;;McTavish et al, 2025;ranLevels = list(vakio = rL.locality, year= rL.year, sampleUnit = rL.sampleUnit);HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8);
