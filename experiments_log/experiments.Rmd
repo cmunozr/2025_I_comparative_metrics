@@ -20,20 +20,57 @@ Structure of an entry
 - Potential ideas to test (hypothesis)
 - Action plan
 
-## Example
+## Entries
 
-### September 23, 2025
-#### Evaluating Model `fbs_M002`
+### September 19, 2025
+#### Evaluating Model `fbs_M001`
 
-**Miscelaneus notes:** The first full run of `fbs_M002` (see `Run_ID: fbs_R002`) showed poor MCMC convergence. The PSRF values for many covariates related to stand diameter were consistently above 1.2.
+This is a model constructed with all the species found in the Bakx list with data in the Finish bird Survey. Here, I selected the available variables from Shultz with a VIF anlysis. 
 
-[cite_start]**Ideas to test:** Looking at the VIF analysis again in `S01_define_models_finland.qmd`, I suspect there's still too much multicollinearity between `average_stand_diameter_gt15_mean` and `average_stand_diameter_gt20_mean`[cite: 100, 101]. The model is likely struggling to distinguish their effects.
+Covariates removed: average_stand_length, stand_basal_area, volume_total_wood,   tree_height_max.
+
+
+**Miscelaneus notes:** The first full run of `fbs_M001` (see `Run_ID: fbs_M001_thin_100_samples_1000_chains_4`) showed a mix of good and poor MCMC convergence at 100 samples (in terms of ESS specifically).  Rho is really good. The PSRF mean values for beta, Gamma, and V are good although the maximum is to high (1.7951). Omega is mean PSRF > 1.1 in all random levels but sampleUnit. Alpha is also mean PSRF > 1.1 (1.528). Omega and Alpha has a maximum PSRF > 2.Actually, ALPHA AND RHO TRACE PLOTS LOOKS HORRIBLE.
+
+**Ideas to test:** It is needed more thining on the sampling to improve the number of effective sample size.
 
 **Action Plan:**
-1.  Create a new model definition, `fbs_M003`.
-2.  In this new model, I will remove the `average_stand_diameter_gt15_mean` covariate entirely, keeping only the `_gt20` version.
-3.  I will document this change in the `S01` script and the **Model Definition Log**.
-4.  Then, I will configure and launch the first run of `fbs_M003`.
+1.  Run `fbs_M001`with thin 1000 and samples 1000
 
-## Entries
+### September 23, 2025
+#### Evaluating Model `fbs_M001`thin 1000 and samples 1000
+
+Model structure of `fbs_M001`
+
+**Miscelaneus notes:** The second full run of `fbs_M001` (see `Run_ID: fbs_M001_thin_1000_samples_1000_chains_4`). Mean ESS is above 1000 in all paramaters. Rho keeps really good. Beta, gamma,  V, are good and the maximum PSRF < 1.1. Omega mean in all random levels is PSRF ~ 1.05 but omega maximum PSRF for vakio and sampleUnit is above 2 being the worst vakio. Alpha mean in vakio is 1.445 and maximum 1.997. Run the model with thin 1000 and samples 1000 improve the ESS and PSRF in almost all the parameters. ALPHA TRACE PLOTS LOOKS HORRIBLE.
+
+**Ideas to test:** Following meetings with the team, I was advice to test the next settings: 1) remove species under a threshold of summed abundance Tristan works with 35 https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecs2.4559 ; 1.1) use shultz available variables without any filter; 2) use altitude, latitud/longitud as variables in the model to reduce problems in the convergence of alpha and omega that use spatiall random levels, in this way we can modelling explicitly geography in the model; 3) remove occurrences above an altitud threshold; 4) run a model with experst selection thorugh literature using the paper Wagenaar, L.F., Olsson, O., Stjernman, M. and Smith, H.G., 2025. A systematic meta-review: The relationship between forest structures and biodiversity in deciduous forests. Forest Ecology and Management, 596, p.123072; 5) select variables using lasso; 6) add climatic covariates
+
+**Action Plan:**
+1. Set `fbs_M002`, that remove species under a threshold of summed abundance using 35
+2. Run `fbs_M002`with thin 1000 and samples 1000
+
+### September 24, 2025
+#### Evaluating Model `fbs_M002`thin 1000 and samples 1000
+
+Here, I remove species under a threshold of summed abundance Tristan works with 35 https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecs2.4559. I selected covariates using VIF. 
+
+Covariates removed: "average_stand_length"     "stand_basal_area"         "volume_total_wood"    "tree_height_max"    "canopy_cover_whole_stand"  and an alised factor "average_stand_length_gt250_mean" with "average_stand_length_gt200_mean"
+
+**Miscelaneus notes:** Beta, Gamma, V are PSRF mean ~1.009 in ESS mean > 1000. Rho is 1.06. Omega kepps PSRF mean values around ~1.09. Here thw worst omega is sampleUnit with 3 but vakio takes 2.01 reducing it. Alpha PSRF is a bit better 1.385 in PSRF with a maximum of 2.264, making alpha worst than the another set. Potentially, in terms of alpha and omega random levels convergence, remove the rare species doesnt make much difference.
+
+**Action Plan:**
+1. Set `fbs_M003`, that use shultz available variables without any filter
+2. Run `fbs_M003`with thin 1000 and samples 1000
+
+
+
+
+
+
+
+
+
+
+
 
