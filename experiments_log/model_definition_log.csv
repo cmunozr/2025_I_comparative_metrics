@@ -1,3 +1,13 @@
 ﻿model_id;data_created;sampling_units;Y_count;Y_response;X_covar_count;X_formula;T_data;C_data;random_levels;random_levels_locality;notes
-fbs_M001;20250919;6196;67;aCp;13;;;McTavish et al, 2025;ranLevels = list(vakio = rL.locality, year= rL.year, sampleUnit = rL.sampleUnit);HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8);
-fbs_M002;20250924;6196;61;aCp;12;;;McTavish et al, 2025;ranLevels = list(vakio = rL.locality, year= rL.year, sampleUnit = rL.sampleUnit);HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8);
+fbs_M001;20250919;6196;67;aCp;14;~average_stand_diameter_gt15_mean + average_stand_diameter_gt20_mean + average_stand_length_gt200_mean + average_stand_length_gt250_mean + old_grow_indicator + canopy_cover_whole_stand + canopy_cover_whole_stand_gt60_mean + canopy_cover_broadleaves + volume_spruce_gt150 + tree_extent + tree_height_mean + tree_height_stdev + tree_remove;Tobias et al., 2022;McTavish et al, 2025;ranLevels = list(vakio = rL.locality, year= rL.year, sampleUnit = rL.sampleUnit);HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8);
+fbs_M002;20250924;6196;61;aCp;13;"~average_stand_diameter_gt15_mean + average_stand_diameter_gt20_mean + 
+    average_stand_diameter + average_stand_length_gt200_mean + 
+    canopy_cover_broadleaves + canopy_cover_whole_stand_gt60_mean + 
+    old_grow_indicator + stand_age + tree_extent + tree_height_mean + 
+    tree_height_stdev + tree_remove + volume_spruce_gt150";Tobias et al., 2022;McTavish et al, 2025;ranLevels = list(vakio = rL.locality, year= rL.year, sampleUnit = rL.sampleUnit);HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8);
+fbs_M002;20250930;6196;61;aCp;16;"~average_stand_diameter_gt15_mean + average_stand_diameter_gt20_mean + 
+    average_stand_diameter + average_stand_length_gt200_mean + 
+    canopy_cover_broadleaves + canopy_cover_whole_stand_gt60_mean + 
+    old_grow_indicator + stand_age + tree_extent + tree_height_mean + 
+    tree_height_stdev + tree_remove + volume_spruce_gt150 + X + 
+    Y";Tobias et al., 2022;McTavish et al, 2025;ranLevels = list(vakio = rL.locality, year= rL.year, sampleUnit = rL.sampleUnit);HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8);

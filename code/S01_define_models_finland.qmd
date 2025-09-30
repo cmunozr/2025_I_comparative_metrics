@@ -1187,6 +1187,7 @@ if(run_calculate_XData){
 }
 ```
 
+Chunk to add coordinates of each centroid of polygon biotope as covariates 
 ```{r}
 sf_use_s2(TRUE)
 l2_xy <- lapply(X = l2_output_paths$path_L2, sf::read_sf) |> 
@@ -1201,7 +1202,7 @@ l2_xy <- lapply(X = l2_output_paths$path_L2, sf::read_sf) |>
 
 ```{r}
 predictor_data <- XData|> 
-  dplyr::select(-old_grow_indicator_ratio, -old_grow_indicator_agesum, -average_stand_length_gt250_mean)
+  dplyr::select(-old_grow_indicator_ratio, -old_grow_indicator_agesum, -average_stand_length_gt250_mean) # aliased coefficient with average_stand_length_gt250_mean
 
 ```
 
@@ -1267,11 +1268,11 @@ ggplot(vif_plot_data, aes(x = Variable, y = VIF)) +
   
 ```
 
-Chunk to add coordinates of each centroid of polygon biotope as covariates
+
 ```{r}
 XData <- XData |> 
-  dplyr::select(any_of(vif_keep_variables)) |> 
-  cbind(l2_xy)
+   dplyr::select(any_of(vif_keep_variables)) |>
+   cbind(l2_xy)
 ```
 
 
