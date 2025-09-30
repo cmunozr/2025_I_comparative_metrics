@@ -1,13 +1,4 @@
----
-title: "experiments"
-author: "Carlos Munoz"
-date: "`r Sys.Date()`"
-output: html_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+# Experiments log
 
 This file is the Narrative Journal. It is the logbook. The aim is to write down thoughts, hypotheses, plans, and conclusions in order to document the scientific reasoning behind of models that we have experimented. With this we can trace why we decided to create a specific model in the first place, what we learned from the model, and what your plan is for next running and models.
 
