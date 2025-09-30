@@ -35,7 +35,7 @@ Model structure of `fbs_M001`
 
 **Miscelaneus notes:** The second full run of `fbs_M001` (see `Run_ID: fbs_M001_thin_1000_samples_1000_chains_4`). Mean ESS is above 1000 in all paramaters. Rho keeps really good. Beta, gamma,  V, are good and the maximum PSRF < 1.1. Omega mean in all random levels is PSRF ~ 1.05 but omega maximum PSRF for vakio and sampleUnit is above 2 being the worst vakio. Alpha mean in vakio is 1.445 and maximum 1.997. Run the model with thin 1000 and samples 1000 improve the ESS and PSRF in almost all the parameters. ALPHA TRACE PLOTS LOOKS HORRIBLE.
 
-**Ideas to test:** Following meetings with the team, I was advice to test the next settings: 1) remove species under a threshold of summed abundance Tristan works with 35 https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecs2.4559 ; 1.1) use shultz available variables without any filter; 2) use altitude, latitud/longitud as variables in the model to reduce problems in the convergence of alpha and omega that use spatiall random levels, in this way we can modelling explicitly geography in the model; 3) remove occurrences above an altitud threshold; 4) run a model with experst selection thorugh literature using the paper Wagenaar, L.F., Olsson, O., Stjernman, M. and Smith, H.G., 2025. A systematic meta-review: The relationship between forest structures and biodiversity in deciduous forests. Forest Ecology and Management, 596, p.123072; 5) select variables using lasso; 6) add climatic covariates
+**Ideas to test:** Following meetings with the team, I was advice to test the next settings: 1) remove species under a threshold of summed abundance Tristan works with 35 https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecs2.4559 ; 2) latitud/longitud as variables in the model to reduce problems in the convergence of alpha and omega that use spatiall random levels, in this way we can modelling explicitly geography in the model; 3) use altitude; 4) remove occurrences above an altitud threshold; 5) run a model with experst selection thorugh literature using the paper Wagenaar, L.F., Olsson, O., Stjernman, M. and Smith, H.G., 2025. A systematic meta-review: The relationship between forest structures and biodiversity in deciduous forests. Forest Ecology and Management, 596, p.123072; 6) select variables using lasso; 7) add climatic covariates - 0) use shultz available variables without any filter-
 
 **Action Plan:**
 1. Set `fbs_M002`, that remove species under a threshold of summed abundance using 35
@@ -51,7 +51,7 @@ Covariates removed: "average_stand_length"     "stand_basal_area"         "volum
 **Miscelaneus notes:** Beta, Gamma, V are PSRF mean ~1.009 in ESS mean > 1000. Rho is 1.06. Omega kepps PSRF mean values around ~1.09. Here thw worst omega is sampleUnit with 3 but vakio takes 2.01 reducing it. Alpha PSRF is a bit better 1.385 in PSRF with a maximum of 2.264, making alpha worst than the another set. Potentially, in terms of alpha and omega random levels convergence, remove the rare species doesnt make much difference.
 
 **Action Plan:**
-1. Set `fbs_M003`, that use shultz available variables without any filter
+1. Set `fbs_M003`, that modelling explicitly geography in the model using longitud/latitud as covariate
 2. Run `fbs_M003`with thin 1000 and samples 1000
 
 
