@@ -53,7 +53,7 @@ Model structure of `fbs_M001`
 ### September 30, 2025
 #### Evaluating Model `fbs_M002`thin 1000 and samples 1000
 
-Here, I remove species under a threshold of summed abundance Tristan works with 35 https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecs2.4559. I selected covariates using VIF. To produce that effect S01 script was edited to create the $frequent_species$ object in line 792 and then use to filter the occurrences of the species in subsections "occurr_sect_route".
+Here, I remove species under a threshold of summed abundance Tristan works with 35 https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecs2.4559. I selected covariates using VIF. To produce that effect S01 script was edited to create the `frequent_species` object in line 792 and then use to filter the occurrences of the species in subsections "occurr_sect_route".
 
 Covariates removed: "average_stand_length"     "stand_basal_area"         "volume_total_wood"    "tree_height_max"    "canopy_cover_whole_stand"  and an alised factor "average_stand_length_gt250_mean" with "average_stand_length_gt200_mean"
 
@@ -68,12 +68,13 @@ WARNING: Variable average_stand_diameter_gt15_mean was left out by accident. Pot
 ### September 30, 2025
 #### Creating Model `fbs_M003`thin 1000 and samples 1000
 
-line 1248 add a chunck to calculate the centroid of each biotope and saved in $l2_xy$ object, and line 1330 in S01 adds the coordinates of each biotope as covariate in XData using $cbind(l2_xy)$. Model running in Kingma.
+line 1248 add a chunck to calculate the centroid of each biotope and saved in `l2_xy` object, and line 1330 in S01 adds the coordinates of each biotope as covariate in XData using `cbind(l2_xy)`. Model running in Kingma.
 
 ### October 02, 2025
 #### Creating Model `fbs_M004`thin 1000 and samples 1000
 
-Elevation model was found in https://paituli.csc.fi/download.html but downloaded from the index https://www.nic.funet.fi/index/geodata/mml/dem10m/2019/. After extract and aggregation, now elevation is inside the pre-processed covariates. In that way elevation_mean is calculated automatically and added to the pool of covariates to use in XData. If you want to turn off elevation_mean as covariates just remove it in the line 1260 when $creating predictor_data$ object of the same script. Model running in Orwell.
+Elevation model was found in https://paituli.csc.fi/download.html but downloaded from the index https://www.nic.funet.fi/index/geodata/mml/dem10m/2019/. After extract and aggregation, now elevation is inside the pre-processed covariates. In that way elevation_mean is calculated automatically and added to the pool of covariates to use in XData. If you want to turn off elevation_mean as covariates just remove it in the line 1260 when `creating predictor_data` object of the same script. Model running in Orwell.
+
 
 
 
