@@ -153,6 +153,7 @@ run_itis_bakx <- F
 run_polygon_buffers <- F
 run_process_covariates <- F
 run_calculate_XData <- F
+run_new_var_XData <- F
 run_syn_for_mctavish <- F
 ```
 
@@ -1104,11 +1105,49 @@ Now we are going to derive polygon-Level statistics from the raw values of the c
 folder_name <- file.path("data", "covariates") 
 output_rds_paths <- list.files(file.path(folder_name, "pre_processed"), pattern = "coords.rds$", recursive = TRUE, full.names = TRUE)
 
-if(run_calculate_XData){
+if(run_calculate_XData | run_new_var_XData){
   
-  unique_vars_to_process <- tools::file_path_sans_ext(basename(output_rds_paths)) |> 
+  unique_vars <- tools::file_path_sans_ext(basename(output_rds_paths)) |> 
     str_replace("_coords", "")
-  names(output_rds_paths) <- unique_vars_to_process
+  names(output_rds_paths) <- unique_vars
+  
+  if(run_new_var_XData){
+    
+    XData <- readRDS(file.path(folder_name, "XData_hmsc.rds"))
+    
+    existing_vars <- colnames(XData)
+    
+    not_processed <- dict_covar$var_shultz[which(dict_covar$processed == 0)]
+    
+    targets_to_create <- mapping_functions %>%
+      filter(var_pre_processed %in% not_processed) %>%
+      pull(var_target)
+      
+    conflicting_targets <- intersect(targets_to_create, existing_vars)
+  
+    if (length(conflicting_targets) > 0) {
+      message("Following variables already exist in XData and will be skipped: ", 
+              paste(conflicting_targets, collapse = ", "))
+      
+      vars_to_skip <- mapping_functions %>%
+        filter(var_target %in% conflicting_targets) %>%
+        distinct(var_pre_processed) %>%
+        pull(var_pre_processed)
+        
+      unique_vars_to_process <- setdiff(not_processed, vars_to_skip)
+      
+      if(length(unique_vars_to_process) == 0){
+        
+        stop("There is no additional variable to add in XData, skipping. Check associated variables dictionary or if you want to re-run all covariates use run_calculate_XData = T.")
+      }
+      
+    }else{
+      unique_vars_to_process <- not_processed
+    }
+    
+  }else{
+    unique_vars_to_process <- unique_vars
+  }
   
   all_results_list <- list()
   
@@ -1171,20 +1210,37 @@ if(run_calculate_XData){
     all_results_list[[var_name]] <- var_by_polygon
   }
   
-  XData <- all_results_list |> 
-    purrr::compact() |> 
-    reduce(full_join, by = "polygon_id") |> 
-    right_join(y = distinct(dplyr::select(occurr_biotope_route, sampleUnit)), join_by("polygon_id" == "sampleUnit")) |> 
-    ungroup() |> 
-    select(-polygon_id)
+  if(run_new_var_XData){
+    
+    new <- all_results_list |> 
+      purrr::compact() |> 
+      reduce(full_join, by = "polygon_id") |> 
+      right_join(y = distinct(dplyr::select(occurr_biotope_route, sampleUnit)), join_by("polygon_id" == "sampleUnit")) |> 
+      ungroup() |> 
+      select(-polygon_id)
+    
+    XData <- bind_cols(XData, new)
+    
+    saveRDS(XData, file = file.path(folder_name, "XData_hmsc.rds"))
+
+  }else{
   
-  saveRDS(XData, file = file.path(folder_name, "XData_hmsc.rds"))
+    XData <- all_results_list |> 
+      purrr::compact() |> 
+      reduce(full_join, by = "polygon_id") |> 
+      right_join(y = distinct(dplyr::select(occurr_biotope_route, sampleUnit)), join_by("polygon_id" == "sampleUnit")) |> 
+      ungroup() |> 
+      select(-polygon_id)
+    
+    saveRDS(XData, file = file.path(folder_name, "XData_hmsc.rds"))
+  }
   
 }else{
   
   XData <- readRDS(file.path(folder_name, "XData_hmsc.rds"))
     
 }
+
 ```
 
 Chunk to add coordinates of each centroid of polygon biotope as covariates 
@@ -1202,7 +1258,8 @@ l2_xy <- lapply(X = l2_output_paths$path_L2, sf::read_sf) |>
 
 ```{r}
 predictor_data <- XData|> 
-  dplyr::select(-old_grow_indicator_ratio, -old_grow_indicator_agesum, -average_stand_length_gt250_mean) # aliased coefficient with average_stand_length_gt250_mean
+  dplyr::select(-old_grow_indicator_ratio, -old_grow_indicator_agesum, 
+                -average_stand_length_gt250_mean) # the last is an aliased coefficient with average_stand_length_gt250_mean, VIF can't run with
 
 ```
 
@@ -1426,7 +1483,6 @@ m <- Hmsc(Y = Y,
  distr = "lognormal poisson", 
  studyDesign = studyDesign, ranLevels = list("vakio" = rL.locality, "year" = rL.year, "sampleUnit" = rL.sampleUnit)
  )
-
 ```
 
 ```{r}

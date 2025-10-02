@@ -4,15 +4,15 @@ run_config <- list(
   
   # A unique ID for the model's structure (data, formulas, random effects).
   # This should match an entry in experiments_log/model_definition_log.csv
-  model_id = "fbs_M002",
+  model_id = "fbs_M004",
   
   # MCMC sampling parameters
   mcmc = data.frame(
-    samples = c(1000, 1000),
-    thin = c(100, 1000),
-    n_chains = rep(4, 2),
-    transient_proportion = rep(0.5, 2), # following standard method on Hmsc course
-    adapt_nf_proportion = rep(0.4, 2) # following standard method on Hmsc course
+    samples = 1000,
+    thin = 1000,
+    n_chains = 4, 2,
+    transient_proportion = 0.5, # following standard method on Hmsc course
+    adapt_nf_proportion = 0.4 # following standard method on Hmsc course
   ),
   
   # GPU parameters
