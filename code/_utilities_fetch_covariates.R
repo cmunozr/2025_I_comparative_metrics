@@ -11,13 +11,15 @@ library(dplyr)
 os <- Sys.info()['sysname']
 
 if (os == "Windows") {
-  output_base_path <- "D:"
+  output_base_path <- "C:"
 } else if (os %in% c("Linux", "Darwin")) {
   output_base_path <- "/media/pitm/My Passport/"
 }  
 
 source(file.path("code","_utilities_transform_covariates.R"))
 dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";") # External 
+
+MS_NFI_years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
 
 set.seed(11072024)
 
@@ -45,10 +47,11 @@ tree_high_europe <-
   ) |>
   dplyr::select(dataset, var, path, year, UTM200, UTM10) |> 
   arrange(year) |> 
-  filter(year %in% c(2009, 2011, 2013, 2015, 2017, 2019, 2021))
+  filter(year %in% MS_NFI_years)
 
 
-## Luke (Multi Source National Forest Inventory) before UTM-200 tiles. http://www.nic.funet.fi/index/geodata/luke/vmi/. See _utilities_download_covariates.R code
+## Luke (Multi Source National Forest Inventory) before was organized as UTM-200 tiles in https://kartta.luke.fi/opendata/valinta.html 
+## Now is a single layer for year/thematic  in http://www.nic.funet.fi/index/geodata/luke/vmi/. See _utilities_download_covariates.R script
 
 luke <- find_root_folder("luke")
 full_path <- list.files(luke, "*.tif$", full.names = T, recursive = T)
@@ -64,7 +67,7 @@ luke <- tibble(path = full_path) |>
   dplyr::select(dataset, var, path, year, UTM200, UTM10)|> 
   mutate(year = as.numeric(year)) |> 
   arrange(year)|> 
-  filter(year %in% c(2009, 2011, 2013, 2015, 2017, 2019, 2021))
+  filter(year %in% MS_NFI_years)
 
 ## Latvus (Canopy model) UTM 10 tiles. https://avoin.metsakeskus.fi/aineistot/Latvusmalli/Karttalehti/. See _utilities_download_covariates.R code
 
@@ -82,7 +85,26 @@ latvus <- tibble(path = full_path) |>
   dplyr::select(dataset, var, path, year, UTM200, UTM10) |> 
   mutate(year = as.numeric(year)) |> 
   arrange(year)|> 
-  filter(year %in% c(2009, 2011, 2013, 2015, 2017, 2019, 2021))
+  filter(year %in% MS_NFI_years)
+
+
+## Elevation data, 2019 10x10 m Now is a single layer for year/thematic  in https://www.nic.funet.fi/index/geodata/mml/dem10m/2019/. See _utilities_download_covariates.R script
+
+dem <- find_root_folder("DEM_Finland")
+full_path <- list.files(dem, "*.tif$", full.names = T, recursive = T)
+
+dem <- expand_grid(
+    year = MS_NFI_years,  
+    path = full_path
+  ) |> 
+  mutate(
+    dataset = "DEM",
+    var = "Elevation",
+    year = year,
+    UTM200 = str_remove(basename(path), ".tif"),
+    UTM10 = NA
+  ) |> 
+  dplyr::select(dataset, var, path, year, UTM200, UTM10)
 
 #--------------------
 
@@ -169,9 +191,9 @@ for(i in 1:length(datasets)){
 
 #-----------------------
 
-master_covariates <- bind_rows(tree_high_europe, luke)
+master_covariates <- bind_rows(tree_high_europe, luke, dem)
+# master_covariates <- dem
 write.csv(master_covariates, file.path("data", "master_covariates_temp.csv"), row.names = F)
-coords_utm_join <- bind_rows(coords_utm_join)
 
 #-----------------------
 
@@ -247,13 +269,14 @@ folder_name <- file.path("data", "covariates", "pre_processed")
 dir.create(folder_name, showWarnings = F)
   
 covar_nm <- dict_covar |> 
-  filter(to_download == 1) |> 
+  filter(processed == 0) |> 
   pull(var_shultz) |> 
   unique()
 
 rds_data_dir <- file.path(output_base_path,"intermediate_aggregated")
   
 polygon_types <- c(coords_utm_join$set[1], metso_utm_join$set[1])
+#polygon_types <- c(coords_utm_join$set[1]) #just coords of biotopes
 
 for(p in 1:length(polygon_types)){
 

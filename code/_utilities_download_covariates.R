@@ -3,6 +3,8 @@ library(dplyr)
 library(stringr)
 library(xml2)
 library(fs)
+library(terra)
+library(tools)
 options(timeout = 1000)
 
 dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";")
@@ -255,3 +257,96 @@ for(i in 1:nrow(dict_luke)){
   }
   
 }
+
+#---------------------
+# download from Maanmittauslaitos 
+# https://www.nic.funet.fi/index/geodata/mml/dem10m/2019/
+# Elevation model 10m
+
+# Download TIF files recursively from a web directory
+# Scans a starting URL, navigates through all subdirectories,
+# and downloads any file ending with ".tif".
+# url The URL of the directory to scan.
+# output_dir The local folder where files will be saved.
+
+download_tifs_recursive <- function(url, output_dir) {
+  
+  cat("Scanning directory:", url, "\n")
+  
+  tryCatch({
+    webpage <- read_html(url)
+    
+    links <- webpage |>
+      html_nodes("a") |>
+      html_attr("href")
+    
+    for (link in links) {
+      full_url <- paste0(url, link)
+      
+      if (str_ends(link, "/") && !str_starts(link, "/")) {
+        # If the link is a directory (ends with "/"), call this function again
+        # This is a "recursive" step!
+        download_tifs_recursive(full_url, output_dir)
+        
+      } else if (str_ends(link, "\\.tif$")) {
+
+        file_name <- basename(full_url)
+        destination_path <- file.path(output_dir, file_name)
+        
+        # Check if the file already exists to avoid re-downloading
+        if (!file.exists(destination_path)) {
+          cat("-> Downloading:", file_name, "\n")
+          download.file(full_url, destfile = destination_path, mode = "wb", quiet = TRUE)
+        } else {
+          cat("-> Skipping:", file_name, "(already exists)\n")
+        }
+      }
+    }
+    
+  }, error = function(e) {
+    # If a URL is not accessible, print an error message and continue
+    cat("Error accessing", url, ":", e$message, "\n")
+  })
+}
+
+start_url <- "https://www.nic.funet.fi/index/geodata/mml/dem10m/2019/"
+
+output_folder <- "C:/DEM_Finland"
+dir.create(output_folder)
+
+download_tifs_recursive(url = start_url, output_dir = output_folder)
+
+# making bigger tiles to speed process
+
+dem_files <- list.files(output_folder, pattern = ".tif$", full.names = T, ) |> 
+  tools::file_path_sans_ext() |> 
+  basename() |> 
+  str_extract_all("(\\D+\\d)|(\\d+)", simplify = T) |> 
+  as.data.frame() |> 
+  pull(V1) |> 
+  data.frame("path" = dem_files, "utmzone" = _)
+
+index <- unique(dem_files$utmzone)
+
+for(i in 1:length(index)){
+  tryCatch({
+    message(paste("processing utm zone:", index[i]))
+    dem_files |> 
+      dplyr::filter(utmzone == index[i]) |> 
+      pull(path) |> 
+      sprc(lapply(terra::rast)) |> 
+      merge(algo = 2) |> 
+      terra::writeRaster(
+        file.path(output_folder, paste0( index[i], ".tif")), 
+        gdal = c("COMPRESS=DEFLATE"), 
+        overwrite=TRUE
+      )  
+    }, error = function(e) {
+      cat("Error accessing", index[i], ":", e$message, "\n")
+    }
+  )
+}
+
+file.remove(dem_files$path)
+
+
