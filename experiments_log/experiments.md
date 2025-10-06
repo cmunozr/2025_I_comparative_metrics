@@ -75,6 +75,11 @@ line 1248 add a chunck to calculate the centroid of each biotope and saved in $l
 
 Elevation model was found in https://paituli.csc.fi/download.html but downloaded from the index https://www.nic.funet.fi/index/geodata/mml/dem10m/2019/. After extract and aggregation, now elevation is inside the pre-processed covariates. In that way elevation_mean is calculated automatically and added to the pool of covariates to use in XData. If you want to turn off elevation_mean as covariates just remove it in the line 1260 when $creating predictor_data$ object of the same script. Model running in Orwell.
 
+### October 06, 2025
+#### Checking runnings of `fbs_M003` and `fbs_M004`
+
+Issue in output folder. Need to be runned again. Script S02 was refactored. 
+
 
 
 

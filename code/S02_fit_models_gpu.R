@@ -33,10 +33,10 @@ mcmc_parameter_grid <- run_config$mcmc
 # -----------------------------------------------
 # Helper Function
 
-generate_python_command <- function(input_path, output_path, config, params, chain_index = NULL, include_chain_arg = TRUE) {
+generate_python_command <- function(input_path, output_path, params, chain_index = NULL, include_chain_arg = TRUE) {
   
   # Calculate numeric values first
-  transient_value <- ceiling(config$mcmc$transient_proportion * params$samples * params$thin)
+  transient_value <- ceiling(params$transient_proportion * params$samples * params$thin)
   verbose_value <- ceiling(params$samples / 10)
   
   python_args <- paste(
@@ -58,7 +58,6 @@ generate_python_command <- function(input_path, output_path, config, params, cha
 }
 
 # -----------------------------------------------
-# Main loop
 
 # Initialize lists to store the generated commands
 gpu_command_list <- rep(list(data.frame(command=character(), log_filename=character())), run_config$gpu$n_gpus_available)
@@ -127,7 +126,7 @@ for (i in 1:nrow(mcmc_parameter_grid)) {
         input_path <- file.path(run_config$server$server_models_dir, run_name_i, basename(paths_i$unfitted_models_rds))
         output_path <- file.path(run_config$server$server_models_dir, run_name_i, paste0(model_output_base, "_post.rds"))
         
-        python_command <- generate_python_command(input_path, output_path, run_config, params = current_params, include_chain_arg = FALSE)
+        python_command <- generate_python_command(input_path, output_path, params = current_params, include_chain_arg = FALSE)
         nohup_log_file <- paste0(model_output_base, "_nohup.out")
         full_shell_command <- paste("nohup", python_command, "&>", shQuote(nohup_log_file), "&")
         
@@ -139,12 +138,12 @@ for (i in 1:nrow(mcmc_parameter_grid)) {
         if (execution_mode == 3) message("Mode 3: Generating commands for .sh scripts...")
         
         for (chain_index in 0:(current_params$n_chains - 1)) {
-          
+          # chain_index <- 1
           # Generate the core python command
           input_path <- file.path(run_config$server$server_models_dir, run_name_i, basename(paths_i$unfitted_models_rds))
           output_filename <- paste0(model_output_base, "_post_chain", sprintf("%.2d", chain_index), "_file.rds")
-          output_path <- file.path(run_config$server$server_models_dir, run_name_i, model_output_base, output_filename)
-          python_command <- generate_python_command(input_path, output_path, run_config, params = current_params, chain_index, include_chain_arg = TRUE)
+          output_path <- file.path(run_config$server$server_models_dir, run_name_i, output_filename)
+          python_command <- generate_python_command(input_path, output_path, params = current_params, chain_index, include_chain_arg = TRUE)
           
           # Logic for Mode 2
           if (execution_mode == 2) {
@@ -187,7 +186,7 @@ if (execution_mode == 1 || execution_mode == 2) {
 } else if (execution_mode == 3) {
     message("\n--- Generating .sh script for each GPU for Mode 3 ---")
     for (gpu_index in 0:(run_config$gpu$n_gpus_available - 1)) {
-      sh_filename <- file.path(paths$models_dir, paste0("run_gpu_", gpu_index, ".sh"))
+      sh_filename <- file.path(paths$models_dir, paste0(model_name, "_run_gpu_", gpu_index, ".sh"))
       commands_for_this_gpu <- gpu_command_list[[gpu_index + 1]]
       
       if (nrow(commands_for_this_gpu) == 0) { next }
