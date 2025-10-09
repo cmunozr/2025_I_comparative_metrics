@@ -75,14 +75,16 @@ line 1248 add a chunck to calculate the centroid of each biotope and saved in `l
 
 Elevation model was found in https://paituli.csc.fi/download.html but downloaded from the index https://www.nic.funet.fi/index/geodata/mml/dem10m/2019/. After extract and aggregation, now elevation is inside the pre-processed covariates. In that way elevation_mean is calculated automatically and added to the pool of covariates to use in XData. If you want to turn off elevation_mean as covariates just remove it in the line 1260 when `creating predictor_data` object of the same script. Model running in Orwell.
 
-
 ### October 06, 2025
 #### Checking runnings of `fbs_M003` and `fbs_M004`
 
 Issue in output folder. Need to be runned again. Script S02 was refactored. 
 
+### October 08, 2025
+#### Checking runnings of `fbs_M003` and `fbs_M004`
 
-
+- `fbs_M003` memory error for chains 00 and 01. Chains 02 and 03 completed. When the server was accesed the run for chain 03 was launched before finish chain 01. As the models are running in automatic, we need to check the bash file.
+- `fbs_M004` running as expected. Chain 00 and 01 ready. Chain 02 and 03 sampling.
 
 
 

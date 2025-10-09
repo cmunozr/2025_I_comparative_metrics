@@ -177,11 +177,11 @@ if (execution_mode == 1 || execution_mode == 2) {
     "For manual run use:",
     "CUDA_VISIBLE_DEVICES=0"
   )
-  con <- file(paths$python_commands_file, open = "wb")
+  con <- file(file.path(paths$models_dir, paste0(model_name, "_python_commands.txt")), open = "wb")
   cat(commands, file = con, sep = "\n")
   close(con)
   
-  message(paste("Successfully created:", paths$python_commands_file))
+  message(paste("Successfully created:", model_name, "python commands file"))
   
 } else if (execution_mode == 3) {
     message("\n--- Generating .sh script for each GPU for Mode 3 ---")
