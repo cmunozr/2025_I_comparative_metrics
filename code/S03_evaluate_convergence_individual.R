@@ -1,5 +1,5 @@
 # This script automatically evaluates the MCMC convergence for EACH run defined
-# in the config_model.R grid. For each run, it creates a dedicated 'evaluation'
+# in the config_model.R grid. For each run, it creates a dedicated 'convergence'
 # sub-folder containing:
 #   1. A detailed text report ('convergence_report.txt').
 #   2. A PDF of MCMC trace plots for key parameters ('trace_plots.pdf').
@@ -32,7 +32,7 @@ for (i in 1:nrow(run_config$mcmc)) {
   message(paste0("\n--- Processing Grid Row ", i, ": ", run_name, " ---"))
   
   fitted_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".RData"))
-  evaluation_dir <- file.path("models", run_name, "evaluation")
+  evaluation_dir <- file.path("models", run_name, "convergence")
   
   # --- B. Pre-run Checks ---
   if (!file.exists(fitted_model_path)) {
@@ -42,7 +42,7 @@ for (i in 1:nrow(run_config$mcmc)) {
   
   report_file <- file.path(evaluation_dir, "convergence_report.txt")
   if (file.exists(report_file)) {
-    message("Evaluation report already exists. Skipping.")
+    message("Convergence report already exists. Skipping.")
     next
   }
   

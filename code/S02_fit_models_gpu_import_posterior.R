@@ -9,7 +9,8 @@ source("code/config_model.R")
 message(paste0("--- Import for Model ID: ", run_config$model_id))
 
 for (i in 1:nrow(run_config$mcmc)) {
-  #i <- 2
+  #i <- 1
+  
   # --- A. Setup for the Current Run ---
   run_name <- generate_run_name(run_config)[i]
   message(paste0("\n--- Processing Grid Row ", i, ": ", run_name, " ---"))
@@ -66,6 +67,20 @@ for (i in 1:nrow(run_config$mcmc)) {
       transient = transient,
       alignPost = TRUE
     )
+    
+    for(cInd in 1:chains){
+      if(unfitted_model$nr==1){
+        for(i in 1:samples){
+          fitted_model$postList[[cInd]][[i]]$Alpha = list(fitted_model$postList[[cInd]][[i]]$Alpha[1,])
+        }
+      }
+      if(is.matrix(fitted_model$postList[[cInd]][[1]]$Alpha)){
+        for(i in 1:samples){
+          x = fitted_model$postList[[cInd]][[i]]$Alpha
+          fitted_model$postList[[cInd]][[i]]$Alpha = lapply(seq_len(nrow(x)), function(i) x[i,])
+        }
+      }
+    }
     
     # --- D. Save the Final, Individual Fitted Model Object ---
     save(fitted_model, file = fitted_filename)
