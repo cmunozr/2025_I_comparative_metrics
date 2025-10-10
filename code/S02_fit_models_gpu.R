@@ -8,6 +8,7 @@ source("code/config_model.R")
 
 run_name <- generate_run_name(run_config)
 
+
 # -- Execution Mode --
 # 1: Simple TXT file (one command runs all chains).
 # 2: Detailed TXT file (one command per chain).

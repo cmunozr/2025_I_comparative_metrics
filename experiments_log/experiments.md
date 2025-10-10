@@ -78,7 +78,7 @@ Elevation model was found in https://paituli.csc.fi/download.html but downloaded
 ### October 06, 2025
 #### Checking runnings of `fbs_M003` and `fbs_M004`
 
-Issue in output folder. Need to be runned again. Script S02 was refactored. 
+Issue in output folder in the server side. Need to run everything again. Script S02 was refactored. 
 
 ### October 08, 2025
 #### Checking runnings of `fbs_M003` and `fbs_M004`
@@ -86,7 +86,20 @@ Issue in output folder. Need to be runned again. Script S02 was refactored.
 - `fbs_M003` memory error for chains 00 and 01. Chains 02 and 03 completed. When the server was accesed the run for chain 03 was launched before finish chain 01. As the models are running in automatic, we need to check the bash file.
 - `fbs_M004` running as expected. Chain 00 and 01 ready. Chain 02 and 03 sampling.
 
+### October 10, 2025
+#### Evaluating Model `fbs_M004`thin 1000 and samples 1000
 
+As we have problems running model `fbs_M003`, we are commenting first this model the `fbs_M004` model. 
 
+This model works using the threshold of summed abundance based in Baxk work. Also, use coordinates (centroid of each biotope polygon) as a covariate and elevation meanHere. I selected covariates using VIF. See entrie on October 02 for more info.
 
+**Miscelaneus notes:** 
+
+Beta, Gamma, V are PSRF mean ~1.009 in ESS mean > 1000. Rho is 1.06. Omega kepps PSRF mean values around ~1.09. Here thw worst omega is sampleUnit with 3 but vakio takes 2.01 reducing it. Alpha PSRF is a bit better 1.385 in PSRF with a maximum of 2.264, making alpha worst than the another set. Potentially, in terms of alpha and omega random levels convergence, remove the rare species doesnt make much difference.
+
+WARNING: Variable average_stand_diameter_gt15_mean was left out by accident. Potentially is needed to tun again in order to gain in systematic approach. However, removing this variable is not a hard problem. We continue the exploration of models.
+
+**Action Plan:**
+1. Set `fbs_M003`, it modells explicitly geography using longitud/latitud as covariate apart from the VIF selection of covariates, use an abundance threshold of 35.
+2. Run `fbs_M003`with thin 1000 and samples 1000
 

@@ -8,7 +8,7 @@ run_config <- list(
   
   # MCMC sampling parameters
   mcmc = data.frame(
-    samples = 1000,
+    samples = 2000,
     thin = 1000,
     n_chains = 4,
     transient_proportion = 0.5, # following standard method on Hmsc course
@@ -17,7 +17,7 @@ run_config <- list(
   
   # GPU parameters
   gpu = list(
-    execution_mode = 2,
+    execution_mode = 3,
     n_gpus_available = 2
   ),
   

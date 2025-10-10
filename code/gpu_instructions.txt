@@ -22,11 +22,12 @@ S02_fit_models_gpu.R
 
 3. Make them executable in linux
 
-chmod +x /home/avesta/munozcs/Documents/run_gpu_*.sh
+chmod +x /home/avesta/munozcs/Documents/XXX_run_gpu_*.sh 
+	example: .../fbs_M003_run_gpu_*.sh 
 
 4. Run the python command using something like: 
 
-nohup /home/avesta/munozcs/Documents/run_gpu_0.sh & nohup /home/avesta/munozcs/Documents/run_gpu_1.sh &
+nohup /home/avesta/munozcs/Documents/XXX_run_gpu_0.sh & nohup /home/avesta/munozcs/Documents/XXX_run_gpu_1.sh &
 
 5. Wait until finishing, revise nohup_chains log. transfer to local pc. Import the chains to the Hmsc model used, using:
 
