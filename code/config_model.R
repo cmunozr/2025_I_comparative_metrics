@@ -4,7 +4,7 @@ run_config <- list(
   
   # A unique ID for the model's structure (data, formulas, random effects).
   # This should match an entry in experiments_log/model_definition_log.csv
-  model_id = "fbs_M002",
+  model_id = "fbs_M002.1",
   
   # MCMC sampling parameters
   mcmc = data.frame(

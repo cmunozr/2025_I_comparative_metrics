@@ -141,5 +141,10 @@ Aditionally, when re-visiting model `fbs_M001` thin 1000 samples 1000 its discre
 **Action Plan:**
 
 1. Run model `fbs_M005` which will be structurally similar to the foundational model `fbs_M001` but using coordinates as a covariate.
-2. Re run model `fbs_M002` making sure that the basic variables are the same or left out for correlation issues and not of a carelessness handle from the researcher.
+2. Re run model `fbs_M002` with name `fbs_M002.1` making sure that the basic variables are the same or left out for correlation issues and not of a carelessness handle from the researcher.
+
+### October 16, 2025
+#### Creating Model `fbs_M002.1` thin 1000 and samples 1000
+
+Binding of object l2_xy deactivated to avoid using coordinates a fixed effect. Check entry from September 30, 2025.  
 
