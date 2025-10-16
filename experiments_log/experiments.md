@@ -89,7 +89,7 @@ Issue in output folder in the server side. Need to run everything again. Script 
 ### October 09, 2025
 #### Evaluating Model `fbs_M004` thin 1000 and samples 1000
 
-As we have problems running model `fbs_M003`, we are commenting first this model the `fbs_M004` model. 
+As we have problems running model `fbs_M003`, we are commenting first this model, the `fbs_M004` model. 
 
 This model works using the threshold of summed abundance based in Baxk work. Also, use coordinates (centroid of each biotope polygon) as a covariate and elevation mean. Selected covariates using VIF. See entrie on October 02 for more info.
 
@@ -122,4 +122,24 @@ About the alpha parameter convergence (mean psrf = 1.04, max = 1.3) and ESS are 
 ### October 10, 2025
 #### Creating Model `fbs_M003` thin 1000 and samples 2000
 
-Model `fbs_M003` reach a correct convergence and distribution as shown with PSRF and ESS of almost all parameters. However, I think is problematic that the maximum value is above the threshold of a good model. Lets try to take more samples and see if the proceses reach a better convergence and the minimum ESS is better for the omega parameters and V
+Model `fbs_M003` reach a correct convergence and distribution as shown with PSRF and ESS of almost all parameters. However, I think is problematic that the maximum value is above the threshold of a good model. Lets try to take more samples and see if the proceses reach a better convergence and the minimum ESS is better for the omega parameters and V.
+
+### October 16, 2025
+#### Evaluating Model `fbs_M003` thin 1000 and samples 2000
+
+**Miscelaneus notes:** This model has a good convergence and effective sample size in Beta, Gamma and V. However, Rho convergence is worst with 3.86 and actually values on the omega values are worst for temporal and unit level around 1.1. The alpha has good convergence. Minimun values for omega random levels are really low as last attempts as the maximum values are equally big. I dont think that having a longer run could improve the convergence of the model, actually in general terms is a bit worst, maybe because the sampler is visiting several Rho has the same behaviour as in the model `fbs_M004` thin 1000 and samples 1000.
+
+It is not worthy to spend 6 days fitting a model with 2000 samples. Also, the potential failing of chains is higher as the writing of the rds using pyreadr issue is not fixed yet, although there is a potential solution. https://github.com/hmsc-r/hmsc-hpc/pull/2
+
+### October 16, 2025
+#### General 
+
+**Miscelaneus notes:** in entrie mark with September 30, 2025 I dismissed the accidental deletion of the variable: average_stand_diameter_gt15_mean. However, as I continue the comparisson between model `fbs_M002` and the rest is being hard to complete as the basic structure is not the same as the others. Although is needed to say that when we remove species the structure of the correlation between variables 'vary' and in this way the models are not completely comparable.
+
+Aditionally, when re-visiting model `fbs_M001` thin 1000 samples 1000 its discrepancy with the model `fbs_M003` thin 1000 samples 1000 is in the Alpha parameter, the former with mean 1.445 and the latter with 1.071. What if we can make converge a model with the complete set of species using the spatial fixed effects. Although, here comes again the need for a justification of use coordinates as a covariate.
+
+**Action Plan:**
+
+1. Run model `fbs_M005` which will be structurally similar to the foundational model `fbs_M001` but using coordinates as a covariate.
+2. Re run model `fbs_M002` making sure that the basic variables are the same or left out for correlation issues and not of a carelessness handle from the researcher.
+

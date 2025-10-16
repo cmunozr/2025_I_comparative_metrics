@@ -36,10 +36,10 @@ for (i in 1:nrow(run_config$mcmc)) {
   chain_paths <- file.path(run_specific_dir, expected_filenames)
   
   existing_chains <- chain_paths[file.exists(chain_paths)]
+  n_existing_chains <- length(existing_chains)
   
   if (length(existing_chains) < chains) {
-    warning(paste0("Found ", length(existing_chains), " of ", chains, " expected chains for ", run_name, ". Skipping import for this run."))
-    next
+    warning(paste0("Found ", length(existing_chains), " of ", chains, " expected chains for ", run_name, ". Take in mind!"))
   }
   
   # --- C. Import and Assemble the Model ---
@@ -68,7 +68,7 @@ for (i in 1:nrow(run_config$mcmc)) {
       alignPost = TRUE
     )
     
-    for(cInd in 1:chains){
+    for(cInd in 1:n_existing_chains){
       if(unfitted_model$nr==1){
         for(i in 1:samples){
           fitted_model$postList[[cInd]][[i]]$Alpha = list(fitted_model$postList[[cInd]][[i]]$Alpha[1,])
