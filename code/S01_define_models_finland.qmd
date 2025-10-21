@@ -151,10 +151,10 @@ run_get_finbif <- F
 run_itis_routes <- F
 run_itis_bakx <- F
 run_polygon_buffers <- F
-run_process_covariates <- F
-run_calculate_XData <- F
+run_process_covariates <- T
+run_calculate_XData <- T
 run_new_var_XData <- F
-run_syn_for_mctavish <- F
+run_syn_for_mctavish <- T
 ```
 
 ## Data loading
@@ -789,14 +789,14 @@ coords <- coords |>
 
 
 ```{r}
-frequent_species <- occurr_sect_route |>
-  group_by(acceptedName) |>
-  summarise(n_occurrences = n(), .groups = "drop") |> 
-  filter(n_occurrences >= 35) |> 
-  pull(acceptedName)
-
-occurr_sect_route <- occurr_sect_route |> 
-  filter(acceptedName %in% frequent_species)
+# frequent_species <- occurr_sect_route |>
+#   group_by(acceptedName) |>
+#   summarise(n_occurrences = n(), .groups = "drop") |> 
+#   filter(n_occurrences >= 35) |> 
+#   pull(acceptedName)
+# 
+# occurr_sect_route <- occurr_sect_route |> 
+#   filter(acceptedName %in% frequent_species)
 ```
 
 
@@ -1258,7 +1258,7 @@ l2_xy <- lapply(X = l2_output_paths$path_L2, sf::read_sf) |>
 
 ```{r}
 
-vars_to_remove <- c("old_grow_indicator_ratio", "old_grow_indicator_agesum", "elevation_mean", "average_stand_length_gt250_mean")
+vars_to_remove <- c("old_grow_indicator_ratio", "old_grow_indicator_agesum", "elevation_mean", "average_stand_length_gt250_mean") # 
 # the last is an aliased coefficient with average_stand_length_gt200_mean, VIF can't run with
 
 predictor_data <- XData|> 
@@ -1333,8 +1333,8 @@ ggplot(vif_plot_data, aes(x = Variable, y = VIF)) +
 length(vif_keep_variables)
 
 XData <- XData |> 
-   dplyr::select(any_of(vif_keep_variables))# |>
-   #cbind(l2_xy)
+   dplyr::select(any_of(vif_keep_variables)) |>
+   cbind(l2_xy)
 ```
 
 
@@ -1372,7 +1372,6 @@ if(run_syn_for_mctavish){
 }else{
   spp_Y_new <- readLines(file.path("data", "spp_Y_new_forPhylo.txt"))
 }
-
 
 # "Coloeus monedula" -> "Corvus monedula"
 # "Phylloscopus sibillatrix" -> "Phylloscopus sibilatrix"  

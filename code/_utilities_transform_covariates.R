@@ -200,6 +200,65 @@ generate_binary_plot <- function(covariate_name, data, folder) {
 }
 
 #-----------------
+# process climatic variables
+# 'group_data' will be the small tibble of data for one var/year
+# 'var_name' is the variable name (e.g., "tmax")
+# 'year_val' is the year (e.g., 2008)
+
+process_climate <- function(group_data, keys, out_dir, boundary =utm_200LR, zip_path) {
+  
+  var_name <- keys$var
+  year_val <- keys$year
+  paths <- group_data$filename
+  
+  message(paste("Loading", length(paths), "files for", var_name, year_val))
+  
+  temp <- file.path(out_dir, "temp")
+  dir.create(temp, showWarnings = F)
+  unzip(
+    zipfile = zip_path,
+    files = paths,
+    exdir = temp,
+    overwrite = TRUE
+  )
+  
+  paths_vector <- list.files(temp, pattern = ".nc", full.names = T, recursive = T)
+  
+  s <- terra::rast(paths_vector)
+  
+  boundary <- st_transform(boundary, crs = terra::crs(s))
+  
+  s <- s |> 
+    terra::crop(boundary, mask = TRUE)
+
+  s_mean <- terra::app(s, fun = "mean", na.rm = TRUE)
+  
+  s_sd <- terra::app(s, fun = "sd", na.rm = TRUE)
+  
+  out_path_mean <- file.path(out_dir, paste0("mean_", var_name, "_", year_val, ".tif"))
+  
+  out_path_sd <- file.path(out_dir, paste0("sd_", var_name, "_", year_val, ".tif"))
+  
+  terra::writeRaster(s_mean, out_path_mean, overwrite = TRUE)
+  terra::writeRaster(s_sd, out_path_sd, overwrite = TRUE)
+  
+  if (var_name == "TX") {
+    s_heat_days <- terra::app(s, fun = function(x) { sum(x > 25, na.rm=TRUE) })
+    out_path_heat <- file.path(out_dir, paste0("HD_", year_val, ".tif"))
+    terra::writeRaster(s_heat_days, out_path_heat, overwrite = TRUE)
+  }
+  
+  if (var_name == "TN") {
+    s_heat_days <- terra::app(s, fun = function(x) { sum(x < 5, na.rm=TRUE) })
+    out_path_cold <- file.path(out_dir, paste0("CD_", year_val, ".tif"))
+    terra::writeRaster(s_heat_days, out_path_heat, overwrite = TRUE)
+  }
+  
+  unlink(temp, force = T, recursive = T)
+
+}
+
+#-----------------
 #' Extends an sf LINESTRING by a specified distance.
 #'
 #' @param line An sf object containing a single LINESTRING.

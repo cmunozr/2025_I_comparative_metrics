@@ -146,5 +146,7 @@ Aditionally, when re-visiting model `fbs_M001` thin 1000 samples 1000 its discre
 ### October 16, 2025
 #### Creating Model `fbs_M002.1` thin 1000 and samples 1000
 
-Binding of object l2_xy deactivated to avoid using coordinates a fixed effect. Check entry from September 30, 2025.  
+S02 script for deefine models was transdormed to deactivate the binding of object l2_xy deactivated and avoiding coordinates a fixed effect. Check entry from September 30, 2025. Equally, deleted elevation_mean from XData as it is calculated automatically from the utilities fetch from covariates script. line ~1334 look for the object XData.
+
+
 

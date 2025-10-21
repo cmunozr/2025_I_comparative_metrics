@@ -7,16 +7,18 @@ library(maps)
 library(ggplot2)
 library(tidyr)
 library(dplyr)
+library(zip)
 
 os <- Sys.info()['sysname']
 
 if (os == "Windows") {
-  output_base_path <- "C:"
+  output_base_path <- "E:"
 } else if (os %in% c("Linux", "Darwin")) {
   output_base_path <- "/media/pitm/My Passport/"
 }  
 
 source(file.path("code","_utilities_transform_covariates.R"))
+
 dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";") # External 
 
 MS_NFI_years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
@@ -106,6 +108,12 @@ dem <- expand_grid(
   ) |> 
   dplyr::select(dataset, var, path, year, UTM200, UTM10)
 
+## Climatic data, Nordic gridded temperature and precipitation data from 1961 to present derived from in-situ observations
+## 1 x 1 km, https://cds.climate.copernicus.eu/datasets/insitu-gridded-observations-nordic?tab=overview
+
+clim <- find_root_folder("nordic_climate")
+
+
 #--------------------
 
 # Prepare sampling sites (buffers level 2) and METSO and NON_METSO stands and routes polygons
@@ -194,6 +202,7 @@ for(i in 1:length(datasets)){
 master_covariates <- bind_rows(tree_high_europe, luke, dem)
 # master_covariates <- dem
 write.csv(master_covariates, file.path("data", "master_covariates_temp.csv"), row.names = F)
+coords_utm_join <- bind_rows(coords_utm_join)
 
 #-----------------------
 
@@ -213,8 +222,9 @@ list_of_groups <- master_covariates |>
 run <- T
 
 if(run){
-  coords_raw_data <- purrr::map(list_of_groups, 
-                                ~extract_raw_values(coords_utm_join, .x, 
+  coords_raw_data <- purrr::map(.x = list_of_groups, 
+                                ~extract_raw_values(polygons_sf = coords_utm_join, 
+                                                    raster_info_df = .x, 
                                                     root_output_dir = output_base_path, 
                                                     id_column = "sampleUnit",
                                                     only_paths = F))
@@ -269,7 +279,7 @@ folder_name <- file.path("data", "covariates", "pre_processed")
 dir.create(folder_name, showWarnings = F)
   
 covar_nm <- dict_covar |> 
-  filter(processed == 0) |> 
+  filter(processed == 1) |> 
   pull(var_shultz) |> 
   unique()
 
