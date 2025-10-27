@@ -112,6 +112,24 @@ dem <- expand_grid(
 ## 1 x 1 km, https://cds.climate.copernicus.eu/datasets/insitu-gridded-observations-nordic?tab=overview
 
 clim <- find_root_folder("nordic_climate")
+full_path <- list.files(clim, "*.tif$", full.names = T, recursive = F)
+
+clim <-
+  tibble(path = full_path) |>
+  tidyr::extract(
+    col = path,
+    into = c("var", "year"),
+    regex = ".*/(.+?)_(\\d{4}).*\\.tif$", # divide a string in two and arrange in two different columns
+    convert = TRUE,
+    remove = FALSE
+  ) |>
+  dplyr::mutate(
+    dataset = "clim",
+    UTM200 = NA,
+    UTM10 = NA
+  ) |>
+  dplyr::select(dataset, var, path, year, UTM200, UTM10) |> 
+  arrange(year)
 
 
 #--------------------

@@ -205,7 +205,7 @@ generate_binary_plot <- function(covariate_name, data, folder) {
 # 'var_name' is the variable name (e.g., "tmax")
 # 'year_val' is the year (e.g., 2008)
 
-process_climate <- function(group_data, keys, out_dir, boundary =utm_200LR, zip_path) {
+process_climate <- function(group_data, keys, out_dir, boundary = utm_200LR, zip_path) {
   
   var_name <- keys$var
   year_val <- keys$year
@@ -231,31 +231,49 @@ process_climate <- function(group_data, keys, out_dir, boundary =utm_200LR, zip_
   s <- s |> 
     terra::crop(boundary, mask = TRUE)
 
-  s_mean <- terra::app(s, fun = "mean", na.rm = TRUE)
   
-  s_sd <- terra::app(s, fun = "sd", na.rm = TRUE)
-  
-  out_path_mean <- file.path(out_dir, paste0("mean_", var_name, "_", year_val, ".tif"))
-  
-  out_path_sd <- file.path(out_dir, paste0("sd_", var_name, "_", year_val, ".tif"))
-  
-  terra::writeRaster(s_mean, out_path_mean, overwrite = TRUE)
-  terra::writeRaster(s_sd, out_path_sd, overwrite = TRUE)
-  
-  if (var_name == "TX") {
-    s_heat_days <- terra::app(s, fun = function(x) { sum(x > 25, na.rm=TRUE) })
-    out_path_heat <- file.path(out_dir, paste0("HD_", year_val, ".tif"))
-    terra::writeRaster(s_heat_days, out_path_heat, overwrite = TRUE)
-  }
-  
-  if (var_name == "TN") {
-    s_heat_days <- terra::app(s, fun = function(x) { sum(x < 5, na.rm=TRUE) })
-    out_path_cold <- file.path(out_dir, paste0("CD_", year_val, ".tif"))
-    terra::writeRaster(s_heat_days, out_path_heat, overwrite = TRUE)
-  }
+  switch(var_name,
+         "TX" = {
+           calc_and_write(s, "mean", "_mean_", base = var_name, yr = year_val, outdir = out_dir)
+           calc_and_write(s, function(x) { sum(x > 321) }, "_HD_", base = var_name, yr = year_val, outdir = out_dir) 
+           # HD = High temperature days https://www-nature-com.ludwig.lub.lu.se/articles/s41467-023-43071-y
+         },
+         
+         "TN" = {
+           calc_and_write(s, "mean", "_mean_", base = var_name, yr = year_val, outdir = out_dir)
+           calc_and_write(s, function(x) { sum(x < 174) }, "_CD_", base = var_name, yr = year_val, outdir = out_dir) 
+           # CD = cold temperature days https://www-nature-com.ludwig.lub.lu.se/articles/s41467-023-43071-y
+         },
+         
+         "TG" = {
+           calc_and_write(s, "mean", "_mean_", base = var_name, yr = year_val, outdir = out_dir)
+         },
+         
+         "RR" = {
+           calc_and_write(s, "sum", "_sum_", base = var_name, yr = year_val, outdir = out_dir)
+           calc_and_write(s, cv, "_CV_", base = var_name, yr = year_val, outdir = out_dir)
+         },
+         
+         message(paste("Warning: No rules for var_name:", var_name))
+  )
   
   unlink(temp, force = T, recursive = T)
 
+}
+
+calc_and_write <- function(raster_stack, stat_fun, suffix, base, yr, outdir) {
+  
+  s_stat <- terra::app(raster_stack, fun = stat_fun)
+  
+  out_path <- file.path(outdir, paste0(base, suffix, yr,".tif"))
+  
+  terra::writeRaster(s_stat, out_path, overwrite = TRUE)
+}
+
+cv <- function(x) {
+  m <- mean(x, na.rm = TRUE)
+  s <- sd(x, na.rm = TRUE)  
+  return((s / m) * 100)
 }
 
 #-----------------

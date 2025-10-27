@@ -146,7 +146,11 @@ Aditionally, when re-visiting model `fbs_M001` thin 1000 samples 1000 its discre
 ### October 16, 2025
 #### Creating Model `fbs_M002.1` thin 1000 and samples 1000
 
-S02 script for deefine models was transdormed to deactivate the binding of object l2_xy deactivated and avoiding coordinates a fixed effect. Check entry from September 30, 2025. Equally, deleted elevation_mean from XData as it is calculated automatically from the utilities fetch from covariates script. line ~1334 look for the object XData.
+S01 script to define models was transformed to deactivate the binding of object l2_xy deactivated and avoiding coordinates a fixed effect. Check entry from September 30, 2025. Equally, deleted elevation_mean from XData as it is calculated automatically from the utilities fetch from covariates script. line ~1334 look for the object XData.
 
+### October 18, 2025
+#### Creating Model `fbs_M005` thin 1000 and samples 1000
+
+S01 script models was transformed to remove creating object `frequent_species` and filtering of occurrence data. Check entry from September 30, 2025. Equally, deleted elevation_mean from XData as it is calculated automatically from the utilities fetch from covariates script. line ~792 look for the object XData.
 
 

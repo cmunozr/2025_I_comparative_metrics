@@ -9,7 +9,7 @@ library(dplyr)
 os <- Sys.info()['sysname']
 
 if (os == "Windows") {
-  output_base_path <- "E:"
+  output_base_path <- "D:"
 } else if (os %in% c("Linux", "Darwin")) {
   output_base_path <- "/media/pitm/My Passport/"
 }  
@@ -42,9 +42,7 @@ files_in_zip <- zip_list(zip_path) |>
   ) |> 
   group_by(var, year)
 
-files_in_zip[1:123, ] |>
+files_in_zip |>
   group_by(var, year) |>
   dplyr::group_walk(.f = ~ process_climate(..1, ..2, out_dir = clim, zip_path = zip_path))
 
-
-     
