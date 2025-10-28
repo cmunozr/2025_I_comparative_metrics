@@ -151,10 +151,9 @@ run_get_finbif <- F
 run_itis_routes <- F
 run_itis_bakx <- F
 run_polygon_buffers <- F
-run_process_covariates <- T
-run_calculate_XData <- T
+run_calculate_XData <- F
 run_new_var_XData <- F
-run_syn_for_mctavish <- T
+run_syn_for_mctavish <- F
 ```
 
 ## Data loading
@@ -519,12 +518,21 @@ master_routes <- routes |>
       mutate(no_data_NFI = TRUE),
     by = c("vakio", "year")
   ) |> 
+  ## FLag 5: some routes are not covered by the climatic variables, there is a need to automatize the flag
+  left_join(
+    occurr_sect_route |>
+      filter((vakio %in% c(9, 10, 23, 42) & year %in% c(2015, 2017, 2019, 2021))) |> 
+      distinct(vakio, year) |> 
+      mutate(no_data_clim = TRUE),
+    by = c("vakio", "year")
+  ) |> 
   mutate(
     has_target_species = tidyr::replace_na(has_target_species, FALSE),
     has_no_biotope_data = tidyr::replace_na(has_no_biotope_data, FALSE),
     has_incomplete_biotope_data = tidyr::replace_na(has_incomplete_biotope_data, FALSE),
     has_target_biotope = tidyr::replace_na(has_target_biotope, FALSE),
-    no_data_NFI = tidyr::replace_na(no_data_NFI, FALSE)
+    no_data_NFI = tidyr::replace_na(no_data_NFI, FALSE),
+    no_data_clim = tidyr::replace_na(no_data_clim, FALSE)
   )
 
 ```
@@ -715,7 +723,8 @@ valid_events <- master_routes |>
     has_no_biotope_data == FALSE, 
     has_target_biotope == TRUE,
     is_length_discrepant == FALSE,
-    no_data_NFI == FALSE
+    no_data_NFI == FALSE,
+    no_data_clim == FALSE
   )
 
 # Extract the unique IDs for the valid events and routes
@@ -1138,7 +1147,8 @@ if(run_calculate_XData | run_new_var_XData){
       
       if(length(unique_vars_to_process) == 0){
         
-        stop("There is no additional variable to add in XData, skipping. Check associated variables dictionary or if you want to re-run all covariates use run_calculate_XData = T.")
+        stop("There is no additional variable to add in XData, skipping. 
+             Check associated variables dictionary or if you want to re-run all covariates use run_calculate_XData = T")
       }
       
     }else{
@@ -1152,6 +1162,7 @@ if(run_calculate_XData | run_new_var_XData){
   all_results_list <- list()
   
   for (var_name in unique_vars_to_process) {
+    # var_name <- "rr_cv"
     
     if (!(var_name %in% mapping_functions$var_pre_processed)) next
     
@@ -1165,7 +1176,7 @@ if(run_calculate_XData | run_new_var_XData){
       filter(var_pre_processed == var_name)
     
     var_by_polygon <- raw_data |> 
-      group_by(polygon_id) |> 
+      group_by(polygon_id, year) |> 
       group_modify(~ {
         current_group_data <- .
         # .y contains the group's key, in this case, a tibble with the polygon_id
@@ -1207,7 +1218,20 @@ if(run_calculate_XData | run_new_var_XData){
         as_tibble(results)
       })
     
-    all_results_list[[var_name]] <- var_by_polygon
+    if(raw_data$dataset[1] == "clim"){
+      var_by_polygon <- var_by_polygon |>
+        mutate(year = ifelse(str_split(polygon_id, pattern = "_", simplify = T )[,2] == year, "_yr", "_yr_last" )) |>
+        pivot_wider(id_cols = polygon_id, 
+                    names_from = year, 
+                    values_from = plan_for_this_file$var_target, 
+                    names_prefix = plan_for_this_file$var_target
+        ) 
+      }
+    
+    
+    all_results_list[[var_name]] <- var_by_polygon |>
+      ungroup() |> 
+      select(-dplyr::any_of("year"))
   }
   
   if(run_new_var_XData){
@@ -1272,8 +1296,8 @@ vif_removed_variables <- c()
 vif_history <- list() # List to store VIF values at each step
 iteration <- 1
 
-
 repeat {
+  message(paste("iteration number", iteration))
   if (ncol(predictor_data) < 2) {
     print("Loop stopped: Not enough variables left to calculate VIF.")
     break
@@ -1320,7 +1344,7 @@ ggplot(vif_plot_data, aes(x = Variable, y = VIF)) +
     x = "Predictor Variable",
     y = "Variance Inflation Factor (VIF)"
   ) +
-  facet_wrap(~Iteration, scales = "free_x") +
+  facet_wrap(~Iteration, scales = "free") +
   theme_minimal(base_size = 11) +
   theme(
     axis.text.x = element_text(angle = 90, hjust = 1)
@@ -1333,8 +1357,8 @@ ggplot(vif_plot_data, aes(x = Variable, y = VIF)) +
 length(vif_keep_variables)
 
 XData <- XData |> 
-   dplyr::select(any_of(vif_keep_variables)) |>
-   cbind(l2_xy)
+   dplyr::select(any_of(vif_keep_variables))# |>
+#   cbind(l2_xy)
 ```
 
 

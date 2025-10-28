@@ -153,4 +153,25 @@ S01 script to define models was transformed to deactivate the binding of object 
 
 S01 script models was transformed to remove creating object `frequent_species` and filtering of occurrence data. Check entry from September 30, 2025. Equally, deleted elevation_mean from XData as it is calculated automatically from the utilities fetch from covariates script. line ~792 look for the object XData.
 
+### October 20, 2025
+#### General 
+
+**Miscelaneus notes:** the need for a justification of use coordinates as a covariate in fixed effects and its challenging nature makes me think if I can use climatic variables to reduce the need of the spatial explicit model.
+
+**Action Plan:**
+
+1. Run model `fbs_M006` which will be structurally similar to the foundational model `fbs_M001` but using climatic variables as fixed effects without spatial covariates.
+2. Run model `fbs_M007` which will be structurally similar to the foundational model with species occurrence threshold `fbs_M002` but using climatic variables as fixed effects without spatial covariates.
+
+In order to create models with climatic variables, it was needed to create script `_utilities_preprocess_climatic_covariates.R` (from daily data to 4 months period summer data) as well as refactor `_utilities_fetch_covariates.R` and some functions from`_utilities_transform_covariates.R`
+
+### October 27, 2025
+#### Creating Model `fbs_M006` thin 1000 and samples 1000
+
+S01 was modified in several lines of code:
+1. removing some vakio-year combination that doesnt have data in the climatic layers (some Islands without cover), it is doing manually unfortunately by hard coding
+2. calculating climatic variables, followint the advised of researchers in Jyvaskylla temperature and precipitation take into account inmediate past year of the observation
+
+The fixed effect object and transform chunk of code was deactivated. 
+
 

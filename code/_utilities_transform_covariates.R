@@ -483,6 +483,7 @@ extract_raw_values <- function(polygons_sf,
   
   target_crs <- raster_info_df$raster_crs[1]
   
+  # Metso doesnt vary with years
   if(polygons_sf$set[1] == "metso"){
     polygons_sf <- polygons_sf |> 
       mutate(year = raster_info_df$year[1])
@@ -494,14 +495,25 @@ extract_raw_values <- function(polygons_sf,
   folder_name <- file.path(root_output_dir, "intermediate_by_tile", paste0(raster_info_df$dataset[1], "-", polygons_sf$set[1]))
   dir.create(folder_name, showWarnings = FALSE, recursive = TRUE)
   
+  
+  dataset_type <- raster_info_df$dataset[1]
+  current_raster_year <- raster_info_df$year[1]
+  
+  if (dataset_type == "clim") {
+    # For 'clim', get polygons from the raster year AND the following year
+    target_polygon_years <- c(current_raster_year, current_raster_year + 1)
+  } else {
+    target_polygon_years <- c(current_raster_year)
+  }
+  
   if(!only_paths){
     polygons_reprojected <- polygons_sf |>
-      filter(year == raster_info_df$year[1]) |>
-      st_transform(crs = target_crs) 
+      filter(year %in% target_polygon_years) |>
+      st_transform(crs = target_crs)  
   }else{
     polygons_reprojected <- polygons_sf |> 
       st_drop_geometry() |> 
-      filter(year == raster_info_df$year[1]) 
+      filter(year %in% target_polygon_years)
   }
   
   created_files <- c()
@@ -622,6 +634,7 @@ aggregate_covariates <- function(raw_data_list,
   saved_files <- c()
   
   for (i in 1:length(raw_data_list)) {
+    # i <- 15
     message(paste("Processing", polygon_type, "group", i, "of", length(raw_data_list)))
     
     file_paths <- raw_data_list[[i]]

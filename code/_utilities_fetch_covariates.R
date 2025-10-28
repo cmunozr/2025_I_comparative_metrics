@@ -217,7 +217,7 @@ for(i in 1:length(datasets)){
 
 #-----------------------
 
-master_covariates <- bind_rows(tree_high_europe, luke, dem)
+master_covariates <- bind_rows(tree_high_europe, luke, dem, clim)
 # master_covariates <- dem
 write.csv(master_covariates, file.path("data", "master_covariates_temp.csv"), row.names = F)
 coords_utm_join <- bind_rows(coords_utm_join)
