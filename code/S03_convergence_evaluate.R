@@ -1,9 +1,9 @@
 # This script automatically evaluates the MCMC convergence for EACH run defined
 # in the config_model.R grid. For each run, it creates a dedicated 'convergence'
 # sub-folder containing:
-#   1. A detailed text report ('convergence_report.txt').
+#   1. A text report ('convergence_report.txt').
 #   2. A PDF of MCMC trace plots for key parameters ('trace_plots.pdf').
-#   3. Raw data CSVs for PSRF and ESS values, to be used by the S04 comparison script.
+#   3. Raw data CSVs for PSRF and ESS values, to be used by the S03b.
 
 # --- 1. Load Libraries and Configuration ---
 library(Hmsc)
@@ -31,7 +31,7 @@ for (i in 1:nrow(run_config$mcmc)) {
   run_name <- generate_run_name(run_config)[i]
   message(paste0("\n--- Processing Grid Row ", i, ": ", run_name, " ---"))
   
-  fitted_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".RData"))
+  fitted_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
   evaluation_dir <- file.path("models", run_name, "convergence")
   
   # --- B. Pre-run Checks ---
@@ -49,7 +49,7 @@ for (i in 1:nrow(run_config$mcmc)) {
   # --- C. Evaluation of convergence ---
   tryCatch({
     dir.create(evaluation_dir, recursive = TRUE, showWarnings = FALSE)
-    load(fitted_model_path)
+    fitted_model <- readRDS(fitted_model_path)
     
     if(run_config$mcmc$n_chains[i] < 2) {
       warning("Convergence diagnostics require at least 2 chains. Skipping run.")

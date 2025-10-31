@@ -171,7 +171,13 @@ In order to create models with climatic variables, it was needed to create scrip
 S01 was modified in several lines of code:
 1. removing some vakio-year combination that doesnt have data in the climatic layers (some Islands without cover), it is doing manually unfortunately by hard coding
 2. calculating climatic variables, followint the advised of researchers in Jyvaskylla temperature and precipitation take into account inmediate past year of the observation
+3. deactivate min threshold occurrences
 
-The fixed effect object and transform chunk of code was deactivated. 
+The fixed effect object for coordinates chunk of code was deactivated. 
+
+### October 28, 2025
+#### Creating Model `fbs_M007` thin 1000 and samples 1000
+
+Here, I activate min threshold occurrences. The fixed effect object  for coordinates chunk of code was deactivated. 
 
 

@@ -4,7 +4,7 @@ run_config <- list(
   
   # A unique ID for the model's structure (data, formulas, random effects).
   # This should match an entry in experiments_log/model_definition_log.csv
-  model_id = "fbs_M006",
+  model_id = "fbs_M007",
   
   # MCMC sampling parameters
   mcmc = data.frame(
@@ -27,6 +27,11 @@ run_config <- list(
     nohup_dir = "/home/avesta/munozcs/Documents/nohup_chains",
     # Define the base server path for model files
     server_models_dir = "models" 
+  ),
+  
+  # Cross-validation
+  cv = list(
+    k = 2
   )
 )
 

@@ -90,7 +90,6 @@ for (i in 1:nrow(run_config$mcmc)) {
 }
 
 # --- 4. Plotting Section ---
-# This section uses your original, excellent plotting functions.
 run_names_found <- names(psrf.beta.all) # Use the runs we actually found data for
 if(length(run_names_found) == 0) {
   stop("No evaluation data found. Please run the S03 script first.")
@@ -98,7 +97,7 @@ if(length(run_names_found) == 0) {
 model_colors <- rainbow_hcl(length(run_names_found))
 names(model_colors) <- run_names_found
 
-# Your plot_vioplot_section function for PSRF
+# Plot_vioplot_section function for PSRF
 plot_vioplot_section <- function(data_list, title_suffix, y_range_full, y_range_zoom, color_map) {
   if(length(data_list) > 0) {
     max_len <- max(sapply(data_list, length))
@@ -118,7 +117,7 @@ plot_vioplot_section <- function(data_list, title_suffix, y_range_full, y_range_
   }
 }
 
-# Your plot_vioplot_section_ess function for ESS
+# Plot_vioplot_section_ess function for ESS
 plot_vioplot_section_ess <- function(data_list, title_suffix, y_range_full, color_map, min_ess_threshold = 400) {
   if(length(data_list) > 0) {
     max_len <- max(sapply(data_list, length))
@@ -150,3 +149,12 @@ plot_vioplot_section_ess(ess.V.all, "V", c(0, max(unlist(ess.V.all), na.rm = TRU
 plot_vioplot_section_ess(ess.omega.all, "Omega", c(0, max(unlist(ess.omega.all), na.rm = TRUE)), model_colors)
 plot_vioplot_section_ess(ess.alpha.all, "Alpha", c(0, max(unlist(ess.alpha.all), na.rm = TRUE)), model_colors)
 dev.off()
+
+# library(Hmsc)
+# fitted_model <- readRDS("models/fbs_M007_thin_1000_samples_1000_chains_4/fitted_fbs_M007_thin_1000_samples_1000_chains_4.rds")
+# postBeta = getPostEstimate(fitted_model, parName="Beta")
+# plotBeta(fitted_model, post=postBeta, param = "Support",
+#          plotTree = FALSE,
+#          covNamesNumbers = c(FALSE,TRUE),
+#          spNamesNumbers=c(FALSE,FALSE),
+#          cex=c(0.6,0.6,0.8))
