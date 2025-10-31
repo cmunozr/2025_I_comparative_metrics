@@ -180,4 +180,24 @@ The fixed effect object for coordinates chunk of code was deactivated.
 
 Here, I activate min threshold occurrences. The fixed effect object  for coordinates chunk of code was deactivated. 
 
+### October 31, 2025
+#### Evaluating Model `fbs_M006` and `fbs_M007` thin 1000 and samples 1000
+
+`fbs_M006` parameter beta and V have higher maximums (2.01, 2.42) but the mean keeps inside good range, rho is worst (2.52). In terms of omega the random level year is worst (mean 1.10, max 2.45). The alpha takes a value of 1.53 in the mean.
+
+`fbs_M007` parameter beta and V have higher maximum (1.17, 1.23) when comparing with models like M003  but the mean keeps inside good range, rho is worst (1.23). In terms of omega the random level samplingunit is worst (mean 1.24, max 4.22). The alpha takes a value of 1.24 in the mean.
+
+**Miscelaneus notes:** Models `fbs_M006` and `fbs_M007` use some climatic covariates. However, as I use them looks like they are impoverishing the model and making it harder to converge. My experience and the papers tht I have read shows that using precipitation for birds is not quite informative, so why did I use it? Lets to keep just mean temperature of current and last year with a square term. Ullrika advised me to use a stricter prior in order to make a bayeslasso like approach. 
+
+On the other hand, in order to handle my time better, I have a question: How sensible is the PSRF (ESS for sure) to the number of chains used to calculate it?
+
+**Action plan:**
+1. Create model `fbs_M008`: Complete set of species, Forest covariates and Climatic variables (May-Aug): mean temperature –current, last year- and squared
+2. Create model `fbs_M009`: Species > 35 occurrences, Forest covariates, Climatic variables (May-Aug): mean temperature –current, last year- and squared
+3. Create model `fbs_M010`: Strict prior for Beta N(0,1) to N(0.10), and structure of `fbs_M008 (complete set of species, Forest covariates and Climatic variables (May-Aug): mean temperature –current, last year- and squared)
+4. Create model `fbs_M011`: Strict prior for Beta N(0,1) to N(0.10), and structure of `fbs_M009 (Species > 35 occurrences, Forest covariates, Climatic variables (May-Aug): mean temperature –current, last year- and squared)
+
+Lets to create first models `fbs_M008` and `fbs_M011`
+
+
 
