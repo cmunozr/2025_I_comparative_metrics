@@ -799,11 +799,11 @@ coords <- coords |>
 
 ```{r}
 # frequent_species <- occurr_sect_route |>
-#    group_by(acceptedName) |>
-#    summarise(n_occurrences = n(), .groups = "drop") |> 
-#    filter(n_occurrences >= 35) |> 
-#    pull(acceptedName)
-#  
+#   group_by(acceptedName) |>
+#   summarise(n_occurrences = n(), .groups = "drop") |> 
+#   filter(n_occurrences >= 35) |> 
+#   pull(acceptedName)
+#   
 # occurr_sect_route <- occurr_sect_route |> 
 #   filter(acceptedName %in% frequent_species)
 ```
@@ -1287,7 +1287,7 @@ vars_to_remove <- c("old_grow_indicator_ratio", "old_grow_indicator_agesum", "el
 # the last is an aliased coefficient with average_stand_length_gt200_mean, VIF can't run with
 
 predictor_data <- XData|> 
-  dplyr::select(-all_of(vars_to_remove))
+  dplyr::select(-all_of(vars_to_remove), -contains("precipitation"), -starts_with("min_t"), -starts_with("max_t"))
 
 ```
 
@@ -1358,7 +1358,7 @@ ggplot(vif_plot_data, aes(x = Variable, y = VIF)) +
 length(vif_keep_variables)
 
 XData <- XData |> 
-   dplyr::select(any_of(vif_keep_variables))# |>
+   dplyr::select(any_of(vif_keep_variables)) # |>
 #   cbind(l2_xy)
 ```
 
@@ -1487,8 +1487,8 @@ rL.locality <-  HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nN
 
 # XFormula <- average_stand_diameter_gt15_mean + average_stand_diameter_gt20_mean + average_stand_length_gt200_mean + average_stand_length_gt250_mean + old_grow_indicator + canopy_cover_whole_stand + canopy_cover_whole_stand_gt60_mean + canopy_cover_broadleaves + volume_spruce_gt150 + tree_extent + tree_height_mean + tree_height_stdev + tree_remove 
 
-XFormula <- paste0("~ ", paste(colnames(XData), collapse = " + ")) |> 
-  as.formula()
+XFormula <- paste0("~ ", paste(colnames(XData), collapse = " + "), " + poly(mean_temperature_yr_last, degree = 2) + poly(mean_temperature_yr, degree = 2)") |>
+  as.formula() 
 
 ```
 
@@ -1505,7 +1505,7 @@ TrFormula <- ~ log(Mass) + Trophic.Niche + Primary.Lifestyle + Migration
 
 ```{r}
 
-m <- Hmsc(Y = Y,
+m <- ?Hmsc(Y = Y,
  XData = XData, XFormula = XFormula,
  TrData = TrData, TrFormula = TrFormula,
  phyloTree = phyloTree,

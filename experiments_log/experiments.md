@@ -197,7 +197,16 @@ On the other hand, in order to handle my time better, I have a question: How sen
 3. Create model `fbs_M010`: Strict prior for Beta N(0,1) to N(0.10), and structure of `fbs_M008 (complete set of species, Forest covariates and Climatic variables (May-Aug): mean temperature –current, last year- and squared)
 4. Create model `fbs_M011`: Strict prior for Beta N(0,1) to N(0.10), and structure of `fbs_M009 (Species > 35 occurrences, Forest covariates, Climatic variables (May-Aug): mean temperature –current, last year- and squared)
 
-Lets to create first models `fbs_M008` and `fbs_M011`
+Lets to create first models `fbs_M009` and `fbs_M011` as the script and associated files are available already.
+
+### Novemeber 1, 2025
+#### Creating models `fbs_M008`and `fbs_M009` thin 1000 and samples 1000
+
+Both models are structurally similar, what it changes is filtering by number of occurrences under a threshold. This is just a matter of turn on or turn off a feature. To create these models, it was need to:
+1. Edit the predictor_data object in order to remove precipitation, minimum and maximum temperature related variables. Linea ~1289
+2. Edit the XFormula object in order to add into the string the poly terms for mean_temperature of the current and last year.
+
+
 
 
 
