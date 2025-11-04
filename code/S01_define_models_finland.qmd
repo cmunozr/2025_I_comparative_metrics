@@ -1505,7 +1505,7 @@ TrFormula <- ~ log(Mass) + Trophic.Niche + Primary.Lifestyle + Migration
 
 ```{r}
 
-m <- ?Hmsc(Y = Y,
+m <- Hmsc(Y = Y,
  XData = XData, XFormula = XFormula,
  TrData = TrData, TrFormula = TrFormula,
  phyloTree = phyloTree,
@@ -1513,6 +1513,20 @@ m <- ?Hmsc(Y = Y,
  studyDesign = studyDesign, ranLevels = list("vakio" = rL.locality, "year" = rL.year, "sampleUnit" = rL.sampleUnit)
  )
 ```
+
+```{r}
+# Get the number of covariates (nc) and traits (nt)
+nc <- m$nc
+nt <- m$nt
+
+# 2. Set a strong shrinkage (ridge) prior
+# Set the prior variance UGamma to a small value (e.g., 0.1)
+# This forces the Gamma parameters (and thus Beta) to be close to zero.
+UGamma_strict <- diag(0.1, nc * nt) 
+
+m <- setPriors(m, UGamma = UGamma_strict) # Strong shrinkage (small variance)
+```
+
 
 ```{r}
 dir.create("models", showWarnings = F)

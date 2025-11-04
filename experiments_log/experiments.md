@@ -199,14 +199,20 @@ On the other hand, in order to handle my time better, I have a question: How sen
 
 Lets to create first models `fbs_M009` and `fbs_M011` as the script and associated files are available already.
 
-### Novemeber 1, 2025
+### October 31, 2025
 #### Creating models `fbs_M008`and `fbs_M009` thin 1000 and samples 1000
 
-Both models are structurally similar, what it changes is filtering by number of occurrences under a threshold. This is just a matter of turn on or turn off a feature. To create these models, it was need to:
+Both models are structurally similar, what it changes is filtering by number of occurrences under a threshold. This is just a matter of turn on or turn off a feature. However, to create these models, it was need to:
 1. Edit the predictor_data object in order to remove precipitation, minimum and maximum temperature related variables. Linea ~1289
 2. Edit the XFormula object in order to add into the string the poly terms for mean_temperature of the current and last year.
 
+### November 04, 2025
+#### Creating model `fbs_M010` thin 1000 and samples 1000
 
+Model `fbs_M010`, same structure as `fbs_M008`. 
+
+First, Understanding the prior distribution of fixed effects. Hsmc model species niches as a function of traits and phylogetic relationships as 
+$$vec(B) \sim N(vec(\Gamma T^T), [\rho C + (1-\rho)I_{n_s}] \otimes V)$$
 
 
 

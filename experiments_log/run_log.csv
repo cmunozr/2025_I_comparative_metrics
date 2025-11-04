@@ -10,5 +10,5 @@ fbs_M002.1_thin_1000_samples_1000_chains_4;fbs_M002;20251016;1000;1000;500000;4;
 fbs_M005_thin_1000_samples_1000_chains_4;fbs_M005;20251017;1000;1000;500000;4;Asimov;0a8a616;73,1;23;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models\fbs_M005_thin_1000_samples_2000_chains_4\convergence;
 fbs_M006_thin_1000_samples_1000_chains_4;fbs_M006;20251027;1000;1000;500000;4;Asimov;704637f;77,6;23;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models\fbs_M006_thin_1000_samples_2000_chains_4\convergence;
 fbs_M007_thin_1000_samples_1000_chains_4;fbs_M007;20251028;1000;1000;500000;4;kingma;3de059c;75,7;10;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models\fbs_M007_thin_1000_samples_2000_chains_4\convergence;
-fbs_M008_thin_1000_samples_1000_chains_4;fbs_M008;20251031;1000;1000;500000;4;Asimov;;;;;;
-fbs_M009_thin_1000_samples_1000_chains_4;fbs_M009;20251101;1000;1000;500000;4;kingma;;;;;;
+fbs_M008_thin_1000_samples_1000_chains_4;fbs_M008;20251031;1000;1000;500000;4;Asimov;dcad272;;23;;;
+fbs_M009_thin_1000_samples_1000_chains_4;fbs_M009;20251101;1000;1000;500000;4;kingma;dcad272;;10;;;
