@@ -31,15 +31,19 @@ for(i in 1:nrow(mcmc_params)){
   
   # --- Load the fitted Model ---
   fitted_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
-  hM <- readRDS(fitted_model_path)
-
+  m <- readRDS(fitted_model_path)
+  
   # --- Make partition ----
-  partition <- createPartition(hM, nfolds = run_config$cv$k)
+  partition <- createPartition(m, nfolds = run_config$cv$k)
   
   parts <- sort(unique(partition))
   
   # --- Create CV models ----
-  hM_cv <- lapply(X = parts, FUN = function(X) set_cv_training_model(k = X, hM = hM, partition = partition))
+  hM_cv <- lapply(X = parts, FUN = function(X){
+    cv_t_model <- set_cv_training_model(k = X, hM = m, partition = partition)
+    saveRDS(cv_t_model, file.path("models", run_name, "cv", paste0("unfitted_", run_name, "_cv_", X, ".rds")))
+    return(cv_t_model)
+  }) 
   
   run_specific_dir_local <- file.path(paths$models_dir, base_model_name)
   run_specific_dir_server <- file.path(run_config$server$server_models_dir, base_model_name)
@@ -97,3 +101,4 @@ write_commands_scripts(
   run_config = run_config
 )
 
+x <- readRDS("models/fbs_M003_thin_5_samples_10_chains_4/cv/unfitted_fbs_M003_thin_5_samples_10_chains_4_cv_4.rds")

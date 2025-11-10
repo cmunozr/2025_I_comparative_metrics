@@ -151,9 +151,9 @@ run_get_finbif <- F
 run_itis_routes <- F
 run_itis_bakx <- F
 run_polygon_buffers <- F
-run_calculate_XData <- F
+run_calculate_XData <- T
 run_new_var_XData <- F
-run_syn_for_mctavish <- F
+run_syn_for_mctavish <- T
 ```
 
 ## Data loading
@@ -798,14 +798,14 @@ coords <- coords |>
 
 
 ```{r}
-# frequent_species <- occurr_sect_route |>
-#   group_by(acceptedName) |>
-#   summarise(n_occurrences = n(), .groups = "drop") |> 
-#   filter(n_occurrences >= 35) |> 
-#   pull(acceptedName)
-#   
-# occurr_sect_route <- occurr_sect_route |> 
-#   filter(acceptedName %in% frequent_species)
+frequent_species <- occurr_sect_route |>
+  group_by(acceptedName) |>
+  summarise(n_occurrences = n(), .groups = "drop") |> 
+  filter(n_occurrences >= 35) |> 
+  pull(acceptedName)
+   
+occurr_sect_route <- occurr_sect_route |> 
+  filter(acceptedName %in% frequent_species)
 ```
 
 

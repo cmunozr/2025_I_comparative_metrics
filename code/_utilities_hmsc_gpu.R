@@ -274,9 +274,11 @@ set_cv_training_model <- function(k, hM, partition) {
   dfPi <- as.data.frame(matrix(NA,sum(train_rows),hM$nr),
                        stringsAsFactors = TRUE)
   colnames(dfPi) <- hM$rLNames
-  for(r in seq_len(hM$nr)){
-    dfPi[,r] <- factor(hM$dfPi[train_rows,r])
-  }
+  dfPi <- droplevels(hM$dfPi[train_rows,, drop=FALSE])
+  
+  # for(r in seq_len(hM$nr)){
+  #   dfPi[,r] <- factor(hM$dfPi[train_rows,r])
+  # }
   
   switch(class(hM$X)[1L],
          matrix = {
@@ -292,43 +294,36 @@ set_cv_training_model <- function(k, hM, partition) {
     XRRRTrain <- NULL
   }
 
-  hM1 <- Hmsc::Hmsc(
-    Y = hM$Y[train_rows, , drop = FALSE], 
-    X = X_train,
-    XRRR = hM$XRRR[train_rows, , drop = FALSE],
-    ncRRR = hM$ncRRR, 
-    XSelect = hM$XSelect,
-    distr = hM$distr,
-    # 'droplevels' removes "levels" of factors (e.g., sites) that no longer exist in the training subset.
-    studyDesign = droplevels(hM$dfPi[train_rows, , drop = FALSE]),
-    Tr = hM$Tr, 
-    C = hM$C, 
-    ranLevels = hM$rL
-  )
-  
-  hM1 <- setPriors(hM1, V0=hM$V0, f0=hM$f0, mGamma=hM$mGamma, UGamma=hM$UGamma, aSigma=hM$aSigma, bSigma=hM$bSigma, rhopw=hM$rhowp)
-  hM1$YScalePar <- hM$YScalePar
-  hM1$YScaled <- (hM1$Y - matrix(hM1$YScalePar[1,],hM1$ny,hM1$ns,byrow=TRUE)) / matrix(hM1$YScalePar[2,],hM1$ny,hM1$ns,byrow=TRUE)
-  hM1$XInterceptInd <- hM$XInterceptInd
-  hM1$XScalePar <- hM$XScalePar
+  hM1 = Hmsc(Y=hM$Y[train_rows,,drop=FALSE], Loff=hM$Loff[train_rows,,drop=FALSE],
+             XRRR=XRRRTrain, ncRRR = hM$ncRRR, XSelect = hM$XSelect,
+             distr=hM$distr, studyDesign=dfPi, C=hM$C, ranLevels=hM$rL,
+             XData = hM$XData[train_rows,,drop=FALSE], XFormula = hM$XFormula, 
+             TrData = hM$TrData, TrFormula = hM$TrFormula
+             )
+  hM1 = setPriors(hM1, V0=hM$V0, f0=hM$f0, mGamma=hM$mGamma, UGamma=hM$UGamma, aSigma=hM$aSigma, bSigma=hM$bSigma, rhopw=hM$rhowp,
+                  nfMax=3, nfMin=2)
+  hM1$YScalePar = hM$YScalePar
+  hM1$YScaled = (hM1$Y - matrix(hM1$YScalePar[1,],hM1$ny,hM1$ns,byrow=TRUE)) / matrix(hM1$YScalePar[2,],hM1$ny,hM1$ns,byrow=TRUE)
+  hM1$XInterceptInd = hM$XInterceptInd
+  hM1$XScalePar = hM$XScalePar
   switch(class(hM$X)[1L],
          matrix = {
-           hM1$XScaled <- (hM1$X - matrix(hM1$XScalePar[1,],hM1$ny,hM1$ncNRRR,byrow=TRUE)) / matrix(hM1$XScalePar[2,],hM1$ny,hM1$ncNRRR,byrow=TRUE)
+           hM1$XScaled = (hM1$X - matrix(hM1$XScalePar[1,],hM1$ny,hM1$ncNRRR,byrow=TRUE)) / matrix(hM1$XScalePar[2,],hM1$ny,hM1$ncNRRR,byrow=TRUE)
          },
          list = {
-           hM1$XScaled <- list()
+           hM1$XScaled = list()
            for (zz in seq_len(length(hM1$X))){
-             hM1$XScaled[[zz]] <- (hM1$X[[zz]] - matrix(hM1$XScalePar[1,],hM1$ny,hM1$ncNRRR,byrow=TRUE)) / matrix(hM1$XScalePar[2,],hM1$ny,hM1$ncNRRR,byrow=TRUE)
+             hM1$XScaled[[zz]] = (hM1$X[[zz]] - matrix(hM1$XScalePar[1,],hM1$ny,hM1$ncNRRR,byrow=TRUE)) / matrix(hM1$XScalePar[2,],hM1$ny,hM1$ncNRRR,byrow=TRUE)
            }
          }
   )
   if(hM1$ncRRR>0){
-    hM1$XRRRScalePar <- hM$XRRRScalePar
-    hM1$XRRRScaled <- (hM1$XRRR - matrix(hM1$XRRRScalePar[1,],hM1$ny,hM1$ncORRR,byrow=TRUE)) / matrix(hM1$XRRRScalePar[2,],hM1$ny,hM1$ncORRR,byrow=TRUE)
+    hM1$XRRRScalePar = hM$XRRRScalePar
+    hM1$XRRRScaled = (hM1$XRRR - matrix(hM1$XRRRScalePar[1,],hM1$ny,hM1$ncORRR,byrow=TRUE)) / matrix(hM1$XRRRScalePar[2,],hM1$ny,hM1$ncORRR,byrow=TRUE)
   }
-  hM1$TrInterceptInd <- hM$TrInterceptInd
-  hM1$TrScalePar <- hM$TrScalePar
-  hM1$TrScaled <- (hM1$Tr - matrix(hM1$TrScalePar[1,],hM1$ns,hM1$nt,byrow=TRUE)) / matrix(hM1$TrScalePar[2,],hM1$ns,hM1$nt,byrow=TRUE)
+  hM1$TrInterceptInd = hM$TrInterceptInd
+  hM1$TrScalePar = hM$TrScalePar
+  hM1$TrScaled = (hM1$Tr - matrix(hM1$TrScalePar[1,],hM1$ns,hM1$nt,byrow=TRUE)) / matrix(hM1$TrScalePar[2,],hM1$ns,hM1$nt,byrow=TRUE)
   
   return(hM1)
 }
@@ -348,7 +343,7 @@ set_cv_training_model <- function(k, hM, partition) {
 #'   run was skipped or failed.
 #'
 
-import_posterior <- function(mcmc = mcmc_i, config = run_config_i, run_nm = run_name, 
+import_posterior <- function(mcmc = mcmc_i, config = run_config, run_nm = run_name, 
                              partition_number = NULL ){
   
   # --- A. have these runs already been imported?
@@ -399,9 +394,15 @@ import_posterior <- function(mcmc = mcmc_i, config = run_config_i, run_nm = run_
   tryCatch({
     
     # Load the original unfitted model structure
-    unfitted_rdata_path <- file.path("models", paste0("unfitted_", config$model_id, ".RData"))
-    load(unfitted_rdata_path)
-    unfitted_model <- models[[1]]
+    if(is.null(partition_number)){
+      unfitted_path <- file.path("models", paste0("unfitted_", config$model_id, ".RData"))
+      load(unfitted_rdata_path)
+      unfitted_model <- models[[1]]  
+    }else{
+      unfitted_path <- file.path("models", run_nm, "cv", paste0("unfitted_", run_nm, "_cv_", partition_number, ".rds"))
+      unfitted_model <- readRDS(unfitted_path)
+    }
+    
     
     post_list <- list()
     for (chain_path in existing_chains) {

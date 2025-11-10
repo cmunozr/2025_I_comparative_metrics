@@ -11,7 +11,7 @@ python -m pip install git+https://github.com/hmsc-r/hmsc-hpc.git@main
 python -m pip install tensorflow-probability==0.24.0
 export TF_CPP_MIN_LOG_LEVEL=3
 python -c 'import tensorflow as tf; print(tf.constant(1))'
-python -c 'import hmsc
+python -c 'import hmsc'
 deactivate
 
 1. Initiate the RDS and create the GPU calls, follow instructions there

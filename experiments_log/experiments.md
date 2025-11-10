@@ -214,5 +214,8 @@ Model `fbs_M010`, same structure as `fbs_M008`.
 First, Understanding the prior distribution of fixed effects. Hsmc model species niches as a function of traits and phylogetic relationships as 
 $$vec(B) \sim N(vec(\Gamma T^T), [\rho C + (1-\rho)I_{n_s}] \otimes V)$$
 
+"The prior for the species niches Β is defined implicitly by defining the priors of how traits influence species niches ($$\Gamma$$), what kind of residual variation there is on top of the influence of species niches (V), and how strongly the residual variance is influenced by phylogenetic relationships (ρ)"
+
+In this way, the priors for gamma can be set using setPriors(). There I needed to edit the `UGamma`parameter what controls "covariance matrix for the prior multivariate Gaussian distribution for Gamma parameters". Object `UGamma_strict`was setup as a matrix with diag(0.1, nc * nt). Being nc the number of covariates and nt the number of traits. 
 
 
