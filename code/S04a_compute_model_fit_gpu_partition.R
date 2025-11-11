@@ -34,7 +34,7 @@ for(i in 1:nrow(mcmc_params)){
   m <- readRDS(fitted_model_path)
   
   # --- Make partition ----
-  partition <- createPartition(m, nfolds = run_config$cv$k)
+  partition <- createPartition(m, nfolds = run_config$cv$k, column = "vakio")
   
   parts <- sort(unique(partition))
   
@@ -91,7 +91,7 @@ for(i in 1:nrow(mcmc_params)){
   
 }
 
-# --- 7. Write .sh command scripts for python ---
+# --- 6. Write .sh command scripts for python ---
 
 write_commands_scripts(
   execution_mode = run_config$gpu$execution_mode, 

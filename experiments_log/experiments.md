@@ -228,3 +228,7 @@ According to the distribution of the psrf and ess I will do the comparisson usin
 
 Starting cross validation. Number of folds 4. Random selection of routes sampling units to be used in the validation. This test is gonna be overstimate the performance of the models, maybe the randomnization should be at the level of route. A test set could be a better challenge.
 
+### November 11, 2025
+
+The scheme of cross validation though was random but we can make it better using a stratification by route or "vakio". In this way the overstimation will be low as I am not predicting highly correlated/ near unitSamples between each other. 
+
