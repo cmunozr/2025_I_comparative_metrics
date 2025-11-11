@@ -218,4 +218,13 @@ $$vec(B) \sim N(vec(\Gamma T^T), [\rho C + (1-\rho)I_{n_s}] \otimes V)$$
 
 In this way, the priors for gamma can be set using setPriors(). There I needed to edit the `UGamma`parameter what controls "covariance matrix for the prior multivariate Gaussian distribution for Gamma parameters". Object `UGamma_strict`was setup as a matrix with diag(0.1, nc * nt). Being nc the number of covariates and nt the number of traits. 
 
+### November 10, 2025
+
+According to the distribution of the psrf and ess I will do the comparisson using the median for all the models. In that way, converging models are:
+
+- fbs_M003_thin_1000_samples_1000
+- fbs_M005_thin_1000_samples_1000
+- fbs_M008_thin_1000_samples_1000
+
+Starting cross validation. Number of folds 4. Random selection of routes sampling units to be used in the validation. This test is gonna be overstimate the performance of the models, maybe the randomnization should be at the level of route. A test set could be a better challenge.
 

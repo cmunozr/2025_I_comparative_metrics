@@ -8,10 +8,11 @@ python -m venv hmsc-venv
 source hmsc-venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install git+https://github.com/hmsc-r/hmsc-hpc.git@main
+When CUDA error: pip install tensorflow[and-cuda] (seehttps://www.tensorflow.org/install/pip)
 python -m pip install tensorflow-probability==0.24.0
 export TF_CPP_MIN_LOG_LEVEL=3
 python -c 'import tensorflow as tf; print(tf.constant(1))'
-python -c 'import hmsc'
+python -c 'import hmsc'; pip show hmsc
 deactivate
 
 1. Initiate the RDS and create the GPU calls, follow instructions there

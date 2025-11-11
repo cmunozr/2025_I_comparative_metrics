@@ -396,7 +396,7 @@ import_posterior <- function(mcmc = mcmc_i, config = run_config, run_nm = run_na
     # Load the original unfitted model structure
     if(is.null(partition_number)){
       unfitted_path <- file.path("models", paste0("unfitted_", config$model_id, ".RData"))
-      load(unfitted_rdata_path)
+      load(unfitted_path)
       unfitted_model <- models[[1]]  
     }else{
       unfitted_path <- file.path("models", run_nm, "cv", paste0("unfitted_", run_nm, "_cv_", partition_number, ".rds"))

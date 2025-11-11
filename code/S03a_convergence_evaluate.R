@@ -26,7 +26,7 @@ num_trace_plots <- 5
 
 # --- 3. Main Loop: Iterate Over the MCMC Grid ---
 for (i in 1:nrow(run_config$mcmc)) {
-  # i <- 3
+  # i <- 1
   # --- A. Setup for the Current Run ---
   run_name <- generate_run_name(run_config)[i]
   message(paste0("\n--- Processing Grid Row ", i, ": ", run_name, " ---"))

@@ -41,6 +41,7 @@ for(i in 1:nrow(mcmc_params)){
   # --- Create CV models ----
   hM_cv <- lapply(X = parts, FUN = function(X){
     cv_t_model <- set_cv_training_model(k = X, hM = m, partition = partition)
+    dir.create(file.path("models", run_name, "cv"), showWarnings = F, recursive = T)
     saveRDS(cv_t_model, file.path("models", run_name, "cv", paste0("unfitted_", run_name, "_cv_", X, ".rds")))
     return(cv_t_model)
   }) 
@@ -61,7 +62,7 @@ for(i in 1:nrow(mcmc_params)){
     hm_cv_p <- hM_cv[[p]]
     
     # Step A: Prepare the R-side Hmsc object
-    prepared_model <- prepare_hpc_model(hm_cv_p, mcmc_params_i)
+    prepared_model <- prepare_hpc_model(hm_cv_p, run_config$cv$mcmc_temp)
     
     # Step B: Save the prepared model as JSON-RDS
     model_saved <- save_prepared_model(prepared_model, output_rds_path_local[p])
@@ -100,5 +101,3 @@ write_commands_scripts(
   base_model_name = paste0(run_config$model_id, "_cv"),
   run_config = run_config
 )
-
-x <- readRDS("models/fbs_M003_thin_5_samples_10_chains_4/cv/unfitted_fbs_M003_thin_5_samples_10_chains_4_cv_4.rds")
