@@ -267,7 +267,7 @@ write_commands_scripts <- function(execution_mode, txt_commands, gpu_commands,
 #' @return [Hmsc] A new, *unfitted* `Hmsc` model object configured for
 #'   the k-th training set.
 #'
-set_cv_training_model <- function(k, hM, partition) {
+set_training_model <- function(k, hM, partition) {
   
   train_rows <- k != partition
   

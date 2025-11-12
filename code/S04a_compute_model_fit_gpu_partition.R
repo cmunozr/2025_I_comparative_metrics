@@ -3,7 +3,10 @@ library(Hmsc)
 library(jsonify)
 source("code/config_model.R")
 source("code/_utilities_hmsc_gpu.R")
-set.seed(110724)
+set.seed(11072024)
+
+# This is a Crossvalidation model fit or a spatial hold-out
+do_spatial_holdout <- TRUE
 
 # --- 2. Configuration and Setup ---
 run_name <- generate_run_name(run_config)
@@ -33,33 +36,65 @@ for(i in 1:nrow(mcmc_params)){
   fitted_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
   m <- readRDS(fitted_model_path)
   
-  # --- Make partition ----
-  partition <- createPartition(m, nfolds = run_config$cv$k, column = "vakio")
-  
-  parts <- sort(unique(partition))
-  
-  # --- Create CV models ----
-  hM_cv <- lapply(X = parts, FUN = function(X){
-    cv_t_model <- set_cv_training_model(k = X, hM = m, partition = partition)
-    dir.create(file.path("models", run_name, "cv"), showWarnings = F, recursive = T)
-    saveRDS(cv_t_model, file.path("models", run_name, "cv", paste0("unfitted_", run_name, "_cv_", X, ".rds")))
-    return(cv_t_model)
-  }) 
-  
   run_specific_dir_local <- file.path(paths$models_dir, base_model_name)
   run_specific_dir_server <- file.path(run_config$server$server_models_dir, base_model_name)
   
-  cv_dir <- file.path(run_specific_dir_local, "cv")
-  dir.create(cv_dir, showWarnings = F)
+  if(do_spatial_holdout){
+    
+    label <- "ho"
+    m$studyDesign$vakio <- as.numeric(m$studyDesign$vakio)
+    
+    # --- Make partition ----
+    ho_routes <- read.csv(run_config$test$test_dir) |> 
+      dplyr::select(vakio, is_metso) |> 
+      dplyr::distinct(vakio, .keep_all = TRUE)
+    
+    study_design_with_ho <- m$studyDesign %>%
+      dplyr::left_join(ho_routes, by = "vakio")
+    
+    partition <- ifelse(
+      !is.na(study_design_with_ho$is_metso) & study_design_with_ho$is_metso == 1,
+      2, # Fold 2 = Test Set
+      1  # Fold 1 = Training Set
+    )
+    
+    parts <- 1
+    
+    # --- Create ho models ----
+    hM_ <- list(set_training_model(k = 2, hM = m, partition = partition))
+    dir.create(file.path("models", run_name, label), showWarnings = F, recursive = T)
+    saveRDS(hM_, file.path("models", run_name, label, paste0("unfitted_", run_name, "_", label, "_", parts, ".rds")))
+    
+  }else{
+    
+    label <- "cv"
+    
+    # --- Make partition ----
+    partition <- createPartition(m, nfolds = run_config$cv$k, column = "vakio")
+    
+    parts <- sort(unique(partition))
+    
+    # --- Create CV models ----
+    hM_ <- lapply(X = parts, FUN = function(X){
+      cv_t_model <- set_training_model(k = X, hM = m, partition = partition)
+      dir.create(file.path("models", run_name, label), showWarnings = F, recursive = T)
+      saveRDS(cv_t_model, file.path("models", run_name, label, paste0("unfitted_", run_name, "_", label, "_", X, ".rds")))
+      return(cv_t_model)
+    }) 
+    
+  }
   
-  cv_name <- paste0(base_model_name, "_cv_", parts)
-  output_rds_path_local <- file.path(cv_dir, paste0(cv_name, ".rds"))
+  eval_dir <- file.path(run_specific_dir_local, label)
+  dir.create(eval_dir, showWarnings = F)
   
-  saveRDS(partition, file = file.path(cv_dir, paste0("partition.rds")))
+  eval_name <- paste0(base_model_name, "_", label, "_", parts)
+  output_rds_path_local <- file.path(eval_dir, paste0(eval_name, ".rds"))
+  
+  saveRDS(partition, file = file.path(eval_dir, paste0("partition.rds")))
   
   for(p in 1:length(parts)){
     # p <- 1
-    hm_cv_p <- hM_cv[[p]]
+    hm_cv_p <- hM_[[p]]
     
     # Step A: Prepare the R-side Hmsc object
     prepared_model <- prepare_hpc_model(hm_cv_p, run_config$cv$mcmc_temp)
@@ -70,7 +105,7 @@ for(i in 1:nrow(mcmc_params)){
     # Step C: Generate commands and add to aggregators
     if (model_saved) {
       commands <- generate_commands(
-        base_model_name = cv_name[p], # Use the unique name
+        base_model_name = eval_name[p], # Use the unique name
         run_specific_dir_server = run_specific_dir_server,
         mcmc_params = mcmc_params_i,
         run_config = run_config
