@@ -1,20 +1,18 @@
 # --- 1. Load Libraries and Utils ---
 library(Hmsc)
+library(here)
 library(jsonify)
 source("code/config_model.R")
 source("code/_utilities_hmsc_gpu.R")
 
 # --- 2. Configuration and Setup ---
-run_name <- generate_run_name(run_config)
-paths <- list(
-  local_dir = getwd(),
-  models_dir = file.path(getwd(), "models"),
-  unfitted_models_file = file.path("models", paste0("unfitted_", run_config$model_id, ".RData"))
-)
-dir.create(paths$models_dir, recursive = TRUE, showWarnings = FALSE)
+models_dir <- file.path(here::here(), "models")
+unfitted_models_file <- file.path("models", paste0("unfitted_", run_config$model_id, ".RData"))
+
+dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
 
 # --- 3. Load the Unfitted Model ---
-load(file = paths$unfitted_models_file)
+load(file = unfitted_models_file)
 unfitted_model <- models[[run_config$model_id]]
 
 # --- 4. Define MCMC Parameters ---
@@ -28,12 +26,13 @@ gpu_commands_aggregated <- rep(list(data.frame(command=character(), log_filename
 # --- 6. Loop and Generate Commands ---
 for(i in 1:nrow(mcmc_params)){
   
+  run_name <- generate_run_name(run_config)[i]
   mcmc_params_i <- mcmc_params[i, ]
   message(paste0("\nProcessing config ", i, ": thin = ", mcmc_params_i$thin, ", samples = ", mcmc_params_i$samples))
   
   base_model_name <- run_name[i] 
   
-  run_specific_dir_local <- file.path(paths$models_dir, base_model_name)
+  run_specific_dir_local <- file.path(models_dir, base_model_name)
   run_specific_dir_server <- file.path(run_config$server$server_models_dir, base_model_name)
   output_rds_path_local <- file.path(run_specific_dir_local, paste0(base_model_name, ".rds"))
   
@@ -71,7 +70,7 @@ write_commands_scripts(
   execution_mode = run_config$gpu$execution_mode, 
   txt_commands = unlist(all_commands_aggregated),
   gpu_commands = gpu_commands_aggregated,
-  output_script_dir = paths$models_dir, 
+  output_script_dir = models_dir, 
   base_model_name = run_config$model_id,
   run_config = run_config
 )

@@ -23,7 +23,7 @@ S02_fit_models_gpu.R
 
 3. Make them executable in linux
 
-chmod +x /home/avesta/munozcs/Documents/XXX_run_gpu_*.sh 
+chmod +x /home/avesta/munozcs/Documents/*_run_gpu_*.sh 
 	example: .../fbs_M003_run_gpu_*.sh 
 
 4. Run the python command using something like: 

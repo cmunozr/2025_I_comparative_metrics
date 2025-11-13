@@ -256,7 +256,7 @@ write_commands_scripts <- function(execution_mode, txt_commands, gpu_commands,
 #'
 #' Creates a new, unfitted `Hmsc` model object based on a training subset
 #' of the data. This function is a core component of the k-fold 
-#' cross-validation (CV) workflow.
+#' cross-validation (CV) or spatial hold out (ho) workflow.
 #'
 #'
 #' @param k [integer] The index (e.g., 1) of the fold to be *excluded* from this training model.
@@ -344,26 +344,31 @@ set_training_model <- function(k, hM, partition) {
 #'
 
 import_posterior <- function(mcmc = mcmc_i, config = run_config, run_nm = run_name, 
-                             partition_number = NULL ){
+                             partition_number = NULL, label = NULL){
+  
+  if(!is.null(label)){
+    if(is.null(partition_number)) 
+      stop("Argument label can be used only if a partition is load at the same time")
+  }
   
   # --- A. have these runs already been imported?
 
   if(is.null(partition_number)){
     fitted_dir <- file.path("models", run_nm, paste0("fitted_", run_nm, ".rds"))
   }else{
-    fitted_dir <- file.path("models", run_nm, "cv", paste0("fitted_", run_nm, "_cv_", partition_number, ".rds"))
+    fitted_dir <- file.path("models", run_nm, label, paste0("fitted_", run_nm, "_", label, "_", partition_number, ".rds"))
   }
   
   if (file.exists(fitted_dir)){
-    warning("Output file already exists. Skipping.")  
-    return(invisible(FALSE))
+    warning("Output file already exists. Returning path.")  
+    return(fitted_dir)
   }
   
   # --- B. Find and Verify Posterior Chain Files ---
   run_specific_dir <- file.path("models", run_nm)
   
   if(!is.null(partition_number)){
-    run_specific_dir <- file.path("models", run_nm, "cv")
+    run_specific_dir <- file.path("models", run_nm, label)
   }
   
   if (!dir.exists(run_specific_dir)) {
@@ -378,7 +383,7 @@ import_posterior <- function(mcmc = mcmc_i, config = run_config, run_nm = run_na
   if(is.null(partition_number)){
     expected_filenames <- paste0(run_nm, "_post_chain", sprintf("%.2d", chain_indices), "_file.rds")
   }else{
-    expected_filenames <- paste0(run_nm, "_cv_", partition_number,"_post_chain", sprintf("%.2d", chain_indices), "_file.rds")
+    expected_filenames <- paste0(run_nm, "_", label, "_", partition_number,"_post_chain", sprintf("%.2d", chain_indices), "_file.rds")
   }
   
   chain_paths <- file.path(run_specific_dir, expected_filenames)
@@ -399,7 +404,7 @@ import_posterior <- function(mcmc = mcmc_i, config = run_config, run_nm = run_na
       load(unfitted_path)
       unfitted_model <- models[[1]]  
     }else{
-      unfitted_path <- file.path("models", run_nm, "cv", paste0("unfitted_", run_nm, "_cv_", partition_number, ".rds"))
+      unfitted_path <- file.path("models", run_nm, label, paste0("unfitted_", run_nm, "_", label, "_", partition_number, ".rds"))
       unfitted_model <- readRDS(unfitted_path)
     }
     

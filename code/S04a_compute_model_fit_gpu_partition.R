@@ -9,13 +9,7 @@ set.seed(11072024)
 do_spatial_holdout <- TRUE
 
 # --- 2. Configuration and Setup ---
-run_name <- generate_run_name(run_config)
-paths <- list(
-  local_dir = getwd(),
-  models_dir = file.path(getwd(), "models"),
-  unfitted_models_file = file.path("models", paste0("unfitted_", run_config$model_id, ".RData"))
-)
-dir.create(paths$models_dir, recursive = TRUE, showWarnings = FALSE)
+models_dir <- file.path(here::here(), "models")
 
 # --- 3. Define MCMC Parameters ---
 mcmc_params <- run_config$mcmc
@@ -27,6 +21,7 @@ gpu_commands_aggregated <- rep(list(data.frame(command=character(), log_filename
 # --- 5. Loop and Generate partition Commands ---
 for(i in 1:nrow(mcmc_params)){
   # i <- 1
+  run_name <- generate_run_name(run_config)[i]
   mcmc_params_i <- mcmc_params[i, ]
   message(paste0("\nProcessing config ", i, ": thin = ", mcmc_params_i$thin, ", samples = ", mcmc_params_i$samples))
   
@@ -36,7 +31,7 @@ for(i in 1:nrow(mcmc_params)){
   fitted_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
   m <- readRDS(fitted_model_path)
   
-  run_specific_dir_local <- file.path(paths$models_dir, base_model_name)
+  run_specific_dir_local <- file.path(models_dir, base_model_name)
   run_specific_dir_server <- file.path(run_config$server$server_models_dir, base_model_name)
   
   if(do_spatial_holdout){
@@ -49,7 +44,7 @@ for(i in 1:nrow(mcmc_params)){
       dplyr::select(vakio, is_metso) |> 
       dplyr::distinct(vakio, .keep_all = TRUE)
     
-    study_design_with_ho <- m$studyDesign %>%
+    study_design_with_ho <- m$studyDesign |>
       dplyr::left_join(ho_routes, by = "vakio")
     
     partition <- ifelse(
@@ -94,10 +89,10 @@ for(i in 1:nrow(mcmc_params)){
   
   for(p in 1:length(parts)){
     # p <- 1
-    hm_cv_p <- hM_[[p]]
+    hm_p <- hM_[[p]]
     
     # Step A: Prepare the R-side Hmsc object
-    prepared_model <- prepare_hpc_model(hm_cv_p, run_config$cv$mcmc_temp)
+    prepared_model <- prepare_hpc_model(hm_p, run_config$cv$mcmc_temp)
     
     # Step B: Save the prepared model as JSON-RDS
     model_saved <- save_prepared_model(prepared_model, output_rds_path_local[p])
@@ -132,7 +127,7 @@ write_commands_scripts(
   execution_mode = run_config$gpu$execution_mode, 
   txt_commands = unlist(all_commands_aggregated),
   gpu_commands = gpu_commands_aggregated,
-  output_script_dir = paths$models_dir, 
-  base_model_name = paste0(run_config$model_id, "_cv"),
+  output_script_dir = models_dir, 
+  base_model_name = paste0(run_config$model_id, "_", label),
   run_config = run_config
 )

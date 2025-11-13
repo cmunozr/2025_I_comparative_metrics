@@ -8,12 +8,13 @@
 library(tidyverse)
 library(vioplot)
 library(colorspace)
+library(here)
 
 source("code/config_model.R")
 
 # --- 2. Setup Directories and Initialize Data Lists ---
 model_id <- run_config$model_id
-output_dir <- file.path("models")
+output_dir <- file.path(here::here(), "models")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 message(paste0("--- Starting comparison for Model ID: ", model_id, " ---"))
