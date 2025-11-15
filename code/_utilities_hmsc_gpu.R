@@ -406,6 +406,9 @@ import_posterior <- function(mcmc = mcmc_i, config = run_config, run_nm = run_na
     }else{
       unfitted_path <- file.path("models", run_nm, label, paste0("unfitted_", run_nm, "_", label, "_", partition_number, ".rds"))
       unfitted_model <- readRDS(unfitted_path)
+      if(label == "ho"){
+        unfitted_model <- readRDS(unfitted_path)[[1]]
+      }
     }
     
     

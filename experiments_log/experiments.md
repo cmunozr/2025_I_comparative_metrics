@@ -220,7 +220,7 @@ In this way, the priors for gamma can be set using setPriors(). There I needed t
 
 ### November 10, 2025
 
-According to the distribution of the psrf and ess I will do the comparisson using the median for all the models. In that way, converging models are:
+According to the distribution of the psrf and ess (higly skewed to high measures) I will do the comparisson using the median for all the models. Script S04c allows us to pull all the convergence information of the models together. In that way, we can say that converging models are:
 
 - fbs_M003_thin_1000_samples_1000
 - fbs_M005_thin_1000_samples_1000
@@ -231,4 +231,15 @@ Starting cross validation. Number of folds 4. Random selection of routes samplin
 ### November 11, 2025
 
 The scheme of cross validation though was random but we can make it better using a stratification by route or "vakio". In this way the overstimation will be low as I am not predicting highly correlated/ near unitSamples between each other. 
+
+### November 12, 2025
+
+A hold-out test set for these models. Running.
+- routes less than 2km away from METSO areas
+- 89 routes as test set
+
+### November 13, 2025
+
+The running of the hold-out was stopped as I make a mistake in the chain, transit, thin setup. I didnt remove experimental numbers. Re run.
+
 

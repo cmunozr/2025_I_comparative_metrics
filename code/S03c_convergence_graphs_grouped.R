@@ -34,6 +34,15 @@ sum_name <- "Median"
 
 # --- 3. Data Aggregation Loop ---
 for (i in 1:length(convergence_folder)) {
+  
+  if(is.null(sum_func)){
+    stop("Provide an object function to summarize")
+  }else{
+    if(is.null(sum_name)){
+      stop("Provide a name to the function")
+    }
+  }
+  
   run_name <- model_setup[i]
   evaluation_dir <- convergence_folder[i]
   

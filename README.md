@@ -1,5 +1,5 @@
 
-# Comparative evaluation of alternative biodiversity metrics for reporting business biodiversity impacts - a simulation study in forestry 
+# Comparative Evaluation of Biodiversity Metrics for reporting Business Biodiversity Impact – an Assessment on Finnish Forest Birds 
 
 This repository stores code and functions to automate the construction of Joint Species Distribution Models (J-SDM). These functions utilize Hmsc as the modelling engine. The Hmsc model provides predictions at the species-community level. This enables the spatial representation of biodiversity to analyse and evaluate biodiversity metrics’ performance and variation through environmental and spatial gradients while counting for uncertainties.
 
@@ -66,21 +66,22 @@ IN CONSTRUCTION
 
 ## Authors and contact
 
-## Main depelovi
+## Main depeloving
 
 * [Carlos Jair Muñoz Rodriguez](https://www.linkedin.com/in/carlos-jair-munoz/)
 * [Ullrika Sahlin](https://www.cec.lu.se/ullrika-sahlin)
 
 ## Collaborators
 
+* [Henrik Smith](https://www.cec.lu.se/henrik-smith)
 * [Daniele Silvestro](https://bsse.ethz.ch/cevo/the-group/people/person-detail.dsilvestro.html)
 * [Dario Shultz](https://www.ilr1.uni-bonn.de/en/about-us/staff/dario-schulz)
 * [Aleksi Lehikoinen](https://researchportal.helsinki.fi/en/persons/aleksi-lehikoinen)
-* [Henrik Smith](https://www.cec.lu.se/henrik-smith)
+
 
 ## Acknowledgment
 
-* This development is supported by the Mistra BIOPATH project - Aligning the Financial System with the Needs of Biodiversity. [Project information](https://www.mistrabiopath.se/)
+* This development is supported by the [Mistra BIOPATH project](https://www.mistrabiopath.se/) - Aligning the Financial System with the Needs of Biodiversity. Also from the [Greenpole](https://greenpole.se/) an interdisciplinary research project generating evidence-based decision support for a sustainable use of Nordic forests. 
 
 ## License
 

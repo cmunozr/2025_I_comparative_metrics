@@ -32,7 +32,9 @@ for (i in 1:nrow(run_config$mcmc)) {
   message(paste0("\n--- Processing Grid Row ", i, ": ", run_name, " ---"))
   mcmc_i <- run_config$mcmc[i, ]
   
-  fitted_full_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
+  bnm <- file.path("models", run_name)
+  
+  fitted_full_model_path <- file.path(bnm, paste0("fitted_", run_name, ".rds"))
   hM <- readRDS(fitted_full_model_path)
   
   #-----------
@@ -45,15 +47,13 @@ for (i in 1:nrow(run_config$mcmc)) {
   
   #-----------
   cat("High memory use section, computing prediction of full model\n")
-  postList <- poolMcmcChains(hM$postList, start = 1, 
-                                     thin = 1)
-  predY <- predict(hM, post = postList, Yc = Yc, mcmcStep = 1, 
-                 expected = expected)
-  predY <- abind::abind(predY, along = 3)
+  predY <- computePredictedValues(hM)
   rm(postList); gc(); Sys.sleep(20)
   
-  cat("Calculating MF\n")
-  MF <- evaluateModelFit(hM = hM, predY=predY)
+  saveRDS(hM$Y, file.path(bnm, "Y.rds"))
+  saveRDS(hM$distr[,1], file.path(bnm, "distr_vector.rds"))
+  saveRDS(predY, file.path(bnm, "predY.rds"))
+  
   rm(predY);gc()
   #-----------
   
@@ -106,10 +106,10 @@ for (i in 1:nrow(run_config$mcmc)) {
     
     pred1 <- if (is.null(partition.sp)) {
       predict(m, post = postList, XData = XDataVal, 
-                    XRRR = NULL, #hM$XRRR[val,, drop=FALSE],
-                    Yc = NULL, #Yc[val,, drop=FALSE], 
-                    studyDesign = dfPi,
-                    mcmcStep = mcmcStep, expected = expected)
+              XRRR = NULL, #hM$XRRR[val,, drop=FALSE],
+              Yc = NULL, #Yc[val,, drop=FALSE], 
+              studyDesign = dfPi,
+              mcmcStep = mcmcStep, expected = expected)
     } else {
       getSpeciesFoldPrediction(hM, m, val, postList, dfPi,
                                partition.sp = partition.sp,
@@ -118,28 +118,18 @@ for (i in 1:nrow(run_config$mcmc)) {
                                nParallel = nParallel,
                                useSocket = useSocket)
     }
-    cat(sprintf("current mermory usage Ncels: %.1f MB Ncels: %.1f MB\n", gc()[3], gc()[4]))
-    cat("High memory use section, writing predictions to array\n")
-    predArray[val,,] <- simplify2array(pred1)
-    cat(sprintf("current mermory usage Ncels: %.1f MB Ncels: %.1f MB\n", gc()[3], gc()[4]))
-    cat("Cleaning up memory\n")
-    rm(pred1,val,m,postList,XDataVal,dfPi); gc()
-    cat("Memory clean complete\n")
-    cat(sprintf("current mermory usage Ncels: %.1f MB Ncels: %.1f MB\n", gc()[3], gc()[4]))
+    
+    bnm <- fitted_val_paths[[p]] |> dirname() 
+      
+    saveRDS(m$Y, file.path(bnm, paste0(label, "_", p, "_Y.rds")))
+    saveRDS(m$distr[,1], file.path(bnm, paste0(label, "_", p, "_distr_vector.rds")))
+    saveRDS(pred1, file.path(bnm, paste0(label, "_", p, "_predY.rds")))
+    
+    rm(pred1);gc();Sys.sleep(20)
   }
-  
-  #-----------
-  cat("Calculating MFCV\n")
-  MFEVAL <- evaluateModelFit(hM, predY=predArray)
-  rm(predArray); gc()
-  #-----------
-  
-  computational.time <- proc.time() - ptm
-  cat("Time taken:", computational.time[3],"s \n\n")
-  cat(sprintf("max mermory usage\n\tNcels: %.2f MB\n\tNcels: %.2f MB\n\tTotal: %.2f MB\n", gc()[11], gc()[12], gc()[11] + gc()[12]))
   
   dir_fit <- file.path("models", run_name, "model_fit") 
   dir.create(dir_fit, showWarnings = F, recursive = T)
   
-  saveRDS(list(MF = MF, MFEVAL = MFEVAL, WAIC = WAIC), file = file.path(dir_fit, paste0("metrics_", run_name, "_", label, nfolds, ".rds")))
+  saveRDS(list(WAIC = WAIC), file = file.path(dir_fit, paste0("metrics_", run_name, "_", label, nfolds, ".rds")))
 }

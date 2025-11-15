@@ -4,7 +4,7 @@ run_config <- list(
   
   # A unique ID for the model's structure (data, formulas, random effects).
   # This should match an entry in experiments_log/model_definition_log.csv
-  model_id = "fbs_M008",
+  model_id = "fbs_M003",
   
   # MCMC sampling parameters
   mcmc = data.frame(
@@ -33,8 +33,8 @@ run_config <- list(
   cv = list(
     k = 4,
     mcmc_temp = data.frame(
-      samples = 1000,
-      thin = 100,
+      samples = 10,
+      thin = 5,
       n_chains = 4,
       transient_proportion = 0.5, # following standard method on Hmsc course
       adapt_nf_proportion = 0.4 # following standard method on Hmsc course
