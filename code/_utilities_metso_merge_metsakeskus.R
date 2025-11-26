@@ -1,11 +1,12 @@
 library(sf)
 library(dplyr)
 
-paths_in <- list.files("data/metsakeskus/metsavarakuviot", full.names = T, recursive = F)
-metso_trt_control <- read.csv("data/metso/treatment_control_standid.csv")
+paths_in <- list.files(file.path("E:", "metsakeskus", "metsavarakuviot"), full.names = T, recursive = F)
+metso_trt_control <- read.csv(file.path("data", "metso", "treatment_control_standid.csv"))
 
-# Función para leer shapefiles desde archivos ZIP
-leer_gpkg_desde_zip <- function(zip_file, epsg = "EPSG:3067", metso = metso_trt_control, tmp.fol = "data/metsakeskus/metsavarakuviot") {
+# function to read geopackages from metsakeskus zip files
+read_gpkg_from_zip <- function(zip_file, epsg = "EPSG:3067", metso = metso_trt_control, 
+                                tmp.fol = file.path("data", "metsakeskus", "metsavarakuviot")) {
   #zip_file <- paths_in[6]
   temp_dir <- tmp.fol # Gets a system-specific temporary directory
   gpkg_unzip_dir <- file.path(temp_dir, "unzipped_gpkg_data")
@@ -27,11 +28,10 @@ leer_gpkg_desde_zip <- function(zip_file, epsg = "EPSG:3067", metso = metso_trt_
   return(gpkg)
 }
 
-shps <- paths_in |> 
-  lapply(X = ., function(X){
-    tmp <- leer_gpkg_desde_zip(X)
+gpkgs <- lapply(X = paths_in, function(X){
+    tmp <- read_gpkg_from_zip(X, tmp.fol = "data/metso/tmp")
   })
 
-metso_trt_control_stands <- bind_rows(shps)
+metso_trt_control_stands <- bind_rows(gpkgs)
 
-write_sf(metso_trt_control_stands, "data/metso/treatment_control_stand.gpkg", delete_layer = T)
+write_sf(metso_trt_control_stands, file.path("data", "metso", "treatment_control_stand.gpkg"), delete_layer = T)

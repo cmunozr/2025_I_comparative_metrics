@@ -1,6 +1,7 @@
 # --- 1. Load Libraries and Utils ---
 library(Hmsc)
 library(jsonify)
+library(dplyr)
 source("code/config_model.R")
 source("code/_utilities_hmsc_gpu.R")
 set.seed(11072024)

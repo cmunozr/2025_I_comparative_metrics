@@ -6,12 +6,8 @@ source(file.path("code","config_model.R"))
 source(file.path("code", "_utilities_hmsc_gpu.R"))
 set.seed(110724)
 
-if(!(Sys.getenv("RSTUDIO") == "1")){
-  setwd(here::here())
-}
-
 # This is a Crossvalidation model fit or a spatial hold-out
-do_spatial_holdout <- FALSE
+do_spatial_holdout <- TRUE
 
 # --- 2. Configuration and Setup ---
 models_dir <-  file.path(here::here(), "models")
@@ -35,9 +31,11 @@ for (i in 1:nrow(run_config$mcmc)) {
   }
   
   
-  mf_object <- readRDS(file.path("models", run_name, "model_fit", paste0("metrics_", run_name, "_", label, nfolds, ".rds")))
-  
-  pdf(file = file.path("models", paste0(run_name, "_", label, nfolds, "_model_fit.pdf")))
+  mf <- readRDS(file.path("models", run_name, "model_fit", paste0("mf_", run_name, "_", label, nfolds, ".rds")))
+  mfeval <- readRDS(file.path("models", run_name, "model_fit", paste0("mfeval_", run_name, "_", label, nfolds, ".rds")))
+  mf_object <- list("MF" = mf, "MFEVAL" = mfeval)
+
+  pdf(file = file.path("models", paste0(run_config$model_id, "_", label, nfolds, "_model_fit.pdf")))
   
   cMF = mf_object$MF
   cMFCV = mf_object$MFEVAL

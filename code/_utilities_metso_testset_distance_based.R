@@ -6,7 +6,7 @@ library(tidyr)
 library(dplyr)
 set.seed(11072024)
 
-stands <- read_sf("data/metso/treatment_control_stand.gpkg")
+stands <- read_sf(file.path("data", "metso", "treatment_control_stand.gpkg"))
 
 distance_buffer_km <- 2
 

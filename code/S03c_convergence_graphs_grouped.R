@@ -4,6 +4,7 @@ library(dplyr)
 library(stringr)
 library(colorspace) 
 
+#setwd("E:/2025_I_comparative_metrics/")
 # --- 2. Setup Directories and Initialize Data Lists ---
 model_setup <- list.dirs("models", recursive = FALSE) |>
   basename() |>
@@ -100,9 +101,6 @@ for (i in 1:length(convergence_folder)) {
 # --- 4. Calculation Section ---
 
 run_names_found <- names(psrf.beta.all) 
-if(length(run_names_found) == 0) {
-  stop("No evaluation data found. Please run the S03 script first.")
-}
 
 short_model_names <- stringr::str_extract(run_names_found, "fbs_M[0-9]{3}(\\.[1-9])?")
 

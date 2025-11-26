@@ -476,7 +476,8 @@ extract_raw_values <- function(polygons_sf,
                                raster_info_df, 
                                root_output_dir, 
                                id_column, 
-                               only_paths) {
+                               only_paths,
+                               year_metso) {
   
   message(paste("Fetching from", raster_info_df$dataset[1], "variable", raster_info_df$var[1], "year",
                 raster_info_df$year[1], "with polygon set", polygons_sf$set[1]))
@@ -486,7 +487,7 @@ extract_raw_values <- function(polygons_sf,
   # Metso doesnt vary with years
   if(polygons_sf$set[1] == "metso"){
     polygons_sf <- polygons_sf |> 
-      mutate(year = raster_info_df$year[1])
+      mutate(year = year_metso)
     progress_bar <- T
   }else{
     progress_bar <- F

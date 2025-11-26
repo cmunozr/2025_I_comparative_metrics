@@ -6,6 +6,7 @@ library(stringr)
 library(maps)
 library(ggplot2)
 library(tidyr)
+library(here)
 library(dplyr)
 library(zip)
 
@@ -14,10 +15,24 @@ os <- Sys.info()['sysname']
 if (os == "Windows") {
   output_base_path <- "E:"
 } else if (os %in% c("Linux", "Darwin")) {
-  output_base_path <- "/media/pitm/My Passport/"
-}  
+  output_base_path <- "/home/avesta/munozcs/Documents/data/covariates/raw/"
+  #output_base_path <- "/media/pitm/My Passport/"
+}
+
+if(!(Sys.getenv("RSTUDIO") == "1")){
+  setwd(here::here())
+}
 
 source(file.path("code","_utilities_transform_covariates.R"))
+
+log_info <- function(message) {
+  cat(paste0("[", Sys.time(), "] ", message, "\n"))
+}
+
+log_info(paste("Running on:", os))
+log_info(paste("Output path set to:", output_base_path))
+
+#---------------
 
 dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";") # External 
 
@@ -139,7 +154,7 @@ clim <-
 coords <- list.files(file.path("data", "fbs"), pattern = "route_sections_L2", full.names = T) |> # external
   lapply(st_read)
 
-metso <- st_read(file.path("data", "metso", "treatment_control_stand.gpkg")) # external
+metso <- st_read(file.path("data", "metso", "treatment_control_stand_filtered.gpkg")) # external
 
 utm_10 <- st_read(file.path("data", "utm35_zones", "TM35_karttalehtijako.gpkg"), layer = "utm10") # external
 utm_200 <- st_read(file.path("data", "utm35_zones", "TM35_karttalehtijako.gpkg"), layer = "utm200") # external
@@ -175,49 +190,50 @@ coords_utm_join <- lapply(X = coords, FUN = function(X){
 #--------------------
 
 # Checking extent of latvus, probably it would be better before download !!!! SOMETHING TO LEARN HERE (MASSIVE DATASET 300 GB at least)
+if(os == "Windows"){
+  zones <- c(10)
+  datasets <- c("latvus")
 
-zones <- c(10)
-datasets <- c("latvus")
-
-for(i in 1:length(datasets)){
-  
-  utm_zone_number <- zones[i]
-  dataset_name <- datasets[i]
-  
-  utm_col_name <- paste0("UTM", utm_zone_number)
-  
-  utm_zone_dataset <- get(paste0("utm_", utm_zone_number)) |>
-    rename({{ utm_col_name }} := "lehtitunnus") |>
-    full_join(get(dataset_name), by = utm_col_name)
-  
-  utm_zone_dataset_coords <- lapply(X = coords_utm_join, FUN = function(X){
-    temp <- utm_zone_dataset |> 
-      left_join(st_drop_geometry(dplyr::select(X, -year)), by = utm_col_name, relationship = "many-to-many") |>
-      filter(poly_id > 0)
-    return(temp)
-  } 
-  )
-  
-  utm_zone_dataset_coords <- bind_rows(utm_zone_dataset_coords) |> 
-    mutate(year = as.factor(year))
-  
-  fin <- st_as_sf(maps::map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
-  
-  p <- utm_zone_dataset_coords |> 
-    filter(!is.na(year)) |>
-    ggplot() +
-    geom_sf(data = fin) +
-    geom_sf(aes(color = year)) +
-    facet_wrap(vars(year), ncol = 4)
-  
-  print(p)
+  for(i in 1:length(datasets)){
+    
+    utm_zone_number <- zones[i]
+    dataset_name <- datasets[i]
+    
+    utm_col_name <- paste0("UTM", utm_zone_number)
+    
+    utm_zone_dataset <- get(paste0("utm_", utm_zone_number)) |>
+      rename({{ utm_col_name }} := "lehtitunnus") |>
+      full_join(get(dataset_name), by = utm_col_name)
+    
+    utm_zone_dataset_coords <- lapply(X = coords_utm_join, FUN = function(X){
+      temp <- utm_zone_dataset |> 
+        left_join(st_drop_geometry(dplyr::select(X, -year)), by = utm_col_name, relationship = "many-to-many") |>
+        filter(poly_id > 0)
+      return(temp)
+    } 
+    )
+    
+    utm_zone_dataset_coords <- bind_rows(utm_zone_dataset_coords) |> 
+      mutate(year = as.factor(year))
+    
+    fin <- st_as_sf(maps::map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
+    
+    p <- utm_zone_dataset_coords |> 
+      filter(!is.na(year)) |>
+      ggplot() +
+      geom_sf(data = fin) +
+      geom_sf(aes(color = year)) +
+      facet_wrap(vars(year), ncol = 4)
+    
+    print(p)
+  }
 }
 
 # Conclusion: Latvus must be discarded as a time-variant covariate for the Hmsc model (cannot handle NA values in XData), coverage is uneven and scattered
 
 #-----------------------
 
-master_covariates <- bind_rows(tree_high_europe, luke, dem, clim)
+master_covariates <- bind_rows(tree_high_europe, luke, clim) #dem
 # master_covariates <- dem
 write.csv(master_covariates, file.path("data", "master_covariates_temp.csv"), row.names = F)
 coords_utm_join <- bind_rows(coords_utm_join)
@@ -239,18 +255,21 @@ list_of_groups <- master_covariates |>
 
 run <- T
 
+log_info("Starting raw value extraction...")
 if(run){
+  log_info("Extracting coords data...")
   coords_raw_data <- purrr::map(.x = list_of_groups, 
                                 ~extract_raw_values(polygons_sf = coords_utm_join, 
                                                     raster_info_df = .x, 
                                                     root_output_dir = output_base_path, 
                                                     id_column = "sampleUnit",
                                                     only_paths = F))
+  log_info("Extracting METSO data...")
   metso_raw_data <- purrr::map(list_of_groups, 
                                ~extract_raw_values(metso_utm_join, .x,
                                                    root_output_dir = output_base_path, 
                                                    id_column = "standid",
-                                                   only_paths = F))
+                                                   only_paths = F, year_metso = 2021))
 }else{
   coords_raw_data <- purrr::map(list_of_groups, 
                                 ~extract_raw_values(coords_utm_join, .x, 
@@ -263,11 +282,13 @@ if(run){
                                                    id_column = "standid", 
                                                    only_paths = T))
 }
+log_info("Extraction complete.")
 
 #--------------------
 
 # Aggregate Tile Covariate Data for All Polygon Types
 
+log_info("Aggregating Coords Covariates...")
 aggregate_covariates(
   raw_data_list = coords_raw_data,
   polygon_type = coords_utm_join$set[1],
@@ -276,6 +297,7 @@ aggregate_covariates(
   df = st_drop_geometry(coords_utm_join)
 )
 
+log_info("Aggregating METSO Covariates...")
 aggregate_covariates(
   raw_data_list = metso_raw_data,
   polygon_type = metso_utm_join$set[1],
@@ -313,7 +335,7 @@ for(p in 1:length(polygon_types)){
   for (i in 1:length(covar_nm)) {
     # i <- 1
     covar_nm_i <- covar_nm[i] 
-    message(paste("processing", i, "of", length(covar_nm), "variables", "(", covar_nm_i, ")" ))
+    log_info(paste("Merging and saving:", i, "of", length(covar_nm), "variables -", covar_nm_i))
     
     relevant_files <- rds_files[str_detect(basename(rds_files), covar_nm_i)]
     
@@ -334,6 +356,10 @@ for(p in 1:length(polygon_types)){
 toKeep <- c("covar_nm", "coords_utm_join", "metso_utm_join", "dict_covar", "folder_name",
             "prepare_covariates_data_toplot", "generate_covariate_plot" , "generate_binary_plot")
 rm(list = setdiff(ls(), toKeep));gc()
+
+if(os != "Windows"){
+  stop("finishing routine for linux server")
+}
 
 # processing to plot sample
 
