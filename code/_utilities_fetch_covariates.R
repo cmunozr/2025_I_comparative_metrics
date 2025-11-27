@@ -309,7 +309,8 @@ aggregate_covariates(
 #-------------------
 
 toKeep <- c("dict_covar", "output_base_path", "coords_utm_join", "metso_utm_join",
-            "prepare_covariates_data_toplot", "generate_covariate_plot", "generate_binary_plot")
+            "prepare_covariates_data_toplot", "generate_covariate_plot", "generate_binary_plot",
+            "log_info", "os")
 rm(list = setdiff(ls(), toKeep));gc()
 
 # transform to year separated data to one consolidated for covariate for all polygon type
@@ -354,7 +355,8 @@ for(p in 1:length(polygon_types)){
 #--------------------
 
 toKeep <- c("covar_nm", "coords_utm_join", "metso_utm_join", "dict_covar", "folder_name",
-            "prepare_covariates_data_toplot", "generate_covariate_plot" , "generate_binary_plot")
+            "prepare_covariates_data_toplot", "generate_covariate_plot" , "generate_binary_plot",
+            "log_info", "os")
 rm(list = setdiff(ls(), toKeep));gc()
 
 if(os != "Windows"){

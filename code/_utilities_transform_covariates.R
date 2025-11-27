@@ -839,3 +839,290 @@ old_grow_agesum <- function(stand_age, polygon_id) {
   ages_to_sum <- stand_age[stand_age >= age_threshold]
   return(sum(ages_to_sum, na.rm = TRUE))
 }
+
+#----------------------
+#' Determine which variables need processing
+#' based on the user's execution flags and the current state of the output directory.
+#'
+#' @param output_rds_paths A character vector containing the full file paths of the 
+#'   available intermediate `.rds` files (usually found via `list.files`).
+#' @param folder_name A character string. The root directory path containing the `XData_hmsc.rds` file.
+#' @param run_new_var Logical. If \code{TRUE}, the function checks for variables present in 
+#'   \code{dict_covar} but missing from the existing \code{XData_hmsc.rds}.
+#' @param dict_covar A dataframe acting as a dictionary. Must contain:
+#'   \itemize{
+#'     \item \code{var_shultz}: The original variable names.
+#'     \item \code{processed}: A binary flag (0/1) indicating status.
+#'   }
+#' @param mapping_functions A dataframe defining transformation rules. Must contain:
+#'   \itemize{
+#'     \item \code{var_pre_processed}: The raw variable name.
+#'     \item \code{var_target}: The desired output variable name.
+#'   }
+#'
+#' @return A character vector containing the names of the unique variables that need to be processed.
+#' @export
+
+get_process_plan <- function(output_rds_paths, 
+                             folder_name, 
+                             run_new_var, 
+                             dict_covar, 
+                             mapping_functions, 
+                             ds = data_sufix) {
+  
+  require(tidyverse)
+  require(tools)
+  
+  str_to_replace <- paste0("_", ds) 
+  unique_vars <- tools::file_path_sans_ext(basename(output_rds_paths)) |> 
+    str_replace(str_to_replace, "")
+  names(output_rds_paths) <- unique_vars
+  
+  # Default: Process nothing unless flags are set
+  vars_to_process <- character(0)
+  
+  if (run_new_var) {
+    # Logic for adding NEW variables only
+    XData_path <- file.path(folder_name, "XData_hmsc.rds")
+    
+    if (!file.exists(XData_path)) {
+      stop("XData_hmsc.rds not found. Cannot add new variables to non-existent file.")
+    }
+    
+    XData <- readRDS(XData_path)
+    existing_vars <- colnames(XData)
+    
+    not_processed <- dict_covar$var_shultz[which(dict_covar$processed == 0)]
+    
+    targets_to_create <- mapping_functions %>% 
+      filter(var_pre_processed %in% not_processed) %>% 
+      pull(var_target)
+    
+    conflicting_targets <- intersect(targets_to_create, existing_vars)
+    
+    if (length(conflicting_targets) > 0) {
+      message("Skipping existing variables: ", paste(conflicting_targets, collapse = ", "))
+      
+      vars_to_skip <- mapping_functions %>% 
+        filter(var_target %in% conflicting_targets) %>% 
+        distinct(var_pre_processed) %>% 
+        pull(var_pre_processed)
+      
+      vars_to_process <- setdiff(not_processed, vars_to_skip)
+    } else {
+      vars_to_process <- not_processed
+    }
+    
+    if (length(vars_to_process) == 0) {
+      stop("No new variables to process.")
+    }
+    
+  } else {
+    # Logic for recalculating ALL variables
+    vars_to_process <- unique_vars
+  }
+  
+  return(vars_to_process)
+}
+
+#----------------------
+
+#' Process a single covariate file. Returns a tibble of results for that specific variable
+#'
+#' Reads a specific intermediate `.rds` file, applies aggregation functions defined in
+#' the mapping table, and reshapes the data (specifically for climate data).
+#'
+#' @details
+#' This function expects specific helper functions to be available in the global environment:
+#' \code{old_grow}, \code{weighted_mean}, \code{ratio}, \code{max_}, etc.
+#'
+#' @param var_name A character string. The name of the variable to process (must match `var_pre_processed`).
+#' @param file_path A character string. The full path to the `.rds` file containing raw polygon data.
+#' @param mapping_functions A dataframe containing the logic for aggregation. Must contain:
+#'   \itemize{
+#'     \item \code{var_pre_processed}: Identifier for the variable.
+#'     \item \code{function_to}: The name of the function to apply (e.g., "weighted_mean").
+#'     \item \code{aux_value}: Auxiliary numeric values needed for specific functions (can be NA).
+#'     \item \code{var_target}: The name of the output column.
+#'   }
+#'
+#' @return A \code{tibble} containing the processed data for the specific variable, 
+#'   aggregated by polygon_id. Returns \code{NULL} if the file does not exist or has no mapping plan.
+#' @export
+compute_covariate <- function(var_name, file_path, mapping_functions) {
+  
+  if (!file.exists(file_path)) return(NULL)
+  
+  message("Processing variables from: ", basename(file_path))
+  
+  raw_data <- readRDS(file_path)
+  
+  plan_for_this_file <- mapping_functions %>% 
+    filter(var_pre_processed == var_name)
+  
+  if (nrow(plan_for_this_file) == 0) return(NULL)
+  
+  # Core Aggregation Logic
+  var_by_polygon <- raw_data |> 
+    group_by(polygon_id, year) |> 
+    group_modify(~ {
+      current_group_data <- .x
+      group_key <- .y 
+      results <- list()
+      
+      for (i in 1:nrow(plan_for_this_file)) {
+        task <- plan_for_this_file[i, ]
+        args <- list()
+        
+        # Mapping arguments based on function type
+        if (task$function_to %in% c("old_grow", "old_grow_ratio", "old_grow_agesum")) {
+          args$stand_age <- current_group_data$value
+          args$polygon_id <- group_key$polygon_id
+        } else if (task$function_to %in% c("weighted_mean", "weighted_sd")) {
+          args$x <- current_group_data$value
+          args$w <- current_group_data$coverage_fraction
+        } else if (task$function_to == "ratio") {
+          args$cov_frac <- current_group_data$coverage_fraction
+          args$val <- current_group_data$value
+        } else if (task$function_to == "max_") {
+          args$x <- current_group_data$value
+        } else if (task$function_to == "bin") {
+          # Dependent on previous results in this loop
+          if (task$var_pre_processed %in% names(results)) {
+            args$x <- results[[task$var_pre_processed]]
+          } else {
+            args$x <- current_group_data$value
+          }
+        }
+        
+        if (!is.na(task$aux_value)) {
+          args$aux <- as.numeric(task$aux_value)
+        }
+        
+        # Execute the function dynamically
+        results[[task$var_target]] <- do.call(task$function_to, args)
+      }
+      as_tibble(results)
+    })
+  
+  # Climate Data Pivot Logic
+  if (!is.null(raw_data$dataset) && raw_data$dataset[1] == "clim") {
+    var_by_polygon <- var_by_polygon |>
+      mutate(year_suffix = ifelse(str_split(polygon_id, pattern = "_", simplify = TRUE )[,2] == year, "_yr", "_yr_last")) |>
+      pivot_wider(
+        id_cols = polygon_id, 
+        names_from = year_suffix, 
+        values_from = any_of(plan_for_this_file$var_target),
+        names_glue = "{.value}{year_suffix}" # Dynamic naming
+      ) 
+  }
+  
+  var_by_polygon |> 
+    ungroup() |> 
+    select(-any_of("year"))
+}
+
+#------------------------
+
+#' Update or Create HMSC Covariate Data (XData)
+#'
+#' The main wrapper function that orchestrates the loading, processing, and merging of 
+#' covariate data for the HMSC model. It can either recalculate all variables or 
+#' append only new ones.
+#'
+#' @param folder_name A character string. The root path containing "data", "covariates", 
+#'   and where "XData_hmsc.rds" will be saved.
+#' @param run_calc Logical. If \code{TRUE}, all available covariates are re-calculated 
+#'   from scratch.
+#' @param run_new Logical. If \code{TRUE}, only variables defined in \code{dict_covar} 
+#'   but missing from `XData` are calculated and appended.
+#' @param dict_covar A dataframe. The dictionary of variables (passed to \code{get_process_plan}).
+#' @param mapping_funcs A dataframe. The transformation rules (passed to \code{compute_covariate}).
+#' @param ref_data A dataframe. Reference data containing the complete list of sample units.
+#'   Must contain a column named \code{sampleUnit} to ensure the final XData aligns 
+#'   correctly with the biological data.
+#'
+#' @return A \code{tibble} representing the final `XData`. This object is also 
+#'   saved as an `.rds` file in \code{folder_name}.
+#' @export
+
+update_hmsc_data <- function(folder_name, 
+                             run_calc = FALSE, 
+                             run_new = FALSE, 
+                             dict_covar, 
+                             mapping_funcs, 
+                             ref_data, 
+                             fil,
+                             data_sufix = "coords") {
+  
+  # 1. Validation and Setup
+  if (!run_calc && !run_new) {
+    message("Neither run_calculate_XData nor run_new_var_XData is TRUE. Nothing to do.")
+    return(NULL)
+  }
+  
+  # Locate files
+  output_rds_paths <- list.files(file.path(folder_name, "pre_processed"), 
+                                 pattern = paste0(data_sufix, ".rds$"), 
+                                 recursive = TRUE, 
+                                 full.names = TRUE)
+  
+  # 2. Identify what to process
+  vars_to_process <- get_process_plan(output_rds_paths, folder_name, run_new, dict_covar, mapping_funcs, ds = data_sufix)
+  
+  # Map paths to var names for easy lookup
+  str_to_replace <- paste0("_", data_sufix)
+  unique_vars <- tools::file_path_sans_ext(basename(output_rds_paths)) |> str_replace(str_to_replace, "")
+  names(output_rds_paths) <- unique_vars
+  
+  # 3. Execution Loop
+  all_results_list <- list()
+  
+  for (var_name in vars_to_process) {
+    if (!(var_name %in% mapping_funcs$var_pre_processed)) next
+    
+    # Call the worker function
+    all_results_list[[var_name]] <- compute_covariate(
+      var_name = var_name,
+      file_path = output_rds_paths[var_name],
+      mapping_functions = mapping_funcs
+    )
+  }
+  
+  # 4. Merge Results
+  # Filter out NULLs (failed or skipped vars)
+  valid_results <- purrr::compact(all_results_list)
+  
+  if (length(valid_results) == 0) stop("No results generated.")
+  
+  merged_new_data <- valid_results |> 
+    reduce(full_join, by = "polygon_id") |> 
+    right_join(
+      y = distinct(dplyr::select(ref_data, sampleUnit)), 
+      join_by("polygon_id" == "sampleUnit")
+    ) |> 
+    ungroup() |> 
+    select(-polygon_id)
+  
+  # 5. Save data file
+  
+  if(final_path_sufix != ""){
+    data_sufix <- paste0("_", data_sufix)
+  }
+  
+  final_path <- file.path(folder_name, paste0("XData_hmsc", sufix, ".rds"))
+  
+  if (run_new) {
+    # If adding new variables, we load the old one and bind columns
+    old_XData <- readRDS(final_path)
+    final_XData <- bind_cols(old_XData, merged_new_data)
+  } else {
+    # If recalculating everything, the new result IS the final result
+    final_XData <- merged_new_data
+  }
+  
+  saveRDS(final_XData, file = final_path)
+  message("Successfully saved XData_hmsc.rds")
+  
+  return(final_XData)
+}
