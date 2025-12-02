@@ -20,11 +20,11 @@ sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_filtere
 sufix <- "metso"
 
 # Call the function
-XData_metso <- update_hmsc_data(
+XData_metso <- construct_hmsc_XData(
   folder_name = folder_name,
   run_calc = run_calculate_XData, 
-  run_new = run_new_var_XData,     
-  dict_covar = dict_covar,         
+  run_new = run_new_var_XData,
+  dict_covar = dict_covar,
   mapping_funcs = mapping_functions, 
   ref_data = sp_df, 
   data_sufix = sufix
@@ -34,8 +34,14 @@ run_name <- generate_run_name(run_config)
 fitted_full_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
 hM <- readRDS(fitted_full_model_path)
 
-XData_metso <- XData_metso |> 
+XData_metso <- readRDS(file.path("data", "covariates", paste0("XData_hmsc_", sufix, ".rds")))
+
+XData_metso[["XData"]] <- XData_metso[["XData"]] |> 
   dplyr::select(dplyr::all_of(names(hM$XData)))
 
-path <- file.path(folder_name, paste0("XData_hmsc_", sufix, ".rds"))
-saveRDS(XData_metso, file = path)
+
+
+path <- file.path(folder_name, paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
+saveRDS(XData_metso_filter_toModel, file = path)
+
+proc.time()

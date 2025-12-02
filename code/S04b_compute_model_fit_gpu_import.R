@@ -126,7 +126,7 @@ for (i in 1:nrow(run_config$mcmc)) {
       for (p in parts) {
       # p <- 1
       message("predictions for partition ", p)
-      val <- partition == p
+      val <- partition != p
       LoffVal <- hM$LoffVal[val,,drop=FALSE]
       m <- fitted_val_models[[p]]
       m <- alignPosterior(m)

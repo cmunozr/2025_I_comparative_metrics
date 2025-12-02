@@ -26,6 +26,8 @@ rm(stands); gc()
 metso_stands_buf <- metso_stands |> 
   st_buffer(dist = distance_buffer_km*1000, endCapStyle = "ROUND") |> 
   summarise()
+write_sf(metso_stands_buf, file.path("data", "metso", "metso_stands_buf.gpkg"))
+
 
 control_stands_filtered <- control_stands[metso_stands_buf, ]
 

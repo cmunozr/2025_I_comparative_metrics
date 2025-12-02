@@ -1007,14 +1007,23 @@ compute_covariate <- function(var_name, file_path, mapping_functions) {
   
   # Climate Data Pivot Logic
   if (!is.null(raw_data$dataset) && raw_data$dataset[1] == "clim") {
+    
     var_by_polygon <- var_by_polygon |>
-      mutate(year_suffix = ifelse(str_split(polygon_id, pattern = "_", simplify = TRUE )[,2] == year, "_yr", "_yr_last")) |>
+      ungroup() |> 
+      mutate(
+        is_current_year = if (raw_data$polygon_source[1] == "coords") {
+          str_split(polygon_id, pattern = "_", simplify = TRUE)[, 2] == year
+        } else {
+          year == max(year)
+        },
+        year_suffix = ifelse(is_current_year, "_yr", "_yr_last")
+      ) |>
       pivot_wider(
         id_cols = polygon_id, 
         names_from = year_suffix, 
         values_from = any_of(plan_for_this_file$var_target),
-        names_glue = "{.value}{year_suffix}" # Dynamic naming
-      ) 
+        names_glue = "{.value}{year_suffix}" 
+      )
   }
   
   var_by_polygon |> 
@@ -1024,18 +1033,15 @@ compute_covariate <- function(var_name, file_path, mapping_functions) {
 
 #------------------------
 
-#' Update or Create HMSC Covariate Data (XData)
-#'
-#' The main wrapper function that orchestrates the loading, processing, and merging of 
-#' covariate data for the HMSC model. It can either recalculate all variables or 
-#' append only new ones.
+#' Construct HMSC Covariate Data (XData)
+#' Builds or updates the covariate dataset by recalculating all variables or appending missing ones.
 #'
 #' @param folder_name A character string. The root path containing "data", "covariates", 
 #'   and where "XData_hmsc.rds" will be saved.
 #' @param run_calc Logical. If \code{TRUE}, all available covariates are re-calculated 
-#'   from scratch.
+#'   from scratch. Building functionality.
 #' @param run_new Logical. If \code{TRUE}, only variables defined in \code{dict_covar} 
-#'   but missing from `XData` are calculated and appended.
+#'   but missing from `XData` are calculated and appended. Updating functionality.
 #' @param dict_covar A dataframe. The dictionary of variables (passed to \code{get_process_plan}).
 #' @param mapping_funcs A dataframe. The transformation rules (passed to \code{compute_covariate}).
 #' @param ref_data A dataframe. Reference data containing the complete list of sample units.
@@ -1046,13 +1052,12 @@ compute_covariate <- function(var_name, file_path, mapping_functions) {
 #'   saved as an `.rds` file in \code{folder_name}.
 #' @export
 
-update_hmsc_data <- function(folder_name, 
+construct_hmsc_XData <- function(folder_name, 
                              run_calc = FALSE, 
                              run_new = FALSE, 
                              dict_covar, 
                              mapping_funcs, 
-                             ref_data, 
-                             fil,
+                             ref_data,
                              data_sufix = "coords") {
   
   # 1. Validation and Setup
@@ -1069,6 +1074,7 @@ update_hmsc_data <- function(folder_name,
   
   # 2. Identify what to process
   vars_to_process <- get_process_plan(output_rds_paths, folder_name, run_new, dict_covar, mapping_funcs, ds = data_sufix)
+  
   
   # Map paths to var names for easy lookup
   str_to_replace <- paste0("_", data_sufix)
@@ -1095,34 +1101,66 @@ update_hmsc_data <- function(folder_name,
   
   if (length(valid_results) == 0) stop("No results generated.")
   
+  if (data_sufix == "metso") {
+    ref_data <- ref_data |> 
+      dplyr::rename(sampleUnit = standid) |> 
+      mutate(sampleUnit = as.factor(sampleUnit)) |> 
+      sf::st_drop_geometry()
+  }
+  
+  # Calculate duplicates
+  dups_ref_data <- duplicated(ref_data$sampleUnit)
+  refdata <- ref_data[!dups_ref_data, ]
+  
   merged_new_data <- valid_results |> 
     reduce(full_join, by = "polygon_id") |> 
     right_join(
-      y = distinct(dplyr::select(ref_data, sampleUnit)), 
+      y = distinct(dplyr::select(refdata, sampleUnit)), 
       join_by("polygon_id" == "sampleUnit")
     ) |> 
-    ungroup() |> 
+    ungroup()
+  
+  na_index <- complete.cases(merged_new_data)
+  
+  na_polygon_id <- merged_new_data$polygon_id[!na_index]
+  
+  if(is.factor(na_polygon_id)){
+    na_polygon_id <-  droplevels(na_polygon_id)
+  }else{
+    na_polygon_id <- unique(na_polygon_id)
+  }
+    
+  
+  merged_new_data <- merged_new_data[na_index, ] |> 
     select(-polygon_id)
   
   # 5. Save data file
   
-  if(final_path_sufix != ""){
+  if(data_sufix != ""){
     data_sufix <- paste0("_", data_sufix)
   }
   
-  final_path <- file.path(folder_name, paste0("XData_hmsc", sufix, ".rds"))
+  final_path <- file.path(folder_name, paste0("XData_hmsc", data_sufix, ".rds"))
   
   if (run_new) {
     # If adding new variables, we load the old one and bind columns
     old_XData <- readRDS(final_path)
+    
+    if(is.data.frame(old_XData)) {
+      old_XData <- old_XData
+    } else {
+      old_XData <- old_XData[["XData"]]
+    }
+    
     final_XData <- bind_cols(old_XData, merged_new_data)
   } else {
     # If recalculating everything, the new result IS the final result
     final_XData <- merged_new_data
   }
   
-  saveRDS(final_XData, file = final_path)
+  final_object <- list("duplicated_in_ref" = dups_ref_data, "na_polygon_id" = na_polygon_id, "XData" = final_XData)
+  saveRDS(final_object, file = final_path)
   message("Successfully saved XData_hmsc.rds")
   
-  return(final_XData)
+  return(final_object)
 }

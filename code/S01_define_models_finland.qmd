@@ -1113,17 +1113,18 @@ Now we are going to derive polygon-Level statistics from the raw values of the c
 ```{r}
 
 folder_name <- file.path("data", "covariates") 
-output_rds_paths <- list.files(file.path(folder_name, "pre_processed"), pattern = "coords.rds$", recursive = TRUE, full.names = TRUE)
 
-XData <- update_hmsc_data(
+XData <- construct_hmsc_XData(
   folder_name = folder_name,
   run_calc = run_calculate_XData,
   run_new = run_new_var_XData,  
   dict_covar = dict_covar,     
   mapping_funcs = mapping_functions,
   ref_data = occurr_biotope_route,
-  final_path_sufix = ""
+  data_sufix = "coords"
 )
+
+XData <- XData$XData
 
 ```
 
