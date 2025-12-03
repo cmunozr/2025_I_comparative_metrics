@@ -1058,7 +1058,8 @@ construct_hmsc_XData <- function(folder_name,
                              dict_covar, 
                              mapping_funcs, 
                              ref_data,
-                             data_sufix = "coords") {
+                             data_sufix = "coords",
+                             modelid = run_config$model_id) {
   
   # 1. Validation and Setup
   if (!run_calc && !run_new) {
@@ -1101,46 +1102,45 @@ construct_hmsc_XData <- function(folder_name,
   
   if (length(valid_results) == 0) stop("No results generated.")
   
-  if (data_sufix == "metso") {
+  if (data_sufix == "metso" | data_sufix == "control") {
     ref_data <- ref_data |> 
       dplyr::rename(sampleUnit = standid) |> 
       mutate(sampleUnit = as.factor(sampleUnit)) |> 
       sf::st_drop_geometry()
   }
   
-  # Calculate duplicates
-  dups_ref_data <- duplicated(ref_data$sampleUnit)
-  refdata <- ref_data[!dups_ref_data, ]
-  
+
   merged_new_data <- valid_results |> 
     reduce(full_join, by = "polygon_id") |> 
     right_join(
-      y = distinct(dplyr::select(refdata, sampleUnit)), 
+      y = distinct(dplyr::select(ref_data, sampleUnit)), 
       join_by("polygon_id" == "sampleUnit")
     ) |> 
     ungroup()
   
-  na_index <- complete.cases(merged_new_data)
+  index_complete <- complete.cases(merged_new_data)
+
+  merged_new_data <- merged_new_data[index_complete, ] 
+  polygon_id <- merged_new_data$polygon_id 
   
-  na_polygon_id <- merged_new_data$polygon_id[!na_index]
-  
-  if(is.factor(na_polygon_id)){
-    na_polygon_id <-  droplevels(na_polygon_id)
+  if(is.factor(polygon_id)){
+    polygon_id <-  droplevels(polygon_id) |> 
+    as.character() |> 
+    as.numeric()
   }else{
-    na_polygon_id <- unique(na_polygon_id)
+    polygon_id <- unique(polygon_id)
   }
-    
   
-  merged_new_data <- merged_new_data[na_index, ] |> 
+  merged_new_data <- merged_new_data |> 
     select(-polygon_id)
-  
+
   # 5. Save data file
   
   if(data_sufix != ""){
     data_sufix <- paste0("_", data_sufix)
   }
   
-  final_path <- file.path(folder_name, paste0("XData_hmsc", data_sufix, ".rds"))
+  final_path <- file.path(folder_name, paste0("XData_hmsc", data_sufix, "_", modelid,".rds"))
   
   if (run_new) {
     # If adding new variables, we load the old one and bind columns
@@ -1149,7 +1149,7 @@ construct_hmsc_XData <- function(folder_name,
     if(is.data.frame(old_XData)) {
       old_XData <- old_XData
     } else {
-      old_XData <- old_XData[["XData"]]
+      old_XData <- old_XData$XData
     }
     
     final_XData <- bind_cols(old_XData, merged_new_data)
@@ -1158,9 +1158,9 @@ construct_hmsc_XData <- function(folder_name,
     final_XData <- merged_new_data
   }
   
-  final_object <- list("duplicated_in_ref" = dups_ref_data, "na_polygon_id" = na_polygon_id, "XData" = final_XData)
+  final_object <- list("polygon_id" = polygon_id, "XData" = final_XData)
   saveRDS(final_object, file = final_path)
   message("Successfully saved XData_hmsc.rds")
   
-  return(final_object)
+  return(invisible(NULL))
 }

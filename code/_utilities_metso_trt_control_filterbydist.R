@@ -23,16 +23,17 @@ rm(stands); gc()
 
 #-------- buffer metso and overlap control 
 
-metso_stands_buf <- metso_stands |> 
+metso_stands_buf_10km <- metso_stands |> 
   st_buffer(dist = distance_buffer_km*1000, endCapStyle = "ROUND") |> 
   summarise()
 write_sf(metso_stands_buf, file.path("data", "metso", "metso_stands_buf.gpkg"))
 
 
-control_stands_filtered <- control_stands[metso_stands_buf, ]
+control_stands_filtered <- control_stands[metso_stands_buf_10km, ]
 
 #------- creating spatial object
 
 bind_rows(metso_stands, control_stands_filtered) |> 
   sf::write_sf(file.path("data", "metso", paste0("treatment_control_stand_filtered.gpkg")), delete_layer = T)
+
 

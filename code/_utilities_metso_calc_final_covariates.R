@@ -16,11 +16,13 @@ run_calculate_XData <- T
 run_new_var_XData <- F
 dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";")
 mapping_functions <- read.xlsx(file.path("data", "covariates", "mapping_covariate_functions.xlsx"), sheet = 1)
-sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_filtered.gpkg"))
+sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_filtered.gpkg")) |> 
+  dplyr::filter(metso == 1)
 sufix <- "metso"
+path_rds <- file.path(folder_name, paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
 
 # Call the function
-XData_metso <- construct_hmsc_XData(
+construct_hmsc_XData(
   folder_name = folder_name,
   run_calc = run_calculate_XData, 
   run_new = run_new_var_XData,
@@ -34,14 +36,11 @@ run_name <- generate_run_name(run_config)
 fitted_full_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
 hM <- readRDS(fitted_full_model_path)
 
-XData_metso <- readRDS(file.path("data", "covariates", paste0("XData_hmsc_", sufix, ".rds")))
+XData_metso <- readRDS(path_rds)
 
-XData_metso[["XData"]] <- XData_metso[["XData"]] |> 
+XData_metso$XData <- XData_metso$XData |> 
   dplyr::select(dplyr::all_of(names(hM$XData)))
 
-
-
-path <- file.path(folder_name, paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
-saveRDS(XData_metso_filter_toModel, file = path)
+saveRDS(XData_metso, file = path_rds)
 
 proc.time()

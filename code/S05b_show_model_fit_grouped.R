@@ -1,6 +1,7 @@
 # --- 1. Load Libraries ---
-library(tidyverse) # Includes dplyr, stringr, purrr, ggplot2
 library(colorspace)
+library(tidyverse) # Includes dplyr, stringr, purrr, ggplot2
+
 
 # --- 2. Configuration ---
 # Define where your models live
@@ -10,7 +11,7 @@ base_dir <- "models"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
 # --- 3. This function takes a folder path, reads ALL files, and returns a list
-process_model_folder <- function(folder_path) {
+process_model_folder <- function(folder_path = model_dirs[2]) {
   
   run_name <- basename(folder_path)
   fit_dir  <- file.path(folder_path, "model_fit")
@@ -83,7 +84,7 @@ model_dirs <- list.dirs(base_dir, recursive = FALSE) %>%
 
 # Run the function using purrr::map
 # This creates a large list of lists
-all_results <- map(model_dirs, process_model_folder)
+all_results <- purrr::map(model_dirs, process_model_folder)
 
 # Remove any NULL results (failed folders)
 all_results <- compact(all_results)
@@ -91,11 +92,11 @@ all_results <- compact(all_results)
 # --- 5. Split and Bind ---
 
 # Extract all 'mf' items and bind them
-mf_df <- map(all_results, "mf") %>% 
+mf_df <- purrr::map(all_results, "mf") %>% 
   bind_rows()
 
 # Extract all 'mfeval' items and bind them
-mfeval_df <- map(all_results, "mfeval") %>% 
+mfeval_df <- purrr:::map(all_results, "mfeval") %>% 
   bind_rows()
 
 # reorder WAIC
@@ -128,7 +129,7 @@ for(t in 1:length(types)){
       geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
       coord_cartesian(ylim = lims[[s]], clip = "off") +
       labs(
-        title = paste0(stats_s, " vs. Accuracy (WAIC)"),
+        title = paste0(stats_s, " vs. WAIC"),
         subtitle = "Model Comparison",
         x = "WAIC (Lower is better)",
         y = stats_s
