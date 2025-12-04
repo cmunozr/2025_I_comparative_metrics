@@ -16,9 +16,18 @@ run_calculate_XData <- T
 run_new_var_XData <- F
 dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";")
 mapping_functions <- read.xlsx(file.path("data", "covariates", "mapping_covariate_functions.xlsx"), sheet = 1)
-sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_filtered.gpkg")) |> 
-  dplyr::filter(metso == 1)
-sufix <- "metso"
+sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_filtered.gpkg")) 
+sufix <- "control"
+
+if(sufix == "metso"){
+  sp_df <- sp_df |> dplyr::filter(metso == 1)  
+}else{
+  matches <- readRDS(file.path("data", "metso", "donut_matches.rds")) |> 
+    na.omit()
+  sp_df <- sp_df |> 
+    dplyr::filter(metso == 0, standid %in% matches$control_standid) 
+}
+
 path_rds <- file.path(folder_name, paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
 
 # Call the function

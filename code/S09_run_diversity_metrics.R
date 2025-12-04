@@ -1,4 +1,31 @@
-# 10824 X 20 X 4000
+# Setup
+prediction_files <- list.files("results/predictions/metso", pattern = ".rds", full.names = TRUE)
+output_dir <- "results/metrics/alpha_richness"
+if(!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+# Loop through your batch files
+for (f in prediction_files) {
+  
+  # 1. Read the batch (List of 4000)
+  batch_list <- readRDS(f)
+  
+  # 2. Convert to Array [100, 67, 4000]
+  batch_array <- simplify2array(batch_list)
+  
+  # 3. Calculate Metric: Alpha Richness
+  # We want to sum across species (dimension 2) for every sample (dimension 3)
+  # Result: Matrix [100 sites x 4000 samples]
+  richness_matrix <- apply(batch_array, c(1, 3), sum)
+  
+  # 4. Save ONLY the metric
+  # Extract batch number from filename for saving
+  batch_name <- basename(f)
+  saveRDS(richness_matrix, file = file.path(output_dir, batch_name))
+  
+  # Cleanup to free RAM
+  rm(batch_list, batch_array, richness_matrix)
+  gc()
+}
 
 # Richness
 tm <- Sys.time()

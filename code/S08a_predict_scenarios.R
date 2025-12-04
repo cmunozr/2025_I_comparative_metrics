@@ -18,27 +18,36 @@ set.seed(11072024)
 
 # 1. SETUP & DATA LOADING
 cat(sprintf("[%s] Starting setup...\n", Sys.time()))
-sufix <- "metso"
+sufix <- "control"
 
-# Load Covariates
 data_path <- file.path("data", "covariates", paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
 XData_list <- readRDS(data_path)
-
-samp <- sample(seq_len(length(XData_list$polygon_id)), size = 2000)
-
-XData_metso <- XData_list$XData |> 
+XData <- XData_list$XData |> 
   as.data.frame()
-XData_metso <- XData_metso[samp, ]
 
-# Load Spatial Data
-# MAINTAINING EPSG:4326 to match training data structure
-sp_df <- read_sf(here("data", "metso", "treatment_control_stand_filtered.gpkg")) |>
-  st_centroid() |>
-  st_transform("EPSG:4326") |>
-  dplyr::filter(metso == 1, standid %in% XData_list$polygon_id) |>
-  dplyr::distinct(standid, .keep_all = TRUE) |>
-  dplyr::arrange(factor(standid, levels = XData_list$polygon_id))
-sp_df <- sp_df[samp,]
+if(sufix == "metso"){
+  # Load Covariates
+  samp <- sample(seq_len(length(XData_list$polygon_id)), size = 2000)
+  XData <- XData[samp, ]
+  
+  # Load Spatial Data
+  # MAINTAINING EPSG:4326 to match training data structure
+  sp_df <- read_sf(here("data", "metso", "treatment_control_stand_filtered.gpkg")) |>
+    st_centroid() |>
+    st_transform("EPSG:4326") |>
+    dplyr::filter(metso == 1, standid %in% XData_list$polygon_id) |>
+    dplyr::distinct(standid, .keep_all = TRUE) |>
+    dplyr::arrange(factor(standid, levels = XData_list$polygon_id))
+  sp_df <- sp_df[samp,]
+}else{
+  sp_df <- read_sf(here("data", "metso", "donut_matches_sp.gpkg")) |> 
+    st_centroid() |>
+    st_transform("EPSG:4326") |>
+    dplyr::filter(standid %in% XData_list$polygon_id) |>
+    dplyr::distinct(standid, .keep_all = TRUE) |>
+    dplyr::arrange(factor(standid, levels = XData_list$polygon_id))
+}
+
 
 
 # Load Model
@@ -54,13 +63,13 @@ cat(sprintf("Spatial random level identified as: %s\n", spatial_level_name))
 # 2. PARALLEL CONFIGURATION
 
 # Configuration for batching
-total_rows <- nrow(XData_metso)
-batch_size <- 100
+total_rows <- nrow(XData)
+batch_size <- 100 #200
 num_batches <- ceiling(total_rows / batch_size)
 
 # Parallel Workers Setup
 # Using 10 cores as you requested (safe for 524GB RAM)
-n_cores <- 10  
+n_cores <- 20 #40 
 cat(sprintf("Initializing parallel cluster with %d cores...\n", n_cores))
 
 cl <- makeCluster(n_cores, outfile = "")
@@ -78,7 +87,7 @@ parallel_time <- system.time({
   
   foreach(i = 1:num_batches, 
           .packages = c("Hmsc", "sf"), 
-          .export = c("XData_metso", "sp_df", "hM", "run_config", "spatial_level_name", "pred_dir", "batch_size", "total_rows")) %dopar% {
+          .export = c("XData", "sp_df", "hM", "run_config", "spatial_level_name", "pred_dir", "batch_size", "total_rows")) %dopar% {
             
             # A. Define indices for this batch
             start_idx <- (i - 1) * batch_size + 1
@@ -97,7 +106,7 @@ parallel_time <- system.time({
               
               # C. Prepare Data Slices
               # Slice covariates
-              XData_sub <- XData_metso[indices, ]
+              XData_sub <- XData[indices, ]
               
               # Slice coordinates
               coords_sub <- st_coordinates(sp_df)[indices, ]
@@ -141,7 +150,7 @@ parallel_time <- system.time({
 # Stop the cluster
 stopCluster(cl)
 
-saveRDS(samp, file.path(pred_dir, "samp.rds"))
+if(sufix == "metso") saveRDS(samp, file.path(pred_dir, "samp.rds"))
 
 cat("-----------DONE---------------\n")
 print(parallel_time)
