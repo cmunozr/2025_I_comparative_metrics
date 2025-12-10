@@ -1,113 +1,115 @@
-# Setup
-prediction_files <- list.files("results/predictions/metso", pattern = ".rds", full.names = TRUE)
-output_dir <- "results/metrics/alpha_richness"
-if(!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+library(abind)
+library(tidyverse)
+library(Hmsc)
 
-# Loop through your batch files
-for (f in prediction_files) {
+# Setup
+
+source(file.path("code", "diversity_metrics_functions.R"))
+source(file.path("code", "config_model.R"))
+output_dir <- file.path("results", "metrics")
+if(!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+set.seed(11072024)
+
+####>------- WATCH, reduce array to work better to setup in laptop
+num_spp <- 10
+samples <- 100
+to_sample <- list("a" = sample(seq(67), size = num_spp), "b"= sample(seq(4000), size = samples))
+####>------- WATCH
+
+# 1. Call data
+
+pred_id_metso <- readRDS(file.path("results", "predictions", "metso", "pred_ids.rds"))
+pred_id_control <- readRDS(file.path("results", "predictions", "control", "pred_ids.rds"))
+
+matches <- readRDS(file.path("data", "metso", "donut_matches.rds")) |> 
+  mutate(in_pred_metso = metso_standid %in% pred_id_metso,
+         in_pred_control = control_standid %in% pred_id_control)
   
-  # 1. Read the batch (List of 4000)
-  batch_list <- readRDS(f)
+# trait data
+TrData <- readRDS(file.path("data", "traits", "TrData_complete.rds"))
+
+# 2. Call predictions
+
+sufixes <- c("metso", "control")
+
+for(i in 1:length(sufixes)){
+  # i <- 2
+  sufix <- sufixes[i]
+  prediction_files <- list.files(file.path("results", "predictions", sufix), pattern = "predY", full.names = TRUE)
   
-  # 2. Convert to Array [100, 67, 4000]
-  batch_array <- simplify2array(batch_list)
+  predY <- lapply(X = prediction_files, 
+                  FUN = function(X){readRDS(X) |> simplify2array()})
+  predY <- do.call("abind", c(predY, along = 1))
   
-  # 3. Calculate Metric: Alpha Richness
-  # We want to sum across species (dimension 2) for every sample (dimension 3)
-  # Result: Matrix [100 sites x 4000 samples]
-  richness_matrix <- apply(batch_array, c(1, 3), sum)
+  if(sufix == "metso") predY <- predY[matches$in_pred_control, , ]
   
-  # 4. Save ONLY the metric
-  # Extract batch number from filename for saving
-  batch_name <- basename(f)
-  saveRDS(richness_matrix, file = file.path(output_dir, batch_name))
+  if(i == 1) rownames(TrData) <- colnames(predY)
   
-  # Cleanup to free RAM
-  rm(batch_list, batch_array, richness_matrix)
-  gc()
+  ####>------- WATCH
+  predY <- predY[ , to_sample[["a"]], to_sample[["b"]] ]
+  ####>------- WATCH
+  
+  predY_logic <- predY > 0
+  
+  # dynamic name
+  nm <- paste0("predY_", sufix)
+  nm2 <- paste0("predY_logic_", sufix)
+  
+  assign(nm, predY)
+  rm(predY); gc()
+  assign(nm2, predY_logic)
+  rm(predY_logic, sufix, prediction_files, nm, nm2); gc()
 }
 
-# Richness
-tm <- Sys.time()
-a <- species_richness(pred.object = logic_predY)
-tm_richness <- Sys.time()-tm
-# 14.18454 secs
+# 3. Calculate
 
-# geom abundance
-tm <- Sys.time()
-b <- geom_mean_abun(predY, a)
-tm_geom<- Sys.time()-tm
-# Time difference of 1.427866 mins
+# A. Richness
+richness_metso <- species_richness(pred.object = predY_logic_metso)
+richness_control <- species_richness(pred.object = predY_logic_control)
+delta_richness <- richness_metso - richness_control
 
-## Pre processing
-traits_processed <- dbFD_preprocess_traits(x = TrData, a = logic_predY[,,1])
-# CAMBIA SI USAMOS OTRA MATRIZ?
+# B. MSA
+msa <- mean_species_abundance(pred.object.baseline = predY_metso, 
+                              pred.object.scenario = predY_control, 
+                              richness.baseline = richness_metso)
 
-# Functional richness
+# C. PDF
+pdf <- potentially_disappeared_fraction(richness.baseline = richness_metso, 
+                                        richness.scenario = richness_control, 
+                                        group.each.rows = 1)
 
-tm <- Sys.time()
-fr <- functional_richness(pred.object = logic_predY, trait.processed.object = traits_processed, stand.FRic = F, parallel = T)
-tm_fr <- Sys.time()-tm
+# D. geom abundance
+geom_metso <- geom_mean_abun(pred.object = predY_metso, richness = richness_metso)
+geom_control <- geom_mean_abun(pred.object = predY_control, richness = richness_control)
+delta_geom <- geom_metso - geom_control
+
+## Pre processing traits
+
+TrData_numeric <- TrData |> 
+  select(where(is.numeric), -c("Total.individuals", "Female", "Male", "Unknown", "Complete.measures"))
+
+####>------- WATCH
+TrData_numeric <- TrData_numeric[to_sample[["a"]], ]
+####>------- WATCH
+
+TrData_processed <- dbFD_preprocess_traits(x = TrData_numeric, a = predY_logic_metso[,,1])
+
+# E. Functional richness
+fr_metso <- functional_richness(pred.object = predY_logic_metso, 
+                                trait.processed.object = TrData_processed, 
+                                stand.FRic = F, parallel = T)
+fr_control <- functional_richness(pred.object = predY_logic_control, 
+                                  trait.processed.object = TrData_processed, 
+                                  stand.FRic = F, parallel = T)
 
 
 ##	Community-weighted mean (CWM)
-
 tm <- Sys.time()
 CWM <- functcomp_parallel(pred.object = binary.predY, trait.processed.object = traits_processed, cwm.type = "dom", parallel = TRUE)
 tm_CWM <- Sys.time()-tm
 
 # RaoQ
-
 tm <- Sys.time()
 RaoQ <- divc_parallel(array_data = logic_predY, trait.processed.object = traits_processed, scale = FALSE, parallel = TRUE)
 tm_RaoQ <- Sys.time()-tm
 
-#--------------------------------------
-
-# Richness
-tm <- Sys.time()
-a <- species_richness(pred.object = logic_arraytest)
-a2 <- species_richness(pred.object = logic_arraytest2)
-tm_richness2 <- Sys.time()-tm
-    
-# geom abundance
-tm <- Sys.time()
-b <- geom_mean_abun(arraytest, a)
-tm_geom2<- Sys.time()-tm
-    
-# Pre processing
-tm <- Sys.time()
-traits_processed2 <- dbFD_preprocess_traits(x = traits_test, a = logic_arraytest[,,1])
-tm_traits2<- Sys.time()-tm
-    
-# CAMBIA SI USAMOS OTRA MATRIZ?
-  
-# Functional richness
-tm <- Sys.time()
-fr <- functional_richness(pred.object = logic_arraytest, trait.processed.object = traits_processed2, stand.FRic = F, parallel = T)
-tm_fr2 <- Sys.time()-tm
-    
-#	Community-weighted mean (CWM)
-tm <- Sys.time()
-CWM <- functcomp_parallel(pred.object = binary_arraytest[,,1:60], trait.processed.object = traits_processed2, cwm.type = "dom", parallel = T)
-tm_CWM2 <- Sys.time()-tm
-    
-# RaoQ
-tm <- Sys.time()
-RaoQ <- divc_parallel(array_data = logic_arraytest, trait.processed.object = traits_processed2, scale = FALSE, parallel = TRUE)
-tm_RaoQ2 <- Sys.time()-tm  
-
-# no groups
-tm <- Sys.time()
-betas <- beta_diversity(pred.object = arraytest, group.each.rows = NULL)
-tm_betas <- Sys.time()-tm  
-
-# groups
-    
-# 10824 X 586 X 100
-# tm_richness2: Time difference of 27.49811 secs
-# tm_geom2: Time difference of 32.85858 secs
-# tm_fr2: Time difference of 11.22873 mins
-# tm_CWM2: Time difference of 10.45529 mins
-# tm_RaoQ2: Time difference of 22.97023 mins
-# tm_betas: 

@@ -150,6 +150,7 @@ run_download_mactavish <- F
 run_get_finbif <- F
 run_itis_routes <- F
 run_itis_bakx <- F
+filter_rare_spp <- F
 run_polygon_buffers <- F
 run_calculate_XData <- T
 run_new_var_XData <- F
@@ -212,7 +213,7 @@ Phylogenetic information
 
 ```{r}
 if(run_download_mactavish){
-  get_avesdata_repo(path = file.path("data")) # 1GB more or less
+  get_avesdata_repo(path = file.path("data"), overwrite = T) # 1GB more or less
 }
 set_avesdata_repo_path(path = file.path("data", "AvesData-main"), overwrite = T)
 
@@ -798,14 +799,17 @@ coords <- coords |>
 
 
 ```{r}
-frequent_species <- occurr_sect_route |>
+if(filter_rare_spp){
+  frequent_species <- occurr_sect_route |>
   group_by(acceptedName) |>
   summarise(n_occurrences = n(), .groups = "drop") |> 
   filter(n_occurrences >= 35) |> 
   pull(acceptedName)
    
-occurr_sect_route <- occurr_sect_route |> 
-  filter(acceptedName %in% frequent_species)
+  occurr_sect_route <- occurr_sect_route |> 
+    filter(acceptedName %in% frequent_species)
+}
+
 ```
 
 
@@ -1114,7 +1118,7 @@ Now we are going to derive polygon-Level statistics from the raw values of the c
 
 folder_name <- file.path("data", "covariates") 
 
-XData <- construct_hmsc_XData(
+construct_hmsc_XData(
   folder_name = folder_name,
   run_calc = run_calculate_XData,
   run_new = run_new_var_XData,  
@@ -1124,7 +1128,8 @@ XData <- construct_hmsc_XData(
   data_sufix = "coords"
 )
 
-XData <- XData$XData
+XData_list <- readRDS(file.path("data", "covariates", paste0("XData_hmsc_coords_", run_config$model_id, ".rds")))
+XData <- XData_list$XData
 
 ```
 
@@ -1219,7 +1224,7 @@ length(vif_keep_variables)
 
 XData <- XData |> 
    dplyr::select(any_of(vif_keep_variables)) # |>
-#   cbind(l2_xy)
+#   cbind(l2_xy) # this chunk is to add the coordinates as a spatial covariate
 ```
 
 
@@ -1231,7 +1236,7 @@ Note: We have to check if we have to resolve names used in the phylogeny databas
 
 spp_Y <- colnames(Y)
 
-mctavish_mcc <- treeGet(version = "1.4", taxonomy_year = "2023")
+mctavish_mcc <- clootl:::treeGet(version = "1.4", taxonomy_year = "2023")
 
 mctavish_mcc$tip.label <- mctavish_mcc$tip.label |> 
   str_replace("_", " ")
@@ -1261,9 +1266,11 @@ if(run_syn_for_mctavish){
 # "Coloeus monedula" -> "Corvus monedula"
 # "Phylloscopus sibillatrix" -> "Phylloscopus sibilatrix"  
 
-phyloTree <- extractTree(species = spp_Y_new, version = 1.4)
+phyloTree <- clootl::extractTree(species = spp_Y_new, taxonomy_year = 2023, version = 1.4)
 
 phyloTree$tip.label <- spp_Y[match(str_replace(phyloTree$tip.label, "_", " ") , spp_Y_new)]
+
+saveRDS(phyloTree, file.path("data", "AvesData-main", "phyloTree.rds"))
 
 ```
 
@@ -1287,19 +1294,24 @@ spp_Y_new <- data.frame("scientificName" = spp_Y_new)
 
 TrData <- avonet |> 
   rename(scientificName = Species2) |>
-  right_join(spp_Y_new, "scientificName") |>  
-  dplyr::select(Mass, scientificName, Trophic.Niche, Primary.Lifestyle, Migration) |> 
-  as.data.frame()
+  right_join(spp_Y_new, "scientificName")
 
 TrData$scientificName <- spp_Y[match(TrData$scientificName, spp_Y_new$scientificName)]
 
 TrData <- TrData |> 
   arrange(scientificName)
 
+saveRDS(TrData, file.path("data", "traits", "TrData_complete.rds"))
+
+TrData <- TrData |> 
+  dplyr::select(Mass, scientificName, Trophic.Niche, Primary.Lifestyle, Migration) |> 
+  as.data.frame()
+
 row.names(TrData) <- TrData$scientificName 
- 
 TrData <- TrData |> 
   dplyr::select(-scientificName)
+
+
 
 ```
 
@@ -1376,15 +1388,15 @@ m <- Hmsc(Y = Y,
 
 ```{r}
 # Get the number of covariates (nc) and traits (nt)
-nc <- m$nc
-nt <- m$nt
+# nc <- m$nc
+# nt <- m$nt
 
 # 2. Set a strong shrinkage (ridge) prior
 # Set the prior variance UGamma to a small value (e.g., 0.1)
 # This forces the Gamma parameters (and thus Beta) to be close to zero.
-UGamma_strict <- diag(0.1, nc * nt) 
+# UGamma_strict <- diag(0.1, nc * nt) 
 
-m <- setPriors(m, UGamma = UGamma_strict) # Strong shrinkage (small variance)
+# m <- setPriors(m, UGamma = UGamma_strict) # Strong shrinkage (small variance)
 ```
 
 

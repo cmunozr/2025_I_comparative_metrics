@@ -4,7 +4,8 @@ library(sf)
 library(here)
 library(doParallel)
 library(foreach)
-library(dplyr)
+library(tidyverse)
+
 
 source(file.path("code", "config_model.R"))
 
@@ -18,7 +19,12 @@ set.seed(11072024)
 
 # 1. SETUP & DATA LOADING
 cat(sprintf("[%s] Starting setup...\n", Sys.time()))
-sufix <- "control"
+sufix <- "metso"
+
+# Create output directory
+pred_dir <- file.path("results", "predictions", sufix)
+if(!dir.exists(pred_dir)) dir.create(pred_dir, recursive = TRUE, showWarnings = FALSE)
+
 
 data_path <- file.path("data", "covariates", paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
 XData_list <- readRDS(data_path)
@@ -29,6 +35,7 @@ if(sufix == "metso"){
   # Load Covariates
   samp <- sample(seq_len(length(XData_list$polygon_id)), size = 2000)
   XData <- XData[samp, ]
+  samp_standid <- XData_list$polygon_id[samp]
   
   # Load Spatial Data
   # MAINTAINING EPSG:4326 to match training data structure
@@ -40,15 +47,15 @@ if(sufix == "metso"){
     dplyr::arrange(factor(standid, levels = XData_list$polygon_id))
   sp_df <- sp_df[samp,]
 }else{
-  sp_df <- read_sf(here("data", "metso", "donut_matches_sp.gpkg")) |> 
+  sp_df <- read_sf(file.path("data", "metso", "donut_matches_sp.gpkg")) |> 
     st_centroid() |>
     st_transform("EPSG:4326") |>
     dplyr::filter(standid %in% XData_list$polygon_id) |>
-    dplyr::distinct(standid, .keep_all = TRUE) |>
-    dplyr::arrange(factor(standid, levels = XData_list$polygon_id))
+    dplyr::distinct(standid, .keep_all = TRUE)
 }
 
-
+if(sufix == "metso") saveRDS(samp_standid, file.path(pred_dir, "pred_ids.rds"))
+if(sufix == "control") saveRDS(sp_df$standid, file.path(pred_dir, "pred_ids.rds"))
 
 # Load Model
 run_name <- generate_run_name(run_config)
@@ -68,16 +75,11 @@ batch_size <- 100 #200
 num_batches <- ceiling(total_rows / batch_size)
 
 # Parallel Workers Setup
-# Using 10 cores as you requested (safe for 524GB RAM)
 n_cores <- 20 #40 
 cat(sprintf("Initializing parallel cluster with %d cores...\n", n_cores))
 
 cl <- makeCluster(n_cores, outfile = "")
 registerDoParallel(cl)
-
-# Create output directory
-pred_dir <- file.path("results", "predictions", sufix)
-if(!dir.exists(pred_dir)) dir.create(pred_dir, recursive = TRUE, showWarnings = FALSE)
 
 cat(sprintf("[%s] Starting PARALLEL prediction for %d stands in %d batches.\n", Sys.time(), total_rows, num_batches))
 
@@ -149,8 +151,6 @@ parallel_time <- system.time({
 
 # Stop the cluster
 stopCluster(cl)
-
-if(sufix == "metso") saveRDS(samp, file.path(pred_dir, "samp.rds"))
 
 cat("-----------DONE---------------\n")
 print(parallel_time)

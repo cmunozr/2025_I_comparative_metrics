@@ -23,33 +23,32 @@ mean_species_abundance <- function(pred.object.baseline, pred.object.scenario, r
   }
   
   # ratio of abundance between posterior predictions (AI/AR)
-  change_abundance <- (pred.object.scenario / pred.object.baseline)
+  ratio <- (pred.object.scenario / pred.object.baseline)
+  # as we are not predicting in the same place of training, there is no a 
+  # 1:1 match between both sets
   
-  # handle Inf and NaN
-  change_abundance <- ifelse(is.infinite(change_abundance) | is.nan(change_abundance), NA, change_abundance)
+  # handle Inf: it means value of baseline is 0, so the species was not present in the baseline, according to definition of MSA should be 0
+  ratio[is.infinite(ratio)] <- 0
+  
+  # and NaN: it means value of baselina and prediction is 0, so they shoudl be excluded
+  ratio[is.nan(ratio)] <- NA
   
   # Truncated to 1
-  change_abundance <- ifelse(change_abundance > 1 & !is.na(change_abundance), 1, change_abundance)
+  ratio[ratio > 1] <- 1
   
-  dm <- dim(change_abundance)
-
-  msa <-  matrix(nrow = dm[1], ncol = dm[3])
-  
-  # Sum ratios of change on sites of each replicate of the posterior
-  for(i in 1:dm[3]){
-    msa[ , i] <- change_abundance[,,i] |> 
-      rowSums()
-  }
+    # Sum ratios of change on sites of each replicate of the posterior
+  sum_ratios <- apply(ratio, c(1,3), sum, na.rm = T)
   
   # Divide the sum of ratios between the number of species per site (richness previously calculated)
-  msa <- mean(msa, na.rm = T)
+  msa <- sum_ratios/richness.baseline
   
-  rm("change_abundance")
+  # If richness.baseline was 0, result is NaN or Inf. 
+  # Convert this to NA, as MSA is undefined for empty baselines.
+  msa[is.nan(msa) | is.infinite(msa)] <- NA
   
   return(msa)
   
-  ###### MISSING mean agruped
-  
+  ###### MISSING mean grouped
 }
 
 #------------------------
@@ -79,39 +78,30 @@ potentially_disappeared_fraction <- function(richness.baseline, richness.scenari
     group.each.rows <- N_sites_total
   }
   
+  # Calculate local CF
+  
+  ratio <- 1 - (richness.scenario/richness.baseline)
+  
+  ratio[ is.infinite(ratio) | is.nan(ratio) ] <- NA
+
+  # to save
   results_list <- vector("list", groups)
   
   for (g in 1:groups) {
-    
+    # g <- 1
     # Calculate site indices for the current group
     r0 <- (g - 1) * group.each.rows + 1
     r1 <- min(g * group.each.rows, N_sites_total)
     current_site_indices <- r0:r1
     n_group_sites <- length(current_site_indices)
     
-    # Extract sub matrices for the current group of sites
-    baseline_group <- richness.baseline[current_site_indices, , drop = FALSE]
-    scenario_group <- richness.scenario[current_site_indices, , drop = FALSE]
+    ratio_group <- ratio[current_site_indices, , drop = FALSE]
     
-    # Calculate column sums (total richness per replicate) within the group
-    b_group <- colSums(baseline_group)
-    s_group <- colSums(scenario_group)
+    mean_group <- colMeans(ratio_group, na.rm = T) |> 
+      t() |> 
+      as.data.frame() # only possible as metso and control have similar area and when grouping dont affect it is setuped to 1###### WATCH
     
-    # Calculate PDF
-    # Handle division by zero
-    pdf_group <- numeric(N_posterior)
-    valid_b <- b_group > 1e-12 
-    
-    pdf_group[valid_b] <- 1 - (s_group[valid_b] / b_group[valid_b])
-    pdf_group[!valid_b] <- NA # Set PDF to NA where baseline is effectively zero
-    
-    results_list[[g]] <- tibble(
-      group = g,
-      replicate_idx = 1:N_posterior,
-      pdf = pdf_group,
-      baseline_sum_group = b_group, # Include sums for context
-      scenario_sum_group = s_group  # Include sums for context
-    )
+    results_list[[g]] <- mean_group
     
   } # End group loop
   
