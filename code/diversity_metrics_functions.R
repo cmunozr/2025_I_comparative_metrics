@@ -79,7 +79,7 @@ potentially_disappeared_fraction <- function(richness.baseline, richness.scenari
   }
   
   # Calculate local CF
-  
+
   ratio <- 1 - (richness.scenario/richness.baseline)
   
   ratio[ is.infinite(ratio) | is.nan(ratio) ] <- NA
@@ -122,9 +122,9 @@ potentially_disappeared_fraction <- function(richness.baseline, richness.scenari
 
 
 
-library(rredlist)
+#library(rredlist)
 
-rl_species("Gorilla", "gorilla")
+#rl_species("Gorilla", "gorilla")
 
 # From ecology 
 
@@ -203,7 +203,7 @@ sorensen_smilarity <- function(pred.object.baseline, pred.object.scenario){
 ##	Functional richness 
 ##  https://doi.org/10.1890/08-2244.1
 
-functional_richness <- function(pred.object, trait.processed.object, stand.FRic, parallel = T, free.cores = 2) {
+functional_richness <- function(pred.object, trait.processed.object, stand.FRic, parallel = T, use.cores = 2) {
   
   # time process array with 100 matrix of 10824 rows x 20 cols: Parallel = 7.814091 mins, No Parallel = 20.49533 mins
   # time process array with 100 matrix of 10824 rows x 586 cols: Parallel = 12.7466 mins
@@ -297,7 +297,7 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic,
   
   if(parallel){
     
-    num_cores <- detectCores(logical = F) - free.cores
+    num_cores <- use.cores
     
     if(.Platform$OS.type == "windows"){
       
@@ -326,7 +326,7 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic,
 ##  Rao’s quadratic entropy coefficient (RaoQ)   
 ##  https://doi.org/10.1890/08-2244.1
 
-divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FALSE, parallel = FALSE, free.cores = 2) {
+divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FALSE, parallel = FALSE, use.cores = 2) {
   
   if (!requireNamespace("FD", quietly = TRUE)) install.packages("FD")
   library(FD)
@@ -368,15 +368,20 @@ divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FAL
   dis <- trait.processed.object$x.dist
   
   if (parallel) {
-    num_cores <- parallel::detectCores(logical = F) - free.cores
+    num_cores <- use.cores
     if (.Platform$OS.type == "windows") {
       cl <- parallel::makeCluster(num_cores)
       #parallel::clusterExport(cl, c("array_data", "dis", "scale"))
       results <- parallel::parApply(cl, array_data, 3, div_calc)
       parallel::stopCluster(cl)
     } else {
-      results <- parallel::mcapply(array_data, 3, div_calc, mc.cores = num_cores)
-      results <- unlist(results)
+      n_samples <- dim(array_data)[3]
+      
+      # Run mclapply over the indices, extracting the matrix slice [,,i] for each core
+      results <- parallel::mclapply(1:n_samples, function(i) {
+        div_calc(array_data[,,i]) 
+      }, mc.cores = num_cores)
+      results <- do.call(cbind, results)
     }
   } else {
     results <- apply(array_data, 3, div_calc)
@@ -396,12 +401,11 @@ divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FAL
 ## CWM: community weighted mean
 ## https://doi.org/10.1890/08-2244.1
 
-functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "dom", parallel = FALSE, free.cores = 2) {
+functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "dom", parallel = FALSE, use.cores = 2) {
   
-  if (!requireNamespace("FD", quietly = TRUE)) install.packages("FD")
-  if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
-  library(FD)
-  library(dplyr)
+  require(FD)
+  require(dplyr)
+  require(parallel)
   
   traits <- trait.processed.object$traits.FRic
   num_traits <- ncol(traits)
@@ -409,11 +413,11 @@ functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "
   num_pred <- dim(pred.object)[3]
   
   # Inicializar listas para almacenar las columnas de cada rasgo
-  trait_lists <- lapply(1:num_traits, function(x) matrix(NA, nrow = num_sites, ncol = num_pred))
+  trait_lists <- vector("list", num_traits)
   
   process_matrix <- function(i) {
-    # trait_weightead <- FD::functcomp(x = trait_nt, a = pred.object[,,i], CWM.type = cwm.type)
-    return("ok")
+    trait_weightead <- FD::functcomp(x = trait_nt, a = pred.object[,,i], CWM.type = cwm.type)
+    return(trait_weightead)
   }
   
   for(nt in 1:num_traits){
@@ -421,10 +425,10 @@ functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "
     trait_nt <- traits |> select(all_of(nt))
     
     if (parallel) {
-      num_cores <- detectCores(logical = F) - free.cores
+      num_cores <- use.cores
       if (.Platform$OS.type == "windows") {
         cl <- makeCluster(num_cores)
-        # clusterExport(cl, c("trait_nt", "pred.object", "cwm.type"), envir = environment())
+        clusterExport(cl, c("trait_nt", "pred.object", "cwm.type"), envir = environment())
         sublist <- parLapply(cl, seq_len(num_pred), process_matrix)
         stopCluster(cl)
       } else {
@@ -434,8 +438,8 @@ functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "
       sublist <- lapply(seq_len(num_pred), process_matrix)
     }
     
-    sublist <- do.call("cbind", sublist)
-    trait_lists[[nt]] <- sublist
+    
+    trait_lists[[nt]] <- do.call("cbind", sublist)
     rm("sublist")
   }
   
@@ -460,8 +464,7 @@ functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "
 
 beta_diversity <- function(pred.object = arraytest, group.each.rows = NULL){
 
-  if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
-  library(dplyr)
+  require(dplyr)
   
   dm <- dim(pred.object)
   N_samples <- dm[3]
@@ -484,9 +487,9 @@ beta_diversity <- function(pred.object = arraytest, group.each.rows = NULL){
   
   
   for(i in 1:N_samples) { 
-    
+  # i <- 2
     for(g in 1:groups) {
-      
+      # g <- 1
       # Site indices for current group
       r0 <- (g - 1) * group.each.rows + 1
       r1 <- min(g * group.each.rows, N_sites_total)
@@ -504,6 +507,7 @@ beta_diversity <- function(pred.object = arraytest, group.each.rows = NULL){
       # Explicitly index rows to set to zero
       rows_to_zero <- which(rsums == 0)
       if (length(rows_to_zero) > 0) {
+        print(g)
         hellinger_transf[rows_to_zero, ] <- 0 
       }
       

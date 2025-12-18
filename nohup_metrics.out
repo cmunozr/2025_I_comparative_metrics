@@ -1,0 +1,83 @@
+nohup: ignoring input
+── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+✔ dplyr     1.1.4     ✔ readr     2.1.6
+✔ forcats   1.0.1     ✔ stringr   1.6.0
+✔ ggplot2   4.0.1     ✔ tibble    3.3.0
+✔ lubridate 1.9.4     ✔ tidyr     1.3.1
+✔ purrr     1.2.0     
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
+Loading required package: coda
+here() starts at /home/avesta/munozcs/Documents
+----- Writing to results/metrics
+----- Starting calculation of richness
+----- Starting calculation of msa
+----- Starting calculation of pdf
+----- Starting calculation of geom
+----- Starting calculation of TrData processing (Required for FR, CWM, or RaoQ)
+----- Starting calculation of TrData processing (Heavy Step)
+Loading required package: ade4
+Loading required package: ape
+
+Attaching package: ‘ape’
+
+The following object is masked from ‘package:dplyr’:
+
+    where
+
+Loading required package: vegan
+Loading required package: permute
+FEVe: Could not be calculated for communities with <3 functionally singular species. 
+FDis: Equals 0 in communities with only one functionally singular species. 
+FRic: To respect s > t, FRic could not be calculated for communities with <3 functionally singular species. 
+FRic: Dimensionality reduction was required. The last 11 PCoA axes (out of 13 in total) were removed. 
+FRic: Quality of the reduced-space representation = 0.7519674 
+----- Starting calculation of fr
+----- Starting calculation of CWM
+Error in functcomp_parallel(pred.object = predY_logic_metso, trait.processed.object = TrData_processed,  : 
+  unused argument (free.cores = 2)
+Execution halted
+nohup: ignoring input
+── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+✔ dplyr     1.1.4     ✔ readr     2.1.6
+✔ forcats   1.0.1     ✔ stringr   1.6.0
+✔ ggplot2   4.0.1     ✔ tibble    3.3.0
+✔ lubridate 1.9.4     ✔ tidyr     1.3.1
+✔ purrr     1.2.0     
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
+Loading required package: coda
+here() starts at /home/avesta/munozcs/Documents
+----- Writing to results/metrics
+----- Starting calculation of richness
+File exists, loading richness objects...
+----- Starting calculation of msa
+File exists, loading msa...
+----- Starting calculation of pdf
+File exists, loading pdf...
+----- Starting calculation of geom
+File exists, loading geom objects...
+----- Starting calculation of TrData processing (Required for FR, CWM, or RaoQ)
+----- Loading cached TrData_processed object...
+----- Starting calculation of fr
+File exists, loading fr objects...
+----- Starting calculation of CWM
+Loading required package: FD
+Loading required package: ade4
+Loading required package: ape
+
+Attaching package: ‘ape’
+
+The following object is masked from ‘package:dplyr’:
+
+    where
+
+Loading required package: geometry
+Loading required package: vegan
+Loading required package: permute
+----- Starting calculation of RaoQ
+----- Starting calculation of sorensen
