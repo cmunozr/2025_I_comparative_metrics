@@ -110,7 +110,7 @@ richness_file <- file.path("results", "metrics", "richness.rds")
 if (!file.exists(richness_file)) {
   richness_metso <- species_richness(pred.object = predY_logic_metso)
   richness_control <- species_richness(pred.object = predY_logic_control)
-  delta_richness <- richness_control - richness_metso
+  delta_richness <- richness_metso - richness_control 
   normalized <- delta_richness / richness_metso
   
   # Save all three so we can reload them later
@@ -164,7 +164,7 @@ geom_file <- file.path("results", "metrics", "geom.rds")
 if (!file.exists(geom_file)) {
   geom_metso <- geom_mean_abun(pred.object = predY_metso, richness = richness_metso) # Depends on A
   geom_control <- geom_mean_abun(pred.object = predY_control, richness = richness_control) # Depends on A
-  delta_geom <- geom_control - geom_metso
+  delta_geom <- geom_metso - geom_control 
   normalized <- delta_geom / geom_metso
   
   saveRDS(list(delta = delta_geom, norm = normalized, metso = geom_metso, control = geom_control), geom_file)
@@ -225,7 +225,7 @@ if (!file.exists(fr_file)) {
                                   stand.FRic = FALSE, parallel = TRUE, use.cores = cores)
   fr_control <- functional_richness(pred.object = predY_logic_control, trait.processed.object = TrData_processed, 
                                     stand.FRic = FALSE, parallel = TRUE, use.cores = cores)
-  delta_fr <- fr_control - fr_metso
+  delta_fr <- fr_metso - fr_control
   normalized <- delta_fr / fr_metso
   
   saveRDS(list(delta = delta_fr, norm = normalized, metso = fr_metso, control = fr_control), fr_file)
@@ -247,7 +247,7 @@ if (!file.exists(cwm_file)) {
                                   cwm.type = "dom", parallel = TRUE, use.cores = 2)[[1]]
   CWM_control <- functcomp_parallel(pred.object = predY_logic_control, trait.processed.object = TrData_processed, 
                                     cwm.type = "dom", parallel = TRUE, use.cores = 2)[[1]]
-  delta_CWM <- CWM_control - CWM_metso
+  delta_CWM <- CWM_metso - CWM_control
   normalized <- delta_CWM / CWM_metso
   
   saveRDS(list(delta = delta_CWM, norm = normalized, metso = CWM_metso, control = CWM_control), cwm_file)
@@ -274,7 +274,7 @@ if (!file.exists(raoq_file)) {
   if(is.list(RaoQ_metso)) RaoQ_metso <- do.call(cbind, RaoQ_metso)
   if(is.list(RaoQ_control)) RaoQ_control <- do.call(cbind, RaoQ_control)
   
-  delta_RaoQ <- RaoQ_control - RaoQ_metso
+  delta_RaoQ <- RaoQ_metso - RaoQ_control
   normalized <- delta_RaoQ / RaoQ_metso
   
   saveRDS(list(delta = delta_RaoQ, norm = normalized, metso = RaoQ_metso, control = RaoQ_control), raoq_file)
@@ -297,7 +297,7 @@ if (!file.exists(sorensen_file)) {
 } else {
   cat("File exists, skipping sorensen calculation\n")
   tmp <- readRDS(sorensen_file)
-  sorensen <- tmp$delta
+  sorensen <- tmp$norm
   rm(tmp)
 }
 

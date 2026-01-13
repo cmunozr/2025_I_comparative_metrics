@@ -316,7 +316,7 @@ dir.create(output_folder)
 
 download_tifs_recursive(url = start_url, output_dir = output_folder)
 
-# making bigger tiles to speed process
+# making bigger tiles to speed process for DEM dowload
 
 dem_files <- list.files(output_folder, pattern = ".tif$", full.names = T, ) |> 
   tools::file_path_sans_ext() |> 

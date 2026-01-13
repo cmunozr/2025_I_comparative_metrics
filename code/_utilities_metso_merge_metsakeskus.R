@@ -1,8 +1,9 @@
 library(sf)
 library(dplyr)
 
-paths_in <- list.files(file.path("E:", "metsakeskus", "metsavarakuviot"), full.names = T, recursive = F)
-metso_trt_control <- read.csv(file.path("data", "metso", "treatment_control_standid.csv"))
+paths_in <- list.files(file.path("D:", "metsakeskus", "metsavarakuviot"), full.names = T, recursive = F)
+metso_trt_control <- read.csv(file.path("data", "metso", "treatment_control_standid.csv")) |> 
+  filter(metso == 0)
 
 # function to read geopackages from metsakeskus zip files
 read_gpkg_from_zip <- function(zip_file, epsg = "EPSG:3067", metso = metso_trt_control, 
@@ -28,10 +29,10 @@ read_gpkg_from_zip <- function(zip_file, epsg = "EPSG:3067", metso = metso_trt_c
   return(gpkg)
 }
 
-gpkgs <- lapply(X = paths_in, function(X){
+gpkgs_ <- lapply(X = paths_in, function(X){
     tmp <- read_gpkg_from_zip(X, tmp.fol = "data/metso/tmp")
   })
 
 metso_trt_control_stands <- bind_rows(gpkgs)
 
-write_sf(metso_trt_control_stands, file.path("data", "metso", "treatment_control_stand.gpkg"), delete_layer = T)
+write_sf(metso_trt_control_stands, file.path("data", "metso", "treatment_control_stand_v2.gpkg"), delete_layer = T)

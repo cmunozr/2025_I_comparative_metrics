@@ -154,7 +154,7 @@ clim <-
 coords <- list.files(file.path("data", "fbs"), pattern = "route_sections_L2", full.names = T) |> # external
   lapply(st_read)
 
-metso <- st_read(file.path("data", "metso", "treatment_control_stand_filtered.gpkg")) # external
+metso <- st_read(file.path("data", "metso", "treatment_control_stand_v2.gpkg")) # external
 
 utm_10 <- st_read(file.path("data", "utm35_zones", "TM35_karttalehtijako.gpkg"), layer = "utm10") # external
 utm_200 <- st_read(file.path("data", "utm35_zones", "TM35_karttalehtijako.gpkg"), layer = "utm200") # external

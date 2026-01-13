@@ -13,7 +13,7 @@ metric_nms <- basename(metric_files) |>
   gsub(pattern = ".rds", replacement = "") |> 
   toupper()
 
-metric_nms[which(metric_nms == "PDF")] <- "L-PDF*" 
+#metric_nms[which(metric_nms == "PDF")] <- "L-PDF*" 
 
 res <- list()
 
@@ -26,13 +26,13 @@ for(i in 1:length(metric_files)){
   # This matrix holds the posterior distribution of the effect for each locality
   # here we call the normalized difference
   
-  if((metric_nm %in% c("MSA", "SORENSEN","L-PDF*"))){
+  if((metric_nm %in% c("MSA", "SORENSEN","PDF"))){
     effect_size_posterior <- metric_list[["norm"]] |> as.matrix()  
-    if(metric_nm == "L-PDF*"){
-       effect_size_posterior <- (effect_size_posterior*-1)
-    }
+    # if(metric_nm == "L-PDF*"){
+    #    effect_size_posterior <- (effect_size_posterior*-1)
+    # }
   }else{
-    effect_size_posterior <- metric_list[["norm"]] |> as.matrix()
+    effect_size_posterior <- metric_list[["delta"]] |> as.matrix()
   }
   
   effect_size_posterior[is.infinite(effect_size_posterior)] <- NA 
@@ -166,7 +166,7 @@ for(i in 1:length(metric_files)){
     opt_horizontal_padding(scale=0.5) # Reducir padding horizontal
   
   
-  if(!(metric_nm %in% c("MSA", "SORENSEN","L-PDF*"))){
+  if(!(metric_nm %in% c("MSA", "SORENSEN","PDF"))){
     #--------------------
     # PPT JYU
     

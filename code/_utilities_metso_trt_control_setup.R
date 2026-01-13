@@ -2,6 +2,7 @@ library(data.table)
 library(dplyr)
 
 load(file.path("data", "metso", "raw", "treatment_long.RData"))
+matched_pairs <- readRDS("data/metso/raw/matched_pairs.rds") # got 2026-01-12
 
 #------------
 
@@ -36,34 +37,19 @@ table(trt.stands$year_in) |>
   barplot()
 table(trt.stands$contract_type) |> 
   barplot()
+
+matched_pairs <- matched_pairs |> 
+  filter(standid_treated %in% trt.stands$standid)
+
 #------------
 
-ard <- readRDS(file.path("data", "metso", "raw", "ard_long.RDS"))
-# 273427 unique number stands
-# number stands * number of years = 5741967
-
-index <- !(ard$standid %in% trt.stands$standid)
-control.stands <- ard[index, ] |>  
-  filter(year == 2021) |> 
-  select(standid) |> 
+control.stands <- matched_pairs |>  
+  select(standid_matched_control) |> 
+  rename(standid = standid_matched_control) |> 
   mutate(metso = 0)
-# it doesnt matter which year, they are the same in each year
-# 228210 unique number stands
-
-#------------
-# stand_dt_full <- fread("data/metso/stand_dt_full.csv")
-# 
-# head(stand_dt_full)
-# names(stand_dt_full)
-# 
-# stand_dt_full <- stand_dt_full |> select(dplyr::contains("metso"))
-# 
-# unique(stand_dt_full$standid) |>  length()
-# rm(stand_dt_full);gc()
-# 
-# # all the stands? 12385834
-# # dataset information is covariate
 
 trt.control <- bind_rows(trt.stands, control.stands)
 
 data.table::fwrite(trt.control, file.path("data","metso", "treatment_control_standid.csv"))
+
+

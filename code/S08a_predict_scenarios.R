@@ -16,15 +16,19 @@ if(!(Sys.getenv("RSTUDIO") == "1")){
 # Turn off S2 geometry to avoid spherical geometry errors with EPSG:4326
 sf::sf_use_s2(FALSE)
 set.seed(11072024)
+test <- T
 
 # 1. SETUP & DATA LOADING
 cat(sprintf("[%s] Starting setup...\n", Sys.time()))
 sufix <- "metso"
 
-# Create output directory
-pred_dir <- file.path("results", "predictions", sufix)
-if(!dir.exists(pred_dir)) dir.create(pred_dir, recursive = TRUE, showWarnings = FALSE)
 
+
+# Create output directory
+
+pred_dir <- file.path("results", "predictions", sufix)
+
+if(!dir.exists(pred_dir)) dir.create(pred_dir, recursive = TRUE, showWarnings = FALSE)
 
 data_path <- file.path("data", "covariates", paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
 XData_list <- readRDS(data_path)
