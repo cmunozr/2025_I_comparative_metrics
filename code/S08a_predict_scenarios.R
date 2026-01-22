@@ -22,44 +22,73 @@ test <- T
 cat(sprintf("[%s] Starting setup...\n", Sys.time()))
 sufix <- "metso"
 
-
-
 # Create output directory
 
 pred_dir <- file.path("results", "predictions", sufix)
 
 if(!dir.exists(pred_dir)) dir.create(pred_dir, recursive = TRUE, showWarnings = FALSE)
 
+# Call spatial data frame (this df has filter check the metso setup)
+sp_df <- read_sf(here("data", "metso", "treatment_control_stand_v2.gpkg"))
+
+# call matches 
+matches <- readRDS(file.path("data", "metso", "raw", "matched_pairs.rds")) |> 
+  na.omit()
+
+# call XData
+
 data_path <- file.path("data", "covariates", paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
 XData_list <- readRDS(data_path)
 XData <- XData_list$XData |> 
   as.data.frame()
 
-if(sufix == "metso"){
-  # Load Covariates
-  samp <- sample(seq_len(length(XData_list$polygon_id)), size = 2000)
-  XData <- XData[samp, ]
-  samp_standid <- XData_list$polygon_id[samp]
+# in case of sampling for test u other reason
+
+if(test){
   
+  matches <- matches |> 
+    filter(standid_treated %in% sp_df$standid | standid_matched_control %in% sp_df$standid)
+  
+  if(sufix == "metso"){
+    samp <- sample(seq_len(nrow(matches)), size = 4000)
+    matches <- matches[samp,]
+  }
+  
+  if(sufix == "control"){
+    samp_id <- read_rds(file.path("results", "predictions", "metso", "pred_ids.rds"))  
+    matches <- matches |> 
+      filter(standid_treated %in% samp_id)
+  }
+} 
+
+if(sufix == "metso"){
   # Load Spatial Data
-  # MAINTAINING EPSG:4326 to match training data structure
-  sp_df <- read_sf(here("data", "metso", "treatment_control_stand_filtered.gpkg")) |>
+
+  sp_df <- sp_df |>
     st_centroid() |>
     st_transform("EPSG:4326") |>
-    dplyr::filter(metso == 1, standid %in% XData_list$polygon_id) |>
+    dplyr::filter(metso == 1, standid %in% matches$standid_treated) |>
     dplyr::distinct(standid, .keep_all = TRUE) |>
     dplyr::arrange(factor(standid, levels = XData_list$polygon_id))
-  sp_df <- sp_df[samp,]
-}else{
-  sp_df <- read_sf(file.path("data", "metso", "donut_matches_sp.gpkg")) |> 
+
+}else if(sufix == "control"){
+  sp_df <- sp_df |> 
     st_centroid() |>
     st_transform("EPSG:4326") |>
-    dplyr::filter(standid %in% XData_list$polygon_id) |>
-    dplyr::distinct(standid, .keep_all = TRUE)
+    dplyr::filter(metso == 0, standid %in% matches$standid_matched_control) |>
+    dplyr::distinct(standid, .keep_all = TRUE) |>
+    dplyr::arrange(factor(standid, levels = XData_list$polygon_id))
 }
 
-if(sufix == "metso") saveRDS(samp_standid, file.path(pred_dir, "pred_ids.rds"))
-if(sufix == "control") saveRDS(sp_df$standid, file.path(pred_dir, "pred_ids.rds"))
+index <- XData_list$polygon_id %in% sp_df$standid
+XData <- XData[index, ]
+XData_list$polygon_id <- XData_list$polygon_id[index]
+sp_df <- sp_df[sp_df$standid %in% XData_list$polygon_id, ]
+
+saveRDS(sp_df$standid, file.path(pred_dir, "pred_ids.rds"))
+
+coords <- st_coordinates(sp_df) |> 
+  as.data.frame()
 
 # Load Model
 run_name <- generate_run_name(run_config)
@@ -75,11 +104,11 @@ cat(sprintf("Spatial random level identified as: %s\n", spatial_level_name))
 
 # Configuration for batching
 total_rows <- nrow(XData)
-batch_size <- 100 #200
+batch_size <- 200 #100
 num_batches <- ceiling(total_rows / batch_size)
 
 # Parallel Workers Setup
-n_cores <- 20 #40 
+n_cores <- 20 #20 
 cat(sprintf("Initializing parallel cluster with %d cores...\n", n_cores))
 
 cl <- makeCluster(n_cores, outfile = "")
@@ -93,7 +122,7 @@ parallel_time <- system.time({
   
   foreach(i = 1:num_batches, 
           .packages = c("Hmsc", "sf"), 
-          .export = c("XData", "sp_df", "hM", "run_config", "spatial_level_name", "pred_dir", "batch_size", "total_rows")) %dopar% {
+          .export = c("XData", "coords", "hM", "run_config", "spatial_level_name", "pred_dir", "batch_size", "total_rows")) %dopar% {
             
             # A. Define indices for this batch
             start_idx <- (i - 1) * batch_size + 1
@@ -115,7 +144,7 @@ parallel_time <- system.time({
               XData_sub <- XData[indices, ]
               
               # Slice coordinates
-              coords_sub <- st_coordinates(sp_df)[indices, ]
+              coords_sub <- coords[indices, ]
               
               # Create Named List for Gradient (Crucial for prepareGradient)
               sDataNew_sub <- list()

@@ -23,12 +23,22 @@ mean_species_abundance <- function(pred.object.baseline, pred.object.scenario, r
   }
   
   # ratio of abundance between posterior predictions (AI/AR)
+  # "which is calculated only for original species (i.e. occurring in the reference situation)"
+  
+  mask <- (pred.object.baseline > 0)
+  pred.object.scenario <- pred.object.scenario * mask
+  pred.object.baseline <- pred.object.baseline * mask
+  
   ratio <- (pred.object.scenario / pred.object.baseline)
+  
+  # Explicitly mark cells as not applicable
+  ratio[!mask] <- NA
+  
   # as we are not predicting in the same place of training, there is no a 
   # 1:1 match between both sets
   
-  # handle Inf: it means value of baseline is 0, so the species was not present in the baseline, according to definition of MSA should be 0
-  ratio[is.infinite(ratio)] <- 0
+  # handle Inf: it means value of baseline is 0, so the species was not present in the baseline, according to definition of MSA shouldn't be possible its calculation
+  ratio[is.infinite(ratio)] <- NA
   
   # and NaN: it means value of baselina and prediction is 0, so they shoudl be excluded
   ratio[is.nan(ratio)] <- NA
@@ -79,10 +89,17 @@ potentially_disappeared_fraction <- function(richness.baseline, richness.scenari
   }
   
   # Calculate local CF
-
+  
+  # Mask Only species that are present in the natural reference site are considered in the pressure-affected site.
+  mask <- (richness.baseline > 0)
+  richness.scenario <- richness.scenario * mask
+  richness.baseline <- richness.baseline * mask
+  
   ratio <- 1 - (richness.scenario/richness.baseline)
   
-  ratio[ is.infinite(ratio) | is.nan(ratio) ] <- NA
+  # Explicitly mark cells as not applicable
+  ratio[!mask] <- NA
+  
 
   # to save
   results_list <- vector("list", groups)

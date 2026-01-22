@@ -16,16 +16,34 @@ run_calculate_XData <- T
 run_new_var_XData <- F
 dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";")
 mapping_functions <- read.xlsx(file.path("data", "covariates", "mapping_covariate_functions.xlsx"), sheet = 1)
-sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_filtered.gpkg")) 
+sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_v2.gpkg")) 
+matches <- readRDS(file.path("data", "metso", "raw", "matched_pairs.rds")) |> 
+  na.omit()
 sufix <- "control"
 
 if(sufix == "metso"){
+
   sp_df <- sp_df |> dplyr::filter(metso == 1)  
-}else{
-  matches <- readRDS(file.path("data", "metso", "donut_matches.rds")) |> 
-    na.omit()
+
+}else if(sufix == "control"){
+  
+  path_preprocessed <- list.files(file.path("data", "covariates", "pre_processed"), 
+                                  pattern = paste0("metso", ".rds$"), full.names = T, 
+                                  recursive = T)
+  lapply(X = path_preprocessed, FUN = function(X){
+    var <- readRDS(X) 
+    c <- var |> 
+      filter(polygon_id %in% matches$standid_matched_control)
+    new_path <- sub(pattern = "metso", replacement = "control", x = X)
+    saveRDS(object = c, file = new_path)
+    m <- var |> 
+      filter(polygon_id %in% matches$standid_treated)
+    saveRDS(object = m, file = X)
+    invisible("success")
+  })
+  
   sp_df <- sp_df |> 
-    dplyr::filter(metso == 0, standid %in% matches$control_standid) 
+    dplyr::filter(metso == 0, standid %in% matches$standid_matched_control) 
 }
 
 path_rds <- file.path(folder_name, paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
@@ -45,11 +63,11 @@ run_name <- generate_run_name(run_config)
 fitted_full_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
 hM <- readRDS(fitted_full_model_path)
 
-XData_metso <- readRDS(path_rds)
+XData_ <- readRDS(path_rds)
 
-XData_metso$XData <- XData_metso$XData |> 
+XData_$XData <- XData_$XData |> 
   dplyr::select(dplyr::all_of(names(hM$XData)))
 
-saveRDS(XData_metso, file = path_rds)
+saveRDS(XData_, file = path_rds)
 
 proc.time()

@@ -9,7 +9,7 @@ if(!(Sys.getenv("RSTUDIO") == "1")){
 }
 
 set.seed(11072024)
-test <- T
+test <- F
 
 if(test){
   num_loc <- 100
@@ -22,7 +22,6 @@ if(test){
 
 metric_files <- list.files(file.path("results", "metrics"), pattern = ".rds", full.names = T)
 metric_files <- metric_files[stringr::str_detect(metric_files, pattern = "TrData", negate = T)]
-n_sample <- 1971
 
 metrics <- basename(metric_files) |> 
   gsub(pattern = ".rds", replacement = "") |> 
@@ -33,16 +32,11 @@ sampling_conditions <- c("local")
 # store partial data frames here
 results_list <- lapply(X = metric_files, 
                        FUN = function(X, is.test = test, to_s = to_sample){
-                           effect <- readRDS(X)[["delta"]] 
+                           effect <- readRDS(X)[["norm"]]
                            if(is.test) effect <- effect[to_s$a, to_s$b] 
                            if(is.data.frame(effect)) effect <- as.matrix(effect)
                            effect <- as.vector(effect)
-                           if(length(effect) != 10000){
-                             return(NA)
-                           }else{
-                             res <- data.frame(EffectSize = effect)
-                             return(res)
-                             } 
+                           res <- data.frame(EffectSize = effect)
                            }
                        )
   
@@ -50,11 +44,12 @@ results_list <- lapply(X = metric_files,
 all_results_df <- bind_rows(results_list) %>%
   # Convert to factors to control order and labels in ggplot
   mutate(
-    Metric = factor(rep(x = metrics, each = 10000), levels = metrics),
-    Sampling = rep(x = sampling_conditions, 60000)
+    Metric = factor(rep(x = metrics, each = nrow(results_list[[1]])), levels = metrics),
+    Sampling = rep(x = sampling_conditions, nrow(results_list[[1]])*length(metrics))
   )
 
 all_results_df <- all_results_df[!is.infinite(all_results_df$EffectSize), ]
+
 
 # --- Creating the Plot with ggplot2 ---
 
@@ -74,18 +69,18 @@ p <- ggplot(all_results_df, aes(x = Metric, y = EffectSize, fill = Sampling)) +
   # Titles and labels
   labs(
     title = "Comparison of Mean Effect Size (Bussiness as usual - METSO)",
-    subtitle = "Under Different Sampling Intensities (Local Scale)",
     x = "Biodiversity Metric",
     y = "Average Effect Size\n(BAU - Metso)"
   ) +
-  theme_minimal(base_size = 14) +
+  theme_minimal(base_size = 8) +
   # Rotate x-axis labels if necessary
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  facet_grid(vars(Metric), scales = "free")
 
 dir.create(file.path("analysis"), showWarnings = F)
 
 ggsave(
-  "analysis/comparisson_base_figure.jpeg",    
+  "analysis/comparisson_base_figure_scale.jpeg",    
   plot = p,           
   width = 7,          
   height = 5,         

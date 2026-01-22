@@ -45,6 +45,10 @@ output_dir <- file.path("results", "metrics")
 if(!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 set.seed(11072024)
 
+mfeval <- readRDS("models/fbs_M008_thin_1000_samples_1000_chains_4/model_fit/mfeval_fbs_M008_thin_1000_samples_1000_chains_4_ho1.rds")[["RMSE"]]
+load("models/unfitted_fbs_M008.RData")
+names(mfeval) <- colnames(models$fbs_M008$Y)
+
 # WATCH, reduce array to work better to test
 test <- F
 
@@ -53,15 +57,16 @@ test <- F
 if(test){
   num_spp <- 10
   samples <- 100
-  to_sample <- list("a" = sample(seq(67), size = num_spp), "b"= sample(seq(4000), size = samples))
+  to_sample <- list("a" = sample(seq(67), size = num_spp), "b"= 1:100)
 }
 
-pred_id_metso <- readRDS(file.path("results", "predictions", "metso", "pred_ids.rds"))
-pred_id_control <- readRDS(file.path("results", "predictions", "control", "pred_ids.rds"))
+pred_id_metso <- readRDS(file.path("results", "predictions_", "metso", "pred_ids.rds"))
+pred_id_control <- readRDS(file.path("results", "predictions_", "control", "pred_ids.rds"))
 
-matches <- readRDS(file.path("data", "metso", "donut_matches.rds")) |> 
-  mutate(in_pred_metso = metso_standid %in% pred_id_metso,
-         in_pred_control = control_standid %in% pred_id_control)
+matches <- readRDS(file.path("data", "metso", "raw", "matched_pairs.rds")) |> 
+  mutate(in_pred_metso = standid_treated %in% pred_id_metso,
+         in_pred_control = standid_matched_control %in% pred_id_control) |> 
+  filter(in_pred_metso == 1)
   
 # trait data
 TrData <- readRDS(file.path("data", "traits", "TrData_complete.rds"))
@@ -73,7 +78,7 @@ sufixes <- c("metso", "control")
 for(i in 1:length(sufixes)){
   # i <- 2
   sufix <- sufixes[i]
-  prediction_files <- list.files(file.path("results", "predictions", sufix), pattern = "predY", full.names = TRUE)
+  prediction_files <- list.files(file.path("results", "predictions_", sufix), pattern = "predY", full.names = TRUE)
   
   predY <- lapply(X = prediction_files, 
                   FUN = function(X){readRDS(X) |> simplify2array()})
@@ -99,6 +104,14 @@ for(i in 1:length(sufixes)){
   rm(predY_logic, sufix, prediction_files, nm, nm2); gc()
 }
 
+# {
+#   pdf(file = "boxplots.pdf", width = 7, height = 5)
+#   boxplot(predY_control[,,1])
+#   apply(predY_control[,,1], 2, range)
+#   boxplot(predY_metso[,,1])
+#   dev.off()
+# }
+
 # 3. Calculate some metrics
 
 cat(paste0("----- Writing to ", output_dir, "\n"))
@@ -110,8 +123,8 @@ richness_file <- file.path("results", "metrics", "richness.rds")
 if (!file.exists(richness_file)) {
   richness_metso <- species_richness(pred.object = predY_logic_metso)
   richness_control <- species_richness(pred.object = predY_logic_control)
-  delta_richness <- richness_metso - richness_control 
-  normalized <- delta_richness / richness_metso
+  delta_richness <- richness_control - richness_metso 
+  normalized <- scale(delta_richness)
   
   # Save all three so we can reload them later
   saveRDS(list(delta = delta_richness, norm = normalized, metso = richness_metso, control = richness_control), richness_file)
@@ -132,8 +145,8 @@ msa_file <- file.path("results", "metrics", "msa.rds")
 if (!file.exists(msa_file)) {
   msa <- mean_species_abundance(pred.object.baseline = predY_metso, 
                                 pred.object.scenario = predY_control, 
-                                richness.baseline = richness_metso) # Depends on A
-  saveRDS(list(delta = NULL, norm = msa), msa_file)
+                                richness.baseline = richness_metso) 
+  saveRDS(list(delta = msa, norm = scale(msa)), msa_file)
 } else {
   cat("File exists, loading msa...\n")
   tmp <- readRDS(msa_file)
@@ -148,8 +161,8 @@ pdf_file <- file.path("results", "metrics", "pdf.rds")
 if (!file.exists(pdf_file)) {
   pdf <- potentially_disappeared_fraction(richness.baseline = richness_metso, # Depends on A
                                           richness.scenario = richness_control,
-                                          group.each.rows = 1) 
-  saveRDS(list(delta = NULL, norm = pdf), pdf_file)
+                                          group.each.rows = 1)
+  saveRDS(list(delta = pdf, norm = pdf), pdf_file)
 } else {
   cat("File exists, loading pdf...\n")
   tmp <- readRDS(pdf_file)
@@ -164,8 +177,8 @@ geom_file <- file.path("results", "metrics", "geom.rds")
 if (!file.exists(geom_file)) {
   geom_metso <- geom_mean_abun(pred.object = predY_metso, richness = richness_metso) # Depends on A
   geom_control <- geom_mean_abun(pred.object = predY_control, richness = richness_control) # Depends on A
-  delta_geom <- geom_metso - geom_control 
-  normalized <- delta_geom / geom_metso
+  delta_geom <- geom_control - geom_metso 
+  normalized <- scale(delta_geom)
   
   saveRDS(list(delta = delta_geom, norm = normalized, metso = geom_metso, control = geom_control), geom_file)
 } else {
@@ -225,8 +238,8 @@ if (!file.exists(fr_file)) {
                                   stand.FRic = FALSE, parallel = TRUE, use.cores = cores)
   fr_control <- functional_richness(pred.object = predY_logic_control, trait.processed.object = TrData_processed, 
                                     stand.FRic = FALSE, parallel = TRUE, use.cores = cores)
-  delta_fr <- fr_metso - fr_control
-  normalized <- delta_fr / fr_metso
+  delta_fr <- fr_control - fr_metso
+  normalized <- scale(delta_fr)
   
   saveRDS(list(delta = delta_fr, norm = normalized, metso = fr_metso, control = fr_control), fr_file)
 } else {
@@ -247,8 +260,8 @@ if (!file.exists(cwm_file)) {
                                   cwm.type = "dom", parallel = TRUE, use.cores = 2)[[1]]
   CWM_control <- functcomp_parallel(pred.object = predY_logic_control, trait.processed.object = TrData_processed, 
                                     cwm.type = "dom", parallel = TRUE, use.cores = 2)[[1]]
-  delta_CWM <- CWM_metso - CWM_control
-  normalized <- delta_CWM / CWM_metso
+  delta_CWM <- CWM_control - CWM_metso
+  normalized <- scale(delta_CWM)
   
   saveRDS(list(delta = delta_CWM, norm = normalized, metso = CWM_metso, control = CWM_control), cwm_file)
 } else {
@@ -274,8 +287,8 @@ if (!file.exists(raoq_file)) {
   if(is.list(RaoQ_metso)) RaoQ_metso <- do.call(cbind, RaoQ_metso)
   if(is.list(RaoQ_control)) RaoQ_control <- do.call(cbind, RaoQ_control)
   
-  delta_RaoQ <- RaoQ_metso - RaoQ_control
-  normalized <- delta_RaoQ / RaoQ_metso
+  delta_RaoQ <- RaoQ_control - RaoQ_metso
+  normalized <- scale(delta_RaoQ)
   
   saveRDS(list(delta = delta_RaoQ, norm = normalized, metso = RaoQ_metso, control = RaoQ_control), raoq_file)
 } else {
@@ -293,7 +306,7 @@ sorensen_file <- file.path("results", "metrics", "sorensen.rds")
 
 if (!file.exists(sorensen_file)) {
   sorensen <- sorensen_smilarity(pred.object.baseline = predY_metso, pred.object.scenario = predY_control)
-  saveRDS(list(delta = NULL, norm = sorensen), sorensen_file)
+  saveRDS(list(delta = sorensen, norm = scale(sorensen)), sorensen_file)
 } else {
   cat("File exists, skipping sorensen calculation\n")
   tmp <- readRDS(sorensen_file)

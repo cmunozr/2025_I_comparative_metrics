@@ -40,6 +40,9 @@ MS_NFI_years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
 
 set.seed(11072024)
 
+extract_metso <- T
+extract_coords <- F
+
 #--------------
 # Prepare paths and organize information for each set of covariates
 
@@ -257,19 +260,24 @@ run <- T
 
 log_info("Starting raw value extraction...")
 if(run){
-  log_info("Extracting coords data...")
-  coords_raw_data <- purrr::map(.x = list_of_groups, 
-                                ~extract_raw_values(polygons_sf = coords_utm_join, 
-                                                    raster_info_df = .x, 
-                                                    root_output_dir = output_base_path, 
-                                                    id_column = "sampleUnit",
-                                                    only_paths = F))
-  log_info("Extracting METSO data...")
-  metso_raw_data <- purrr::map(list_of_groups, 
-                               ~extract_raw_values(metso_utm_join, .x,
-                                                   root_output_dir = output_base_path, 
-                                                   id_column = "standid",
-                                                   only_paths = F, year_metso = 2021))
+  if(extract_coords){
+    log_info("Extracting coords data...")
+    coords_raw_data <- purrr::map(.x = list_of_groups, 
+                                  ~extract_raw_values(polygons_sf = coords_utm_join, 
+                                                      raster_info_df = .x, 
+                                                      root_output_dir = output_base_path, 
+                                                      id_column = "sampleUnit",
+                                                      only_paths = F))  
+  }
+  if(extract_metso){
+    log_info("Extracting METSO data...")
+    metso_raw_data <- purrr::map(list_of_groups, 
+                                 ~extract_raw_values(metso_utm_join, .x,
+                                                     root_output_dir = output_base_path, 
+                                                     id_column = "standid",
+                                                     only_paths = F, year_metso = 2021))  
+  }
+  
 }else{
   coords_raw_data <- purrr::map(list_of_groups, 
                                 ~extract_raw_values(coords_utm_join, .x, 
@@ -288,30 +296,34 @@ log_info("Extraction complete.")
 
 # Aggregate Tile Covariate Data for All Polygon Types
 
-log_info("Aggregating Coords Covariates...")
-aggregate_covariates(
-  raw_data_list = coords_raw_data,
-  polygon_type = coords_utm_join$set[1],
-  dict_covar = dict_covar,
-  output_root_dir = output_base_path,
-  df = st_drop_geometry(coords_utm_join)
-)
+if(extract_coords){
+  log_info("Aggregating Coords Covariates...")
+  aggregate_covariates(
+    raw_data_list = coords_raw_data,
+    polygon_type = coords_utm_join$set[1],
+    dict_covar = dict_covar,
+    output_root_dir = output_base_path,
+    df = st_drop_geometry(coords_utm_join)
+  )  
+}
 
-log_info("Aggregating METSO Covariates...")
-aggregate_covariates(
-  raw_data_list = metso_raw_data,
-  polygon_type = metso_utm_join$set[1],
-  dict_covar = dict_covar,
-  output_root_dir = output_base_path,
-  df = st_drop_geometry(metso_utm_join)
-)
+if(extract_metso){
+  log_info("Aggregating METSO Covariates...")
+  aggregate_covariates(
+    raw_data_list = metso_raw_data,
+    polygon_type = metso_utm_join$set[1],
+    dict_covar = dict_covar,
+    output_root_dir = output_base_path,
+    df = st_drop_geometry(metso_utm_join)
+  )
+}
 
 #-------------------
 
-toKeep <- c("dict_covar", "output_base_path", "coords_utm_join", "metso_utm_join",
-            "prepare_covariates_data_toplot", "generate_covariate_plot", "generate_binary_plot",
-            "log_info", "os")
-rm(list = setdiff(ls(), toKeep));gc()
+# toKeep <- c("dict_covar", "output_base_path", "coords_utm_join", "metso_utm_join",
+#             "prepare_covariates_data_toplot", "generate_covariate_plot", "generate_binary_plot",
+#             "log_info", "os", "extract_coords", "extract_metso")
+# rm(list = setdiff(ls(), toKeep));gc()
 
 # transform to year separated data to one consolidated for covariate for all polygon type
 
@@ -326,8 +338,15 @@ covar_nm <- dict_covar |>
 
 rds_data_dir <- file.path(output_base_path,"intermediate_aggregated")
   
-polygon_types <- c(coords_utm_join$set[1], metso_utm_join$set[1])
-#polygon_types <- c(coords_utm_join$set[1]) #just coords of biotopes
+
+if(extract_coords){
+  polygon_types <- coords_utm_join$set[1] #just coords of biotopes  
+}else if(extract_metso){
+  polygon_types <- metso_utm_join$set[1]
+}else if(extract_coords & extract_metso){
+  polygon_types <- c(coords_utm_join$set[1], metso_utm_join$set[1])  
+}
+
 
 for(p in 1:length(polygon_types)){
 
