@@ -50,18 +50,24 @@ load("models/unfitted_fbs_M008.RData")
 names(mfeval) <- colnames(models$fbs_M008$Y)
 
 # WATCH, reduce array to work better to test
-test <- F
+test <- T
+expected_val <- T
+if(expected_val){
+  expected_string <- "_expected_true"
+}else{
+  expected_string <- "_expected_false"
+}
 
 # 1. Call data
 
 if(test){
-  num_spp <- 10
+  num_spp <- 67
   samples <- 100
   to_sample <- list("a" = sample(seq(67), size = num_spp), "b"= 1:100)
 }
 
-pred_id_metso <- readRDS(file.path("results", "predictions_", "metso", "pred_ids.rds"))
-pred_id_control <- readRDS(file.path("results", "predictions_", "control", "pred_ids.rds"))
+pred_id_metso <- readRDS(file.path("results", paste0("predictions", expected_string), "metso", "pred_ids.rds"))
+pred_id_control <- readRDS(file.path("results", paste0("predictions", expected_string), "control", "pred_ids.rds"))
 
 matches <- readRDS(file.path("data", "metso", "raw", "matched_pairs.rds")) |> 
   mutate(in_pred_metso = standid_treated %in% pred_id_metso,
@@ -78,7 +84,7 @@ sufixes <- c("metso", "control")
 for(i in 1:length(sufixes)){
   # i <- 2
   sufix <- sufixes[i]
-  prediction_files <- list.files(file.path("results", "predictions_", sufix), pattern = "predY", full.names = TRUE)
+  prediction_files <- list.files(file.path("results", paste0("predictions", expected_string), sufix), pattern = "predY", full.names = TRUE)
   
   predY <- lapply(X = prediction_files, 
                   FUN = function(X){readRDS(X) |> simplify2array()})
@@ -103,14 +109,6 @@ for(i in 1:length(sufixes)){
   assign(nm2, predY_logic)
   rm(predY_logic, sufix, prediction_files, nm, nm2); gc()
 }
-
-# {
-#   pdf(file = "boxplots.pdf", width = 7, height = 5)
-#   boxplot(predY_control[,,1])
-#   apply(predY_control[,,1], 2, range)
-#   boxplot(predY_metso[,,1])
-#   dev.off()
-# }
 
 # 3. Calculate some metrics
 
