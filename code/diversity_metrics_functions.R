@@ -220,7 +220,7 @@ sorensen_smilarity <- function(pred.object.baseline, pred.object.scenario){
 ##	Functional richness 
 ##  https://doi.org/10.1890/08-2244.1
 
-functional_richness <- function(pred.object, trait.processed.object, stand.FRic, parallel = T, use.cores = 2) {
+functional_richness <- function(pred.object, trait.processed.object, stand.FRic = F, parallel = F, use.cores = 2) {
   
   # time process array with 100 matrix of 10824 rows x 20 cols: Parallel = 7.814091 mins, No Parallel = 20.49533 mins
   # time process array with 100 matrix of 10824 rows x 586 cols: Parallel = 12.7466 mins
@@ -237,12 +237,12 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic,
   # - each site is a row
   # - columns are species
   
-  process_matrix <- function(c) {
+  process_matrix <- function(mat) {
     
     FRic <- numeric(dm[1])
     
     for (i in seq_len(dm[1])){
-      sppres <- pred.object[i, , c]
+      sppres <- mat[i, ]
       S <- sum(sppres)
       nb.sp <- S
       tr.FRic <- data.frame(traits[sppres, ])
@@ -292,7 +292,7 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic,
         }
       }
     }
-    return(round(FRic, 3))
+    return(FRic)
   }
   
   traits <- trait.processed.object$traits.FRic
@@ -310,29 +310,46 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic,
   
   dm <- dim(pred.object)
   
-  m.res <- matrix(nrow = dm[1], ncol = dm[3])
+  # when pred.object is organized in a matrix by sites or posteriors X species
   
-  if(parallel){
+  if (is.matrix(pred.object)){
     
-    num_cores <- use.cores
+    m.res <- process_matrix(pred.object)
     
-    if(.Platform$OS.type == "windows"){
-      
-      cl <- makeCluster(num_cores)
-      results <- parLapply(cl, seq_len(dm[3]), process_matrix)
-      stopCluster(cl)
-      
-    } else {
-      results <- mclapply(seq_len(dm[3]), process_matrix, mc.cores = num_cores)
-    }
-    
-  } else {
-    results <- lapply(seq_len(dm[3]), process_matrix)
   }
   
-  # Combinar los resultados en la matriz m.res
-  for (c in seq_len(dm[3])) {
-    m.res[, c] <- results[[c]]
+  # when pred.object is organized in an array by sites X species X posteriors
+  
+  if (is.array(pred.object) && length(dim(pred.object)) == 3){
+    
+    n_posteriors <- dim(pred.object)[3]
+    
+    # Helper to slice array and run core
+    process_slice <- function(c) {
+      slice_matrix <- pred.object[, , c]
+      return(calc_fric_core(slice_matrix))
+    }
+    
+    if(parallel){
+      
+      num_cores <- use.cores
+      
+      if(.Platform$OS.type == "windows"){
+        
+        cl <- makeCluster(num_cores)
+        results <- parLapply(cl, seq_len(n_posteriors), process_slide)
+        stopCluster(cl)
+        
+      } else {
+        results <- mclapply(seq_len(n_posteriors), process_slide, mc.cores = num_cores)
+      }
+      
+    } else {
+      results <- lapply(seq_len(n_posteriors), process_slide)
+    }
+    
+    # Combine results: Rows = Sites, Cols = posteriors
+    m.res <- do.call(cbind, results)
   }
   
   return(m.res)
@@ -570,8 +587,22 @@ log_zero <- function(x) {
   ifelse(x == 0, 0, log(x))
 }
 
+#----------------------------
+
 # preprocess traits. Taken from FD function dbFD (original function quite slowly)
 ##  https://doi.org/10.1890/08-2244.1
+
+# A helper function derived from FD::dbFD that pre-processes functional trait 
+# data. It computes the species-by-species distance matrix, performs Principal 
+# Coordinate Analysis (PCoA) to build the functional space, and calculates the 
+# global convex hull volume.
+
+# This function is designed for efficiency in simulation or Bayesian workflows 
+# (e.g., Hmsc). It allows you to calculate computationally expensive static 
+# elements (distances, PCoA axes) once, before iterating over multiple posterior 
+# samples for metric calculation.
+
+## This function does not return FD indices (FDis, RaoQ, etc.). It returns the "ingredients."
 
 dbFD_preprocess_traits <- function (x, a, w, w.abun = TRUE, stand.x = TRUE, ord = c("podani", "metric"), 
                                     asym.bin = NULL, corr = "sqrt", calc.FRic = TRUE, m = "max", stand.FRic = FALSE, 
@@ -1073,4 +1104,124 @@ dbFD_preprocess_traits <- function (x, a, w, w.abun = TRUE, stand.x = TRUE, ord 
   
   
   return(res)
+}
+
+#-----------------
+calculate_metrics_vectorized <- function(predY_metso_mat, predY_bau_mat, alpha = 0.10, Tr = TrData_processed) {
+  # Input: matrices where rows = posteriors, cols = species
+  
+  if(!is.matrix(predY_metso_mat)) predY_metso_mat <- as.matrix(predY_metso_mat)
+  if(!is.matrix(predY_bau_mat)) predY_control_mat <- as.matrix(predY_bau_mat)
+  
+  num_posteriors <- nrow(predY_metso_mat)
+  
+  #--------------------
+  
+  # Pre-allocate results
+  E_PDF <- numeric(num_posteriors)
+  E_PDF_mod <- numeric(num_posteriors)
+  E_MSA <- numeric(num_posteriors)
+  E_MSA_mod <- numeric(num_posteriors)
+  
+  ## RC means relative change (always bau/metso)
+  E_RC_Geo_Abun <- numeric(num_posteriors)
+  E_RC_FR <- numeric(num_posteriors)
+  E_RC_CWM <- numeric(num_posteriors)
+  E_RC_RAOQ <- numeric(num_posteriors)
+  
+  #--------------------
+  
+  # Vectorized probability calculation
+  prob_metso <- 1 - exp(-predY_metso_mat)
+  prob_bau <- 1 - exp(-predY_bau_mat)
+  
+  # vectorized presence/abscence thresholding 
+  alpha_metso <- prob_metso > alpha
+  alpha_bau <- prob_bau > alpha
+  
+  #Vectorized logarithm (?) of expected abundance
+  log_metso <- log_zero(predY_metso_mat)
+  log_bau <- log_zero(predY_bau_mat)
+  
+  ##-------------------
+  # https://esajournals.onlinelibrary.wiley.com/doi/10.1890/08-2244.1
+  # Functional richness
+  E_RC_FR <- functional_richness(alpha_bau, Tr)/functional_richness(alpha_metso, Tr)
+  
+  #--------------------
+  
+  # Process each posterior (vectorized within each iteration)
+  for(p in seq_len(num_posteriors)) {
+    #p <- 41
+    
+    mask_metso <- alpha_metso[p, ]
+    mask_bau <- alpha_bau[p, ]
+    
+    #--------------------
+    # https://doi.org/10.1016/j.indic.2025.100652
+    # https://doi.org/10.1111%2Fgcb.14848
+    # https://link.springer.com/article/10.1007/s11367-010-0205-2
+    # Potential Disappeared Fraction and Mean Species Abundance
+    # These metrics always mask the data according to the baseline/natural status
+    
+    # Extract masked values
+    ## mask expected abundance with presence/abscence in metso
+    E_metso <- predY_metso_mat[p, mask_metso]
+    E_bau <- predY_bau_mat[p, mask_metso]
+    
+    ## mask expected probabilities
+    EP_metso <- prob_metso[p, mask_metso]
+    EP_bau <- prob_bau[p, mask_metso]
+    
+    # Expected richness
+    ES_metso <- sum(EP_metso)
+    ES_bau <- sum(EP_bau)
+    
+    ## 1. PDF == Richness ratio
+    ratio_rich <- ES_bau / ES_metso
+    E_PDF[p] <- min(ratio_rich, 1)
+    E_PDF_mod[p] <- ratio_rich
+    
+    # 2. MSA
+    ratio_abun <- E_bau / E_metso
+    E_MSA[p] <- sum(EP_metso * pmin(ratio_abun, 1)) / ES_metso
+    E_MSA_mod[p] <- sum(EP_metso * ratio_abun) / ES_metso
+    
+    #--------------------
+    
+    # https://doi.org/10.1016/j.biocon.2016.08.024
+    # Geometric abundance
+    # This metric mask the data with each presence/abscence of each scenario
+    
+    # sum of the log-transformed expected abundance
+    E_SLN_metso <- sum(log_metso[p, mask_metso])
+    E_SLN_bau <- sum(log_bau[p, mask_bau])
+    
+    # recalculate richness bau without masking with presence/abscence in metso
+    EP_bau <- prob_bau[p, mask_bau]
+    ES_bau <- sum(EP_bau)
+    
+    # 3. Geom_abu
+    geom_abun_metso <- E_SLN_metso/ES_metso
+    geom_abun_bau <- E_SLN_bau/ES_bau
+    E_RC_Geo_Abun[p] <- geom_abun_bau/geom_abun_metso
+    
+    #-----------------
+    
+    # CWM
+    # RAOQ
+    
+    mask_metso <- alpha_metso[p, ]
+    mask_bau <- alpha_bau[p, ]
+    
+
+
+  }
+  
+  # Return in long format
+  data.frame(
+    posterior = rep(seq_len(num_posteriors), each = 5),
+    metrics = rep(c("E_PDF", "E_PDF_mod", "E_MSA", "E_MSA_mod", "E_DGeom_Abu"), times = num_posteriors),
+    val = c(rbind(E_PDF, E_PDF_mod, E_MSA, E_MSA_mod, E_RC_Geo_Abun))
+  )
 }
