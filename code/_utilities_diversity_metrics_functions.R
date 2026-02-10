@@ -192,26 +192,39 @@ geom_mean_abun <- function(pred.object = predY, richness = a){
 ## Sorensen similarity
 ## https://doi.org/10.1016/j.biocon.2016.08.024
 
-sorensen_smilarity <- function(pred.object.baseline, pred.object.scenario){
+sorensen_smilarity <- function(pred.object.baseline, pred.object.scenario, array = F){
   
   if (!identical(dim(pred.object.baseline), dim(pred.object.scenario))) {
     stop("Dimensions of 'pred.object.baseline' and 'pred.object.scenario' must be identical.")
   }
   
   sum_abs_dif <- (pred.object.scenario - pred.object.baseline) |> 
-    abs() |> 
-    apply(3, rowSums)
+    abs()
   
   total_abundance <- (pred.object.scenario + pred.object.baseline) |> 
-    abs() |> 
-    apply(3, rowSums)
+    abs()
   
+  if(array){
+    total_abundance <- total_abundance |> 
+      apply(3, rowSums)
+    
+    sum_abs_dif <- sum_abs_dif |> 
+      apply(3, rowSums)
+    
+  }else{
+    total_abundance <- total_abundance |> 
+      rowSums(dims = 1)
+    
+    sum_abs_dif <- sum_abs_dif |> 
+      rowSums(dims = 1)
+  }
+
   # handle Inf and NaN
-  relative_abundance <- sum_abs_dif/total_abundance
+  relative_abs_abundance <- sum_abs_dif/total_abundance
   
-  relative_abundance <- ifelse(is.infinite(relative_abundance) | is.nan(relative_abundance), NA, relative_abundance)
+  relative_abs_abundance <- ifelse(is.infinite(relative_abs_abundance) | is.nan(relative_abs_abundance), NA, relative_abs_abundance)
   
-  return(1 - relative_abundance)
+  return(relative_abs_abundance)
   
 }
 
@@ -220,7 +233,7 @@ sorensen_smilarity <- function(pred.object.baseline, pred.object.scenario){
 ##	Functional richness 
 ##  https://doi.org/10.1890/08-2244.1
 
-functional_richness <- function(pred.object, trait.processed.object, stand.FRic = F, parallel = F, use.cores = 2) {
+functional_richness <- function(pred.object, trait.processed.object, stand.FRic = T, parallel = F, use.cores = 2) {
   
   # time process array with 100 matrix of 10824 rows x 20 cols: Parallel = 7.814091 mins, No Parallel = 20.49533 mins
   # time process array with 100 matrix of 10824 rows x 586 cols: Parallel = 12.7466 mins
@@ -231,94 +244,40 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic 
   library(geometry)
   library(parallel)
   library(FD)
-
   
+  species_names <- colnames(pred.object)
+  trait.processed.object$traits.FRic <- trait.processed.object$traits.FRic[species_names, , drop = FALSE]
+
   # Calculate functional diversity for a matrix dxm
   # - each site is a row
   # - columns are species
   
-  process_matrix <- function(mat) {
+  fric_process_matrix <- function(mat, Tr_object = trait.processed.object, std.Fric = stand.FRic) {
     
-    FRic <- numeric(dm[1])
+    n_sites <- nrow(mat)
+    FRic_vec <- numeric(n_sites)
     
-    for (i in seq_len(dm[1])){
-      sppres <- mat[i, ]
-      S <- sum(sppres)
-      nb.sp <- S
-      tr.FRic <- data.frame(traits[sppres, ])
-      if(S < 4){
-        FRic[i] <- NA
-        next
-      }
-      if (all(x.class2 == "factor" | x.class2 == "ordered")) {
-        if (length(x.class2) == 1 & x.class2[1] == "ordered") {
-          tr.range <- range(tr.FRic[, 1])
-          t.range <- tr.range[2] - tr.range[1]
-          if (!stand.FRic) 
-            FRic[i] <- t.range
-          if (stand.FRic) 
-            FRic[i] <- t.range/FRic.all
-        }
-        else {
-          if (!stand.FRic) 
-            FRic[i] <- nrow((unique(tr.FRic)))
-          if (stand.FRic) 
-            FRic[i] <- nrow((unique(tr.FRic)))/FRic.all
-        }
-      }
-      else {
-        if (dim(tr.FRic)[2] > 1 & nb.sp >= 3) {
-          if (war) 
-            thresh <- 4
-          if (!war) 
-            thresh <- 3
-          if (nb.sp >= thresh) {
-            cvhull <- geometry::convhulln(tr.FRic, "FA")
-            if (!stand.FRic) 
-              FRic[i] <- cvhull$vol
-            if (stand.FRic) 
-              FRic[i] <- cvhull$vol/FRic.all
-          }
-          else {
-          }
-        }
-        if (dim(tr.FRic)[2] == 1) {
-          tr.range <- range(tr.FRic[, 1])
-          t.range <- tr.range[2] - tr.range[1]
-          if (!stand.FRic) 
-            FRic[i] <- t.range
-          if (stand.FRic) 
-            FRic[i] <- t.range/FRic.all
-        }
-      }
+    for (i in seq_len(n_sites)){
+      
+      FRic_vec[i] <- fric_process_row(site.row = mat[i, ], tr = Tr_object, std.fric = T)
+      
     }
+    
     return(FRic)
   }
   
-  traits <- trait.processed.object$traits.FRic
-  x.class2 <- trait.processed.object$x.class2
-  hull.all <- trait.processed.object$hull.all
-  FRic.all <- trait.processed.object$FRic.all
-  war <- trait.processed.object$warning
-  
-  species_names <- colnames(pred.object)
-  species_index <- setNames(seq_along(species_names), species_names)
-  
-  colnames(pred.object) <- species_index[colnames(pred.object)]
-  rownames(traits) <- as.character(species_index[rownames(traits)])
-  trait_list <- split(traits, rownames(traits))
   
   dm <- dim(pred.object)
   
-  # when pred.object is organized in a matrix by sites or posteriors X species
+  # Case: Matrix
   
   if (is.matrix(pred.object)){
     
-    m.res <- process_matrix(pred.object)
+    m.res <- fric_process_matrix(pred.object)
     
   }
   
-  # when pred.object is organized in an array by sites X species X posteriors
+  # Case: Array
   
   if (is.array(pred.object) && length(dim(pred.object)) == 3){
     
@@ -327,7 +286,7 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic 
     # Helper to slice array and run core
     process_slice <- function(c) {
       slice_matrix <- pred.object[, , c]
-      return(calc_fric_core(slice_matrix))
+      return(fric_process_matrix(slice_matrix))
     }
     
     if(parallel){
@@ -336,101 +295,244 @@ functional_richness <- function(pred.object, trait.processed.object, stand.FRic 
       
       if(.Platform$OS.type == "windows"){
         
-        cl <- makeCluster(num_cores)
-        results <- parLapply(cl, seq_len(n_posteriors), process_slide)
+        cl <- makeCluster(use.cores)
+        
+        clusterExport(cl, list("fric_process_matrix", "fric_process_row", 
+                               "pred.object", "trait.processed.object", "stand.FRic"), 
+                      envir = environment())
+        clusterEvalQ(cl, library(geometry))
+        
+        results <- parLapply(cl, seq_len(n_posteriors), process_slice)
         stopCluster(cl)
         
       } else {
-        results <- mclapply(seq_len(n_posteriors), process_slide, mc.cores = num_cores)
+        results <- mclapply(seq_len(n_posteriors), process_slice, mc.cores = num_cores)
       }
       
     } else {
-      results <- lapply(seq_len(n_posteriors), process_slide)
+      results <- lapply(seq_len(n_posteriors), process_slice)
     }
     
     # Combine results: Rows = Sites, Cols = posteriors
     m.res <- do.call(cbind, results)
+    return(m.res)
   }
   
-  return(m.res)
+  return(null)
+}
+
+#-------------
+
+fric_process_row <- function(site.row, tr, std.fric = T) {
+  
+  traits <- tr$traits.FRic
+  x.class2 <- tr$x.class2
+  hull.all <- tr$hull.all
+  FRic.all <- tr$FRic.all
+  war <- tr$warning
+  
+  sp_indices <- which(site.row > 0)
+  nb.sp <- length(sp_indices)
+  
+  # Subset traits for this site. Note: drop=FALSE ensures it stays a matrix even if only 1 species is present
+  tr.FRic <- traits[sp_indices, , drop = FALSE]
+  
+  # Initialize return value
+  FRic_value <- NA
+  
+  # Check Minimum Species Count
+  if (nb.sp < 3) {
+    return(NA)
+  }
+  
+  # Factor / Ordered Traits
+
+  if (all(x.class2 == "factor" | x.class2 == "ordered")) {
+    
+    if (length(x.class2) == 1 & x.class2[1] == "ordered") {
+      # Single Ordered Trait
+      tr.range <- range(tr.FRic[, 1])
+      t.range <- tr.range[2] - tr.range[1]
+      
+      if (!std.fric) FRic_value <- t.range
+      if (std.fric)  FRic_value <- t.range / FRic.all
+      
+    } else {
+      # Categorical / Mixed
+      if (!std.fric) FRic_value <- nrow(unique(tr.FRic))
+      if (std.fric)  FRic_value <- nrow(unique(tr.FRic)) / FRic.all
+    }
+    
+  } else {
+  
+    # Numeric / Continuous Traits
+    
+    # CASE: Multi-dimensional (>1 trait)
+    if (dim(tr.FRic)[2] > 1 & nb.sp >= 3) {
+      
+      # Threshold logic from your original code
+      if (war)  thresh <- 4
+      if (!war) thresh <- 3
+      
+      if (nb.sp >= thresh) {
+        
+        # tryCatch Block: Catches geometry errors (e.g., if species are collinear/coplanar)
+        
+        hull_vol <- tryCatch({
+          geometry::convhulln(tr.FRic, "FA")$vol
+        }, error = function(e) {
+          return(NA)
+        })
+        
+        # assign if calculation succeeded
+        
+        if (!is.na(hull_vol)) {
+          if (!std.fric) FRic_value <- hull_vol
+          if (std.fric)  FRic_value <- hull_vol / FRic.all
+        }
+      }
+    }
+    
+    # Single dimension (1 trait)
+    if (dim(tr.FRic)[2] == 1) {
+      tr.range <- range(tr.FRic[, 1])
+      t.range <- tr.range[2] - tr.range[1]
+      
+      if (!std.fric) FRic_value <- t.range
+      if (std.fric)  FRic_value <- t.range / FRic.all
+    }
+  }
+  
+  return(FRic_value)
 }
 
 #-----------------------------
 
 ##  Rao’s quadratic entropy coefficient (RaoQ)   
 ##  https://doi.org/10.1890/08-2244.1
+##  Represents the average distance between two randomly selected individuals from the community
 
-divc_parallel <- function(array_data, trait.processed.object = NULL, scale = FALSE, parallel = FALSE, use.cores = 2) {
+divc_parallel <- function(pred.object, trait.processed.object = NULL, scale = FALSE, parallel = FALSE, use.cores = 2) {
   
   if (!requireNamespace("FD", quietly = TRUE)) install.packages("FD")
   library(FD)
   
-  div_calc <- function(matrix_data) {
+  
+  # Escalar si es necesario
+  if (scale) {
+    if(is.null(trait.processed.object$x.dist)) stop("Cannot scale: Distance matrix missing in trait object.")
+    dis <- trait.processed.object$x.dist
+    divmax <- divcmax(as.dist(dis))$value
     
-    df <- as.data.frame(t(matrix_data))
-    
-    if (!inherits(df, "data.frame")) 
-      stop("Non convenient df")
-    
-    if (any(df < 0)) {
-      stop("Negative value in df")
-    }
-    
-    if (!is.null(dis)) {
-      if (!inherits(dis, "dist")) {
-        stop("Object of class 'dist' expected for distance")
-      }
-      dis_matrix <- as.matrix(dis)
-      if (nrow(df) != nrow(dis_matrix)) {
-        stop("Non convenient df")
-      }
-      dis_dist <- as.dist(dis_matrix)
-    } else {
-      dis_dist <- as.dist((matrix(1, nrow(df), nrow(df)) - diag(rep(1, nrow(df)))) * sqrt(2))
-    }
-    
-    results <- sapply(1:ncol(df), function(i) {
-      if (sum(df[, i]) < 1e-16) {
-        return(0)
-      } else {
-        return((t(df[, i]) %*% (as.matrix(dis_dist)^2) %*% df[, i]) / (2 * (sum(df[, i])^2)))
-      }
-    })
-    return(results)
+  }else{
+    divmax <- NULL
   }
   
-  dis <- trait.processed.object$x.dist
+  
+  # Case: Matrix
+  
+  if (is.matrix(pred.object)){
+    m.res <- divc_calc(mat = pred.object, tr = trait.processed.object, scalar = divmax)
+  }
+  
+  # Case: Array
   
   if (parallel) {
     num_cores <- use.cores
     if (.Platform$OS.type == "windows") {
       cl <- parallel::makeCluster(num_cores)
-      #parallel::clusterExport(cl, c("array_data", "dis", "scale"))
-      results <- parallel::parApply(cl, array_data, 3, div_calc)
+      clusterExport(cl, list("divc_calc", "pred.object", "trait.processed.object", "scalar"), 
+                    envir = environment())
+      results <- parallel::parApply(cl, pred.object, 3, divc_calc, tr = trait.processed.object, scalar = divmax)
       parallel::stopCluster(cl)
+      
     } else {
-      n_samples <- dim(array_data)[3]
+      
+      n_samples <- dim(pred.object)[3]
       
       # Run mclapply over the indices, extracting the matrix slice [,,i] for each core
       results <- parallel::mclapply(1:n_samples, function(i) {
-        div_calc(array_data[,,i]) 
+        div_calc(pred.object[,,i], , tr = trait.processed.object, scalar = divmax) 
       }, mc.cores = num_cores)
       results <- do.call(cbind, results)
     }
   } else {
-    results <- apply(array_data, 3, div_calc)
-  }
-  
-  # Escalar si es necesario
-  if (scale) {
-    divmax <- divcmax(dis)$value
-    results <- results / divmax
+    results <- apply(pred.object, 3, div_calc, scalar = divmax)
   }
   
   return(results)
 }
 
 #----------------------
+
+divc_calc <- function(mat, tr, matrix.ver = TRUE, scalar) {
+  
+  # Setup Distance Matrix
+  # Check if distance exists in the trait object
+  if (is.null(tr$x.dist)) {
+    # Fallback: If no distance provided, assume equidistance (Gini-Simpson equivalent)
+    # Create a distance matrix where diag=0 and off-diag=sqrt(2)
+    n_sp <- ncol(mat)
+    dis_matrix <- (matrix(1, n_sp, n_sp) - diag(rep(1, n_sp))) * sqrt(2)
+  } else {
+    if (!inherits(tr$x.dist, "dist")) stop("Object of class 'dist' expected for distance")
+    dis_matrix <- as.matrix(tr$x.dist)
+  }
+  
+  # Input Integrity Checks
+  if (any(mat < 0, na.rm = TRUE)) stop("Negative value in abundance matrix")
+  
+
+  # matrix.ver: Matrix Algebra (The "Fast" Path)
+
+  if (matrix.ver) {
+    
+    D_sq <- dis_matrix^2
+    
+    if (!is.matrix(mat)) mat <- as.matrix(mat)
+    
+    S <- rowSums(mat)
+    
+    # Handle sites with 0 abundance 
+    S[S == 0] <- NA
+    
+    # The Vectorized Calculation:
+    # No looping per every site, calculate the diagonal 
+    # A. (mat %*% dis) multiplies richness by Distance
+    # B. * mat multiplies that result by richness element-wise
+    # C. rowSums aggregates it to get the Rao value per site
+    
+    numerator <- rowSums((mat %*% D_sq) * mat)
+    
+    results <- numerator / (2 * (S^2))
+    
+  } else {
+    
+    # Data Frame (The "Safe/Legacy" Path)
+
+    # Transpose to Species x Sites 
+    df <- as.data.frame(t(mat))
+    dis_dist <- as.dist(dis_matrix)
+    
+    results <- sapply(1:ncol(df), function(i) {
+      if (sum(df[, i]) < 1e-16) {
+        return(0)
+      } else {
+        # Original single-site formula
+        val <- (t(df[, i]) %*% (as.matrix(dis_dist)^2) %*% df[, i]) / (2 * (sum(df[, i])^2))
+        return(as.numeric(val))
+      }
+    })
+  }
+  
+  if(!is.null(scalar)){
+    results <- results/scalar
+  }
+  
+  return(results)
+}
+
+#-----------------
 
 ## CWM: community weighted mean
 ## https://doi.org/10.1890/08-2244.1
@@ -472,11 +574,9 @@ functcomp_parallel <- function(pred.object, trait.processed.object, cwm.type = "
       sublist <- lapply(seq_len(num_pred), process_matrix)
     }
     
-    
     trait_lists[[nt]] <- do.call("cbind", sublist)
     rm("sublist")
   }
-  
     
   return(trait_lists)
 }
@@ -1096,6 +1196,7 @@ dbFD_preprocess_traits <- function (x, a, w, w.abun = TRUE, stand.x = TRUE, ord 
   res$x.class2 <- x.class2
   res$hull.all <- hull.all
   res$FRic.all <- FRic.all
+  res$eigenvalues <- x.pco$eig
   if(exists("warning", where = .GlobalEnv) && !is.function(warning)){
     res$warning <- warning
   } else {
@@ -1107,7 +1208,7 @@ dbFD_preprocess_traits <- function (x, a, w, w.abun = TRUE, stand.x = TRUE, ord 
 }
 
 #-----------------
-calculate_metrics_vectorized <- function(predY_metso_mat, predY_bau_mat, alpha = 0.10, Tr = TrData_processed) {
+calculate_metrics_vectorized <- function(predY_metso_mat, predY_bau_mat, alpha = 0.10, Traits = TrData_processed) {
   # Input: matrices where rows = posteriors, cols = species
   
   if(!is.matrix(predY_metso_mat)) predY_metso_mat <- as.matrix(predY_metso_mat)
@@ -1122,12 +1223,15 @@ calculate_metrics_vectorized <- function(predY_metso_mat, predY_bau_mat, alpha =
   E_PDF_mod <- numeric(num_posteriors)
   E_MSA <- numeric(num_posteriors)
   E_MSA_mod <- numeric(num_posteriors)
+  #E_Soren <- numeric(num_posteriors)
   
   ## RC means relative change (always bau/metso)
   E_RC_Geo_Abun <- numeric(num_posteriors)
   E_RC_FR <- numeric(num_posteriors)
-  E_RC_CWM <- numeric(num_posteriors)
-  E_RC_RAOQ <- numeric(num_posteriors)
+  #E_RC_RAOQ <- numeric(num_posteriors)
+  
+  ## D means delta (always bau - metso)
+  # E_D_CWM <- numeric(num_posteriors)
   
   #--------------------
   
@@ -1143,16 +1247,29 @@ calculate_metrics_vectorized <- function(predY_metso_mat, predY_bau_mat, alpha =
   log_metso <- log_zero(predY_metso_mat)
   log_bau <- log_zero(predY_bau_mat)
   
-  ##-------------------
-  # https://esajournals.onlinelibrary.wiley.com/doi/10.1890/08-2244.1
-  # Functional richness
-  E_RC_FR <- functional_richness(alpha_bau, Tr)/functional_richness(alpha_metso, Tr)
+  #RAO can be calculated by the complete matrix
+  # to standarize RAO values: calculates the theoretical maximum Rao's Q possible for that specific set of species distances.
+  # by default I am standarizing it
+  divmax <- divcmax(as.dist(Traits$x.dist))$value
+  E_RC_RAOQ <- divc_calc(alpha_bau, tr = Traits, scalar = divmax)/divc_calc(alpha_metso, tr = Traits, scalar = divmax) 
+  
+  ## Community Weigtead Mean can be calculated by the complete matrix
+  # Use the first two ordination axes
+  
+  E_D_CWM <- FD::functcomp(x = Traits$traits.FRic, a = predY_bau_mat, CWM.type = "dom") - 
+    FD::functcomp(x = Traits$traits.FRic, a = predY_metso_mat, CWM.type = "dom")
+  
+  E_D_CWM_A1 <- E_D_CWM[ , 1]
+  E_D_CWM_A2 <- E_D_CWM[ , 2]
+
+  # Sorensen similarity
+  E_Soren <- sorensen_smilarity(predY_metso_mat, predY_bau_mat)
   
   #--------------------
   
   # Process each posterior (vectorized within each iteration)
   for(p in seq_len(num_posteriors)) {
-    #p <- 41
+    #p <- 1
     
     mask_metso <- alpha_metso[p, ]
     mask_bau <- alpha_bau[p, ]
@@ -1208,20 +1325,22 @@ calculate_metrics_vectorized <- function(predY_metso_mat, predY_bau_mat, alpha =
     
     #-----------------
     
-    # CWM
-    # RAOQ
+    # 4. Functional based on
+    # https://esajournals.onlinelibrary.wiley.com/doi/10.1890/08-2244.1
+    # Original code from FD package
+    # Functional richness, by default I am standarizing it
     
-    mask_metso <- alpha_metso[p, ]
-    mask_bau <- alpha_bau[p, ]
+    E_RC_FR[p] <- fric_process_row(mask_bau, Traits)/fric_process_row(mask_metso, Traits)
     
-
-
   }
   
   # Return in long format
   data.frame(
-    posterior = rep(seq_len(num_posteriors), each = 5),
-    metrics = rep(c("E_PDF", "E_PDF_mod", "E_MSA", "E_MSA_mod", "E_DGeom_Abu"), times = num_posteriors),
-    val = c(rbind(E_PDF, E_PDF_mod, E_MSA, E_MSA_mod, E_RC_Geo_Abun))
+    posterior = rep(seq_len(num_posteriors), each = 10),
+    metrics = rep(c("E_PDF", "E_PDF_mod", "E_MSA", "E_MSA_mod", "E_DGeom_Abu", "E_RC_FR", "E_RC_RAOQ", 
+                    "E_D_CWM_A1", "E_D_CWM_A2", "E_Soren"), 
+                  times = num_posteriors),
+    val = c(rbind(E_PDF, E_PDF_mod, E_MSA, E_MSA_mod, E_RC_Geo_Abun, E_RC_FR, E_RC_RAOQ, E_D_CWM_A1,
+                  E_D_CWM_A2, E_Soren))
   )
 }
