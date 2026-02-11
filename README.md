@@ -17,42 +17,63 @@ Dependencies to install, choose the version depending on your operating system a
 
 * [R](https://cran.r-project.org/mirrors.html) version 4.4.2 or upper
 * [RStudio](https://www.rstudio.com/products/rstudio/download/#download) version 1.4 or upper
-* [Python]() version 3.10 or upper
+* [Python](https://www.python.org/downloads/) version 3.10 or upper (required for GPU acceleration)
 * This repository (2025_I_comparative_metrics)
 
 ### Libraries
-R libraries required
+
+#### R Libraries
+
+Standard CRAN packages used across scripts:
+
+| Package | Version |
+|---|---|
+| matrixStats | 1.5.0 |
+| Hmsc | 3.3.7 |
+| tidyverse | 2.0.0 |
+| data.table | 1.17.8 |
+| terra | 1.8.86 |
+| sf | 1.0.23 |
+| maps | 3.4.3 |
+| ape | 5.8.1 |
+| taxize | 0.10.0 |
+| remotes | 2.5.0 |
+| phytools | 2.5.2 |
+| openxlsx | 4.2.8.1 |
+| tidyterra | 0.7.2 |
+| viridis | 0.6.5 |
+| lwgeom | 0.2.14 |
+| ggrepel | 0.9.6 |
+| gt | 1.1.0 |
+| exactextractr | 0.10.0 |
+| patchwork | 1.3.2 |
+| dplyr | 1.1.4 |
+| units | 1.0.0 |
+| car | 3.1.3 |
+| arrow | 23.0.0 |
+| zip | 2.3.3 |
+| geometry | 0.5.2 |
+| jsonify | 1.2.3 |
+| here | 1.0.2 |
+| FD | 1.0.12.3 |
+
+GitHub/Custom packages (installation required via devtools or remotes):
 
 ```
-matrixStats
-Hmsc
-tidyverse
-data.table
-terra
-sf
-maps
-ape
-taxize
-remotes
-phytools
-openxlsx
-tidyterra
-viridis
-lwgeom
-ggrepel
-gt
-exactextractr) 
-patchwork
-dplyr
-units
+# install_github("eliotmiller/clootl")
+clootl
+# install_github("luomus/finbif")
+finbif
 ```
 
-Python libraries required
+#### Python Libraries
+
+These are required for the hmsc-hpc engine (see code/gpu_instructions.txt for setup):
 
 ```
-tensorflow
+tensorflow[and-cuda]
+tensorflow-probability
 hmsc-hpc
-selenium
 time
 cdsapi
 os
@@ -60,13 +81,40 @@ os
 
 ## How to run
 
-We suggest running the routines step-by-step, following the order in the next flowchart. It relates 
+The workflow is organized into sequential scripts (prefixed S01, S02, etc.) located in the `code/` directory.
 
-IN CONSTRUCTION
+### 1. Data Preparation & Model Definition
+* **S01_define_models_finland.qmd**:
+  * Loads Finnish Bird Survey (FBS) data, harmonizes taxonomy (FinBIF, ITIS), and filters by biotope.
+  * Prepares covariates (Forest inventory, climate) and traits/phylogeny.
+  * Constructs the unfitted Hmsc model and saves it to `models/unfitted_[ID].RData`.
+
+### 2. Model Fitting (GPU Accelerated)
+Fitting is performed using Python/TensorFlow for speed.
+
+* **S02a_fit_models_gpu.R**: Reads the unfitted model and generates the necessary Python scripts (`.sh` files) and JSON configurations for the HPC/GPU environment.
+* **Execution**: Run the generated shell scripts on your GPU server (refer to `code/gpu_instructions.txt` for specific commands like `nohup ... &`).
+* **S02b_fit_models_gpu_import_posterior.R**: Once MCMC sampling is complete, this script imports the posterior samples back into the R Hmsc object.
+
+### 3. Diagnostics & Evaluation
+* **S03 Series**: Visualizes MCMC convergence (trace plots, effective sample size).
+* **S04 Series**: Calculates model fit indices (WAIC, AUC, Tjur's R2) using partition (CV) or internal evaluation.
+* **S05 Series**: Generates plots summarizing model explanatory power.
+
+### 4. Ecological Inference
+* **S06_show_parameter_estimates.R**: Visualizes Beta parameters (environmental responses) and Gamma parameters (traits).
+* **S07_visualize_responses.R**: Plots gradient responses for specific species or community traits.
+
+### 5. Scenario Analysis & Metric Comparison
+* **S08_predict_scenarios_utmSplit.R**: Generates posterior predictions for specific forestry scenarios (e.g., METSO conservation vs. Business-As-Usual).
+* **S09_run_diversity_metrics.R**:
+  * Calculates taxonomic and functional diversity metrics on the predicted communities.
+  * Uses parallel processing (batching) to handle large posterior arrays.
+* **S10 Series**: Analyzes and visualizes the distribution of these metrics across scenarios.
 
 ## Authors and contact
 
-## Main depeloving
+## Main developers
 
 * [Carlos Jair Muñoz Rodriguez](https://www.linkedin.com/in/carlos-jair-munoz/)
 * [Ullrika Sahlin](https://www.cec.lu.se/ullrika-sahlin)
@@ -86,6 +134,3 @@ IN CONSTRUCTION
 ## License
 
 This project is licensed under the MIT License - see the [License.md](LICENSE.md) file for details
-
-
-
