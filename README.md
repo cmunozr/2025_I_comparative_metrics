@@ -79,6 +79,13 @@ cdsapi
 os
 ```
 
+## Documentation
+
+For a deep dive into the code architecture, function parameters, and detailed methodology, please visit the full documentation:
+**[Project Wiki & Documentation](https://deepwiki.com/cmunozr/2025_I_comparative_metrics)**
+
+This README provides a quick-start guide. For detailed function references (e.g., how `mean_species_abundance` is calculated), refer to the Wiki.
+
 ## How to run
 
 The workflow is organized into sequential scripts (prefixed S01, S02, etc.) located in the `code/` directory.
@@ -111,6 +118,54 @@ Fitting is performed using Python/TensorFlow for speed.
   * Calculates taxonomic and functional diversity metrics on the predicted communities.
   * Uses parallel processing (batching) to handle large posterior arrays.
 * **S10 Series**: Analyzes and visualizes the distribution of these metrics across scenarios.
+
+### Data Requirements
+Before running the modeling scripts (S01+), you must ensure the covariate and metso data is available. 
+* **Automatic Download:** You can use `code/_utilities_download_covariates.R`, `_utilities_download_covariates_climatic.py` and to get the required datasets (Metsakeskus, Luke, etc.).
+* **Note:** Ensure you have sufficient disk space as defined in the source files.
+
+## Utilities and Project Architecture
+
+In addition to the main workflow scripts (`S01`–`S10`), this repository contains `_utilities` scripts. These serve two distinct purposes:
+
+### 1. Function Libraries (Backend)
+These files contain core mathematical functions, model definitions, and prediction logic.
+* **Do not run these directly.** They are automatically `source()`'d by the main analysis scripts (e.g., `S02`, `S08`, `S09`) as needed.
+
+* `_utilities_diversity_metrics_functions.R` (Calculates MSA, Rao's Q, etc.)
+* `_utilities_hmsc_gpu.R` (HPC/GPU configurations)
+* `_utilities_transform_covariates.R`
+
+### 2. Data Preparation Tools (Run-Once)
+These are standalone scripts used to fetch raw data or construct specific datasets (e.g., the "Metso" conservation areas). Run these **only** if you are building the project data from scratch.
+
+#### Phase A: Initial Setup (Run before S01)
+* **Covariate Acquisition:**
+    * `_utilities_download_covariates.R`
+    * `_utilities_download_covariates_climatic.py`
+    * `_utilities_download_metsakeskus.R`
+* **Covariate Pre-processing:**
+    * `_utilities_preprocess_climatic_covariates.R`
+* **Study Design & Treatment Units (Metso):**
+    * `_utilities_metso_trt_control_setup.R`
+    * `_utilities_metso_merge_metsakeskus.R`
+    * `_utilities_metso_trt_control_labelbydist.R`
+* **Extracts values for Metso sites**
+    * `_utilities_fetch_covariates.R` 
+
+#### Phase B: Scenario Construction (Run before S08)
+Before running the scenario predictions in `S08`, you must generate the predictive covariate matrices (`XData`) for the different management scenarios.
+
+* `_utilities_metso_calc_XData.R`
+
+## 3. Diagnostics & Benchmarking (Optional)
+These scripts are useful for testing the prediction engine before committing to the full analysis in `S08`.
+
+* `_utilities_predict_scenarios_benchmark.R`
+  * *Purpose:* Benchmark processing time using different batch sizes to optimize performance.
+* `_utilities_predict_scenarios_replicates.R`
+  * *Purpose:* Ensure the replication and consistency of the prediction generation process.
+
 
 ## Authors and contact
 
