@@ -158,8 +158,8 @@ Before running the scenario predictions in `S08`, you must generate the predicti
 
 * `_utilities_metso_calc_XData.R`
 
-## 3. Diagnostics & Benchmarking (Optional)
-These scripts are useful for testing the prediction engine before committing to the full analysis in `S08`.
+#### Phase C: Diagnostics & Benchmarking (Optional)
+These scripts are useful for testing the prediction engine before committing to the full prediction in `S08`.
 
 * `_utilities_predict_scenarios_benchmark.R`
   * *Purpose:* Benchmark processing time using different batch sizes to optimize performance.
@@ -181,10 +181,9 @@ These scripts are useful for testing the prediction engine before committing to 
 * [Dario Shultz](https://www.ilr1.uni-bonn.de/en/about-us/staff/dario-schulz)
 * [Aleksi Lehikoinen](https://researchportal.helsinki.fi/en/persons/aleksi-lehikoinen)
 
-
 ## Acknowledgment
 
-* This development is supported by the [Mistra BIOPATH project](https://www.mistrabiopath.se/) - Aligning the Financial System with the Needs of Biodiversity. Also from the [Greenpole](https://greenpole.se/) an interdisciplinary research project generating evidence-based decision support for a sustainable use of Nordic forests. 
+This work has been carried out with support from the [Mistra BIOPATH project](https://www.mistrabiopath.se/) — Aligning the Financial System with the Needs of Biodiversity. Additional support comes from [Greenpole](https://greenpole.se/), an interdisciplinary research effort generating evidence‑based decision tools for the sustainable management of Nordic forests.
 
 ## License
 
