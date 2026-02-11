@@ -121,7 +121,7 @@ Fitting is performed using Python/TensorFlow for speed.
 
 ### Data Requirements
 Before running the modeling scripts (S01+), you must ensure the covariate and metso data is available. 
-* **Automatic Download:** You can use `code/_utilities_download_covariates.R`, `_utilities_download_covariates_climatic.py` and to get the required datasets (Metsakeskus, Luke, etc.).
+* **Automatic Download:** You can use the provide download scripts (see next) to get the required datasets (Metsakeskus, Luke, etc.).
 * **Note:** Ensure you have sufficient disk space as defined in the source files.
 
 ## Utilities and Project Architecture
