@@ -32,9 +32,9 @@ library(FD)
 
 os <- Sys.info()['sysname']
 
-# If you are on a server (Linux), use 20. If Windows, usually stuck with 1 for mclapply
-# or requires makeCluster for more. Assuming Linux/Server for 20 cores:
-n_cores <- if (os == "Windows") 1 else 20
+# If you are on a server (Linux), use 12. If Windows, usually stuck with 1 for mclapply
+# or requires makeCluster for more. Assuming Linux/Server for 12 cores:
+n_cores <- if (os == "Windows") 1 else 12
 
 # Batch size: Control RAM usage. 
 # 1000 rows * (posterior samples + species columns) = manageable chunk
@@ -111,7 +111,7 @@ matches <- readRDS(file.path("data", "metso", "matched_pairs_utm.rds")) |>
   mutate(in_pred_control = standid_matched_control %in% pred_id_control, row_id = row_number()) |> 
   filter(in_pred_control == 1) 
 
-matches <- matches[1:1000, ]
+#matches <- matches[1:500, ]
 
 cat("Total matches to process:", nrow(matches), "\n")
 
@@ -191,6 +191,7 @@ for(b_id in seq_along(batches)) {
   needed_stands <- unique(c(batch_matches$standid_treated, batch_matches$standid_matched_control))
   needed_utm    <- unique(c(batch_matches$UTM200_metso, batch_matches$UTM200_control))
   
+  #cat(sprintf("    -> Looking for %d stands (Metso and BAU) in %d UTM zones...\n", length(needed_stands), length(needed_utm)))
   # B. Collect data from Arrow 
   predY_chunk <- predY_ds |> 
     filter(utm_zone %in% needed_utm) |> 
@@ -198,6 +199,7 @@ for(b_id in seq_along(batches)) {
     select(scenario, standid, posterior, all_of(name_spp)) |> 
     collect()
   
+  #cat(sprintf("    -> Data Loaded! Chunk size: %s. Spawning 20 workers now...\n", format(object.size(predY_chunk), units="GB")))
   # C. Parallel Execution
   # mclapply uses forking on Linux, very memory efficient
   results <- mclapply(
