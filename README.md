@@ -81,8 +81,9 @@ os
 
 ## Documentation
 
-For a deep dive into the code architecture, function parameters, and detailed methodology, please visit the full documentation:
-**[Project Wiki & Documentation](https://deepwiki.com/cmunozr/2025_I_comparative_metrics)**
+For a deep dive into the code architecture, function parameters, and detailed methodology, please visit the full documentation: 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/cmunozr/2025_I_comparative_metrics)
+
 
 This README provides a quick-start guide. For detailed function references (e.g., how `mean_species_abundance` is calculated), refer to the Wiki.
 
