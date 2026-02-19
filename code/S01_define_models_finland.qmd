@@ -152,9 +152,9 @@ run_itis_routes <- F
 run_itis_bakx <- F
 filter_rare_spp <- F
 run_polygon_buffers <- F
-run_calculate_XData <- T
+run_calculate_XData <- F
 run_new_var_XData <- F
-run_syn_for_mctavish <- T
+run_syn_for_mctavish <- F
 ```
 
 ## Data loading
@@ -902,7 +902,7 @@ if(run_polygon_buffers){
       route_a <- coords |>
         filter(vakio == route_id) |> 
         # this solve spicules and a lot of problems on the topology of the line.
-        # However some lines become a bit longer, this is why in some special cases
+        # However some lines become a bit longer, this is why in some rare/special cases
         # we extend the line to match with the maximum claimed distance by the surveyor
         st_simplify(preserveTopology = T, dTolerance = 20)
   
@@ -1174,8 +1174,8 @@ repeat {
   
   vifs <- vif(temp_model)
   
-  vif_history[[iteration]] <- as.data.frame(vifs) %>%
-    rownames_to_column("Variable") %>%
+  vif_history[[iteration]] <- as.data.frame(vifs)|>
+    rownames_to_column("Variable")|>
     rename(VIF = vifs)
   
   max_vif <- max(vifs)
@@ -1321,7 +1321,6 @@ TrData <- TrData |>
 ### Study desing
 
 ```{r}
-
 studyDesign <- lapply(l2_output_paths$path_L2, sf::read_sf) |> 
   bind_rows() |> 
   st_drop_geometry() |> 
@@ -1344,6 +1343,158 @@ colnames(xy) <-  c("long", "lat")
 write.csv(xy, file.path("data", "xy.csv"), row.names = T)
 
 ```
+
+### Final analysis biotope and routes
+
+```{r}
+studyDesign_clean <- studyDesign|>
+  mutate(biotope = str_extract(sampleUnit, "[A-Z]$")) 
+
+# How many times was each unique route visited across all years?
+route_visits <- studyDesign_clean|>
+  distinct(vakio, year)|>
+  count(vakio, name = "n_visits")
+
+sampling_stats <- route_visits|>
+  summarise(
+    total_routes = n(),
+    mean_visits = mean(n_visits),
+    sd_visits   = sd(n_visits),
+    min_visits  = min(n_visits),
+    max_visits  = max(n_visits)
+  )
+
+sampling_stats|>
+  gt()|>
+  tab_header(title = "Sampling Intensity per Route (2008-2021)")|>
+  fmt_number(columns = c(mean_visits, sd_visits), decimals = 2)
+```
+
+
+```{r}
+# How many routes were surveyed in each specific year?
+annual_stats <- studyDesign_clean|>
+  distinct(vakio, year)|>
+  count(year, name = "n_routes_per_year")|>
+  summarise(
+    mean_routes = mean(n_routes_per_year),
+    sd_routes   = sd(n_routes_per_year),
+    min_routes  = min(n_routes_per_year),
+    max_routes  = max(n_routes_per_year),
+    n_years     = n()
+  )
+
+annual_stats|>
+  gt()|>
+  tab_header(title = "Annual Sampling Effort")|>
+  fmt_number(columns = c(mean_routes, sd_routes), decimals = 1)
+```
+
+
+```{r}
+# Distribution of the basic sampling units (biotopes)
+biotope_stats <- studyDesign_clean|>
+  count(biotope)|>
+  mutate(prop = n / sum(n) * 100)|>
+  arrange(desc(prop))
+
+biotope_stats|>
+  gt()|>
+  tab_header(title = "Distribution of Forest Biotopes")|>
+  fmt_number(columns = prop, decimals = 1)|>
+  cols_label(prop = "Percentage (%)")
+```
+
+
+```{r}
+# Total visits
+total_route_visits <- sum(studyDesign_clean|> distinct(vakio, year)|> count(vakio)|> pull(n))
+total_route_visits
+```
+
+
+```{r}
+# Average number of distinct biotopes? and How many biotopes (segments) per route?
+route_composition_stats <- studyDesign_clean %>%
+  group_by(vakio, year) %>%
+  summarise(
+    n_distinct_types = n_distinct(biotope), # e.g., How many types (K, M, S...) found?
+    n_total_segments = n()                  # e.g., How many rows (data points) per route?
+  ) %>%
+  ungroup() %>%
+  summarise(
+    mean_distinct_types = mean(n_distinct_types),
+    sd_distinct_types   = sd(n_distinct_types),
+    mean_segments       = mean(n_total_segments),
+    sd_segments         = sd(n_total_segments)
+  )
+
+route_composition_stats %>%
+  gt() %>%
+  tab_header(title = "Route Heterogeneity & Sampling Density") %>%
+  cols_label(
+    mean_distinct_types = "Avg. Distinct Biotope Types",
+    sd_distinct_types = "SD (Types)",
+    mean_segments = "Avg. Total Segments",
+    sd_segments = "SD (Segments)"
+  ) %>%
+  fmt_number(everything(), decimals = 2)
+```
+
+
+```{r}
+# In average how many times a biotope in a route was surveyed?
+# Assuming that "vakio 53 - Spruce" is the same spatial entity across years
+biotope_repetition <- studyDesign_clean %>%
+  mutate(stable_id = paste(vakio, biotope, sep = "_")) %>% 
+  count(stable_id, name = "years_surveyed")
+
+biotope_repetition_stats <- biotope_repetition %>%
+  summarise(
+    mean_years = mean(years_surveyed),
+    sd_years = sd(years_surveyed),
+    min_years = min(years_surveyed),
+    max_years = max(years_surveyed)
+  )
+
+biotope_repetition_stats %>%
+  gt() %>%
+  tab_header(title = "Temporal Stability of Biotope Units") %>%
+  cols_label(
+    mean_years = "Avg. Years Surveyed",
+    sd_years = "SD",
+    min_years = "Min",
+    max_years = "Max"
+  ) %>%
+  fmt_number(columns = c(mean_years, sd_years), decimals = 2)
+
+```
+
+```{r}
+# Is there a trend in the number of biotopes and routes surveyed?
+
+survey_trend <- studyDesign_clean %>%
+  group_by(year) %>%
+  summarise(
+    n_routes = n_distinct(vakio),
+    n_biotopes = n()
+  ) %>%
+  arrange(year)
+
+survey_trend %>%
+  gt() %>%
+  tab_header(
+    title = "Temporal Trend of Survey Effort",
+    subtitle = "Number of Routes and Biotope Segments Surveyed per Year"
+  ) %>%
+  cols_label(
+    year = "Year",
+    n_routes = "Routes Surveyed",
+    n_biotopes = "Biotope Segments"
+  ) %>%
+  fmt_number(columns = c(n_routes, n_biotopes), decimals = 0)
+```
+
 
 ### Random effects
 
