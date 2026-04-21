@@ -242,4 +242,15 @@ A hold-out test set for these models. Running.
 
 The running of the hold-out was stopped as I make a mistake in the chain, transit, thin setup. I didnt remove experimental numbers. Re run.
 
+### April 04, 2026
+
+What is the accuracy of the model when modelling Presence-Abscence?
+    - Creating model fbs_M008_PA
+    - Using "probit" as distribution
+    - Using presence-absence (0-1) Y matrix
+
+Changes in code
+    - function transform_Y_to_presAbs in preamble (line 132)
+    - Using the transform_Y_to_presAbs in species occurrence matrix Y section (line 1113)
+    - probit distribution used in definition of the model section (line 1545)
 
