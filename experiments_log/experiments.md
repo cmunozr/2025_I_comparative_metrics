@@ -245,12 +245,30 @@ The running of the hold-out was stopped as I make a mistake in the chain, transi
 ### April 04, 2026
 
 What is the accuracy of the model when modelling Presence-Abscence?
-    - Creating model fbs_M008_PA
-    - Using "probit" as distribution
-    - Using presence-absence (0-1) Y matrix
+- Creating model fbs_M008_PA
+- Using "probit" as distribution
+- Using presence-absence (0-1) Y matrix
 
 Changes in code
-    - function transform_Y_to_presAbs in preamble (line 132)
-    - Using the transform_Y_to_presAbs in species occurrence matrix Y section (line 1113)
-    - probit distribution used in definition of the model section (line 1545)
+- function transform_Y_to_presAbs in preamble (line 132)
+- Using the transform_Y_to_presAbs in species occurrence matrix Y section (line 1113)
+- probit distribution used in definition of the model section (line 1545)
+
+Running in ASMV 11:00 hrs
+
+### April 04, 2026
+
+What if we play with the dissolving method for the surveys, now we are using biotope thematic dissolving. Lets to try this:
+- Dissolve all biotope in route
+    - less sampling units
+    - needs to remove the local random effect
+    - sum up of all occurrences per year
+    - model fbs_M012
+- Dissolve not in thematic but consecutive + thematic 
+    - more sampling units
+    - needs to recalcualte observations per year per biotope per route
+    - model fbs_M013
+
+Changes in code:
+- Branch biotope_exp
 
