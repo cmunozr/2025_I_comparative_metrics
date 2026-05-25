@@ -272,3 +272,25 @@ What if we play with the dissolving method for the surveys, now we are using bio
 Changes in code:
 - Branch biotope_exp
 
+### May 21, 2026
+
+There is a crescent evidence from theory that the biotope route is quite unestable. Three ideas:
+1. No matter if we use a data-driven approach, deep learning also fail: see  (here)[https://github.com/cmunozr/2026_I_AI_GU/blob/exp/Project/deepmaxent.ipynb]
+2. Estimating alpha biodiversity at local scale is normally hard to predict, see (here)[https://www.frontiersin.org/journals/plant-science/articles/10.3389/fpls.2022.839407/full]
+3. Other ideas: 
+   - METSO-domain hold-out: test routes are conservation/forest-context selected, not random.
+   - Biotope-level response unit: sample units have unequal and sometimes small sampled lengths.
+   - Missing observation-process covariates: effort, duration, observer, date/time are not in XData.
+   - Rare species in the community mean: several species have too few presences for stable held-out AUC/SR2.
+   - Abundance is usually harder to predict than occurrence because abundance depends not only on whether habitat is suitable, but also on survival, reproduction, density dependence, dispersal, local history, and chance.
+
+Cancelled models fbs_M012 and fbs_M013 as thought in April 04.
+
+### May 25, 2026
+
+Create a model where the sampling unit is vakio per year. Forest cleaning sectors.
+
+fbs_M014PA: presence abscence version
+fbs_M014: abundance version
+
+
