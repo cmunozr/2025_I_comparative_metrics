@@ -294,3 +294,8 @@ fbs_M014PA: presence abscence version
 fbs_M014: abundance version
 
 
+### May 26, 2026
+
+In parallel, for models fbs_M008PA and fbs_M008 I am testing route crossvalidation (random selection) to understand better if the model can transfer to not seen routes or it has the same problems as with METSO. I first run a pilot with 250 thin for mcmc (--samples 1000 --transient 125000 --thin 250). Ideal complete MCMC can be quite expensive in time and processing (we cannot use warm initialization as it would be data leakage). It will help to further investigate if the biotope is intrinsically problematic.
+
+

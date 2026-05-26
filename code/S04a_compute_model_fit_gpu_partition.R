@@ -7,7 +7,7 @@ source("code/_utilities_hmsc_gpu.R")
 set.seed(11072024)
 
 # Define all strategies required for diagnosis
-validation_strategies <- c("metso_holdout", "route_blocked_cv", "random_cv")
+validation_strategies <- c("route_blocked_cv") # c("metso_holdout", "route_blocked_cv", "random_cv")
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")
@@ -93,7 +93,7 @@ for(i in 1:nrow(mcmc_params)){
       eval_name_p <- paste0(base_model_name, "_", label, "_", parts[p])
       output_rds_path_local_p <- file.path(eval_dir, paste0(eval_name_p, ".rds"))
       
-      prepared_model <- prepare_hpc_model(hM_[[p]], run_config$cv$mcmc_temp)
+      prepared_model <- prepare_hpc_model(hM_[[p]], run_config$cv$mcmc)
       
       # Use the dynamically generated path
       model_saved <- save_prepared_model(prepared_model, output_rds_path_local_p) 
@@ -102,7 +102,7 @@ for(i in 1:nrow(mcmc_params)){
         commands <- generate_commands(
           base_model_name = eval_name_p, 
           run_specific_dir_server = file.path(run_specific_dir_server, label),
-          mcmc_params = mcmc_params_i,
+          mcmc_params = run_config$cv$mcmc,
           run_config = run_config
         )
         all_commands_aggregated <- c(all_commands_aggregated, commands$all_commands)
