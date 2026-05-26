@@ -1,0 +1,1571 @@
+---
+title: "Quantitative biodiversity modelling for finance and companies"
+subtitle: "Project 1: compare metrics"
+author: 
+  - name: "Carlos Muñoz"
+    email: carlos_jair.munoz@cec.lu.se
+    affiliations: 
+      - ref: CEC
+
+affiliations:
+  - id: CEC
+    name: Centre for Environmental and Climate Science, Lund University
+    department: Centre for Environmental and Climate Science 
+    address: Kontaktvägen 10
+    city: Lund
+    postal-code: 22362
+    url: https://www.cec.lu.se/home
+   
+format:
+  html:
+    theme: cosmo # try other themes from https://quarto.org/docs/output-formats/html-themes.html
+    toc: true # this will enable Table of Contents
+    code-fold: false #try changing it and see what happens
+    embed-resources: true # this is so your file would embed all images. 
+    output-dir: "../quarto_reports/"  
+  pdf: default
+  docx: default
+
+execute: 
+  echo: true    #use to show/hide R-code in the report
+  cache: false
+number-sections: true #sectioner can be automatically numbered
+title-block-banner: true
+---
+
+## Introduction
+
+### General framework
+
+-   Biodiversity is declining at an alarming rate, faster than ever in human history (Barnosky et al., 2011; Ceballos et al., 2015).
+-   Economic activity is at the core of the biodiversity crisis, but biodiversity loss also represents a significant physical threat, reputational and regulatory risk to business and financial activities.
+-   BIOPATH (Sweden) seeks to develop innovative approaches to integrate biodiversity considerations into financial and business decision-making to halt and reverse biodiversity loss.
+
+### Biodiversity metrics
+
+-   Biodiversity databases are the foundation for effective management strategies, but data alone isn't enough to stop biodiversity loss. We need to turn this data into useful information. This means using some way of biodiversity measurement to move activities from harming nature to being neutral or even positive.
+-   Burgess and colleagues (2024) identified 573 metrics developed to inform decision-making related to biodiversity.
+-   What metrics should be used?
+
+#### A Tension
+
+-   Business Perspective: Need for accessible, cost-effective and standardized. Importance of simplicity.
+-   Natural scientific Perspective:Reflect ecological complexity.Capture multiple dimensions.
+-   Maybe a set instead of only one silver bullet
+
+### Challenge
+
+-   The heart of the matter with biodiversity state metrics is how biodiversity change is interpreted and, consequently, how choices are made may be significantly impacted by the selection and response of biodiversity measures (Silvestro et al., 2023). It is critical to understand how different measures respond to changes, which metrics are particularly sensitive to early signals of biodiversity loss, and which metrics respond to changes consistently.
+-   How transparently, efficiently, and credibly these measures capture the state and changes on multiple dimensions of biodiversity?
+
+### Objective
+
+To compare biodiversity metrics using quantitative models to assess how accurately they reflect biodiversity states and trends in different biodiversity change scenarios.
+
+-   Birds as focal study taxon
+-   Biodiversity change because change of habitat: forestry management scenarios
+
+**THERE IS A NOTORIOUS GAP ABOUT WHY TO USE BIRDS AND WHY FOREST**
+
+### Rol of Hmsc
+
+An Hmsc model provides predictions at the species-community level. This enables the spatial representation of biodiversity to analyse and evaluate biodiversity metrics’ performance and variation through environmental and spatial gradients while counting for uncertainties.
+
+## Setup
+
+### Environment Configuration
+
+```{r, setup}
+knitr::opts_knit$set(root.dir = "c:/Users/Carlos Munoz/Documents/Ph.D/6_courses/2025_I_comparative_metrics/")
+```
+
+### Load Libraries
+
+```{r}
+#| message: false
+#| warning: false
+
+library(matrixStats)
+library(Hmsc)
+library(tidyverse)
+library(data.table)
+library(terra)
+library(sf)
+library(maps)
+library(ape)
+library(taxize)
+library(remotes)
+library(phytools)
+library(openxlsx)
+library(tidyterra)
+library(viridis)
+library(lwgeom)
+library(ggrepel)
+library(gt)
+library(exactextractr)
+library(patchwork)
+library(units)
+library(clootl) # devtools::install_github("eliotmiller/clootl")
+library(finbif) # https://github.com/luomus/finbif; usethis::edit_r_environ()
+library(car)
+library(dplyr)
+```
+
+### Global Options & Helper Functions
+
+```{r}
+source(file.path("code", "config_model.r"))
+```
+
+
+```{r}
+options("GDAL_DATA" = Sys.getenv("GDAL_DATA")) # Ensure GDAL_DATA is set if needed
+options("OSR_USE_NON_DEPRECATED" = "NO")
+```
+
+```{r}
+set.seed(11072024)
+```
+
+
+```{r}
+transform_Y_to_abunCpres <- function(data) {
+  data |> 
+    mutate(across(everything(), ~ ifelse(. == 0, NA, .)))
+}
+```
+
+```{r}
+transform_Y_to_presAbs <- function(data) {
+  data |> 
+    mutate(across(everything(), ~ ifelse(. != 0, 1, .)))
+}
+```
+
+
+```{r}
+source(file.path("code", "_utilities_transform_covariates.R"))
+```
+
+```{r}
+options(timeout = 9999)
+```
+
+### Run helper (time consuming tasks)
+
+```{r}
+run_download_mactavish <- F
+run_get_finbif <- F
+run_itis_routes <- F
+run_itis_bakx <- F
+filter_rare_spp <- F
+run_polygon_buffers <- T
+run_calculate_XData <- T
+run_new_var_XData <- T
+run_syn_for_mctavish <- T
+```
+
+## Data loading
+
+### Load Finnish Bird Survey (FBS) Data
+
+
+```{r}
+# coordinates 
+coords <- st_read(file.path("data", "fbs", "vakiolinja", "Vakiolinjat_routes.geojson")) |> 
+  st_transform(2393)
+
+# routes (names and dates)
+routes <- read.csv(file.path("data", "fbs", "vakiolinja", "vakiolinja1_20250626.csv"))
+
+# occurrences by route (spp key, and counts in points and lines)
+
+occurr_route <- read.csv(file.path("data", "fbs", "vakiolinja", "vakiolinja2_20250626.csv")) 
+
+# occurrences by section route (spp key, and counts in points and lines)
+
+occurr_sect_route <- read.csv(file.path("data", "fbs", "vakiolinja", "vakiolinja3_20250626.csv"))
+
+```
+
+### Load Auxiliary Files
+
+Species list from Bakx et al, 2023.
+
+```{r}
+bakx_species <- read.xlsx(xlsxFile = file.path("data", "ecs24559-sup-0001-appendixs1.xlsx"), sheet = 1)
+```
+
+Traits information
+```{r}
+avonet <- read.xlsx(file.path("data", "traits", "AVONET", "TraitData", "AVONET2_eBird.xlsx"), sheet = 2)
+```
+
+Dictionary of covariates (Shultz)
+```{r}
+dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";")
+```
+
+Mapping function covariates
+```{r}
+mapping_functions <- read.xlsx(file.path("data", "covariates", "mapping_covariate_functions.xlsx"), sheet = 1)
+```
+
+Multi Source Forest National Inventory available data years
+
+```{r}
+ms_nfi_years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
+```
+
+Phylogenetic information
+
+```{r}
+if(run_download_mactavish){
+  get_avesdata_repo(path = file.path("data"), overwrite = T) # 1GB more or less
+}
+set_avesdata_repo_path(path = file.path("data", "AvesData-main"), overwrite = T)
+
+```
+
+## FBS Data Preprocessing & Cleaning
+
+
+```{r}
+# Extracting and transforming route number information in order to use it as an easier index
+
+coords_nm <- str_split(coords$name, pattern = ", ", simplify = T) |> 
+  as.data.frame()
+names(coords_nm) <- c("vakio", "str1", "str2", "numer")
+
+coords <- bind_cols(coords, coords_nm) |>
+  mutate(vakio = as.numeric(vakio), spatial_length = drop_units(st_length(coords))) |> 
+  arrange(vakio)
+
+routes <-  routes |> 
+  mutate(vakio = as.numeric(vakio))
+occurr_route <- occurr_route |> 
+  mutate(vakio = as.numeric(vakio))
+occurr_sect_route <- occurr_sect_route |> 
+  mutate(vakio = as.numeric(vakio))
+  
+```
+
+### Species information retrieving
+
+Species information in the FBS routes. There is no taxonomic data, so it needs to be retrieved from finbif.
+
+```{r}
+spp_in_route <- occurr_sect_route |> 
+  group_by(scientificName) |> 
+  summarise(count = n(), .groups = "drop") |> 
+  filter(scientificName != "") 
+
+if(run_get_finbif){
+
+  finbif_info_raw <- list() 
+  
+  spp <- spp_in_route |> 
+    pull(scientificName) 
+  
+  for(i in 1:nrow(spp_in_route)){
+    #i <- 1
+    spp.i <- spp[i]
+    resp.i <- tryCatch(
+      {
+        finbif::finbif_taxa(spp.i, type = "exact", cache = getOption("finbif_use_cache"))$content[[1]]
+      },
+      error = function(e) {
+        finbif::finbif_taxa(spp.i, type = "partial", cache = getOption("finbif_use_cache"))$content[[1]]
+      }
+    )
+    
+    if(is.null(resp.i$vernacularName$en)) resp.i$vernacularName$en <- NA
+    
+    finbif_info_raw[[i]] <- data.frame("taxonId" = resp.i$id, "acceptedName_finbif" = resp.i$scientificName, "englishName" = resp.i$vernacularName$en,
+                                        "taxonRank" = resp.i$taxonRank, "is.species" = resp.i$species, "group" = resp.i$informalGroups[[1]]$name$en) 
+  }
+  
+  finbif_info_raw <- finbif_info_raw |> 
+    bind_rows() |> 
+    mutate(count = spp_in_route$count)
+  
+  saveRDS(object = finbif_info_raw, file = file.path("data", "fbs", "tax_raw_data.rds"))
+
+  rm(spp.i, resp.i, i)
+  
+}else{
+  
+  finbif_info_raw <- readRDS(file = file.path("data", "fbs", "tax_raw_data.rds"))
+  
+}
+
+finbif_info <- finbif_info_raw |>
+  mutate(acceptedName_finbif = ifelse(taxonRank == "MX.subspecies",
+                                        stringr::word(acceptedName_finbif, 1, 2),
+                                        acceptedName_finbif
+                                        )
+         )
+
+occurr_sect_route <- occurr_sect_route |> 
+  left_join(finbif_info, by = "taxonId")
+```
+
+### Resolving bird names to international standard
+
+```{r}
+
+route_species <- finbif_info |> 
+  filter(is.species == TRUE, group == "Birds", taxonRank != "MX.hybrid", taxonRank != "MX.form")
+
+if(run_itis_routes){
+  itis_routes_raw <- lapply(route_species$acceptedName_finbif, function(species_name) {
+  tryCatch(
+    {
+      tsn <- taxize::get_tsn(species_name, accepted = FALSE)
+      accepted_info <- taxize::itis_acceptname(tsn)
+      accepted_info$submittedname <- species_name
+      
+      return(accepted_info)
+    },
+    error = function(e) {
+      return(
+        data.frame(submittedtsn = NA, acceptedname = NA, acceptedtsn = NA, author = NA, submittedname = species_name)
+        )
+      }
+    )
+  })
+  itis_routes_raw <- dplyr::bind_rows(itis_routes_raw)
+  saveRDS(itis_routes_raw, file.path("data", "fbs", "itis_routes_raw.rds"))
+}else{
+  itis_routes_raw <- readRDS(file.path("data", "fbs", "itis_routes_raw.rds"))
+}
+
+itis_routes <- itis_routes_raw |> 
+  bind_cols(route_species) |> 
+  mutate(acceptedname_itis = ifelse(is.na(acceptedname),
+                               acceptedName_finbif,
+                               acceptedname
+                               ),
+         acceptedname_itis = stringr::word(acceptedname_itis, 1, 2) # in itis some accepted names are subspecies
+         ) |> 
+  dplyr::select(taxonId, submittedname, acceptedname_itis)
+  
+```
+
+
+```{r}
+
+if(run_itis_bakx){
+  itis_bakx_raw <- lapply(bakx_species$Latin_name, function(species_name) {
+  tryCatch(
+    {
+      tsn <- taxize::get_tsn(species_name, accepted = FALSE)
+      accepted_info <- taxize::itis_acceptname(tsn)
+      accepted_info$submittedname <- species_name
+      
+      return(accepted_info)
+    },
+    error = function(e) {
+      return(
+        data.frame(submittedtsn = NA, acceptedname = NA, acceptedtsn = NA, author = NA, submittedname = species_name)
+        )
+      }
+    )
+  })
+  itis_bakx_raw <- dplyr::bind_rows(itis_bakx_raw)
+  saveRDS(itis_bakx_raw, file.path("data", "fbs", "itis_bakx_raw.rds"))
+}else{
+  itis_bakx_raw <- readRDS(file.path("data", "fbs", "itis_bakx_raw.rds"))
+}
+
+itis_bakx <- itis_bakx_raw |> 
+  mutate(acceptedname_itis = ifelse(is.na(acceptedname),
+                               submittedname,
+                               acceptedname
+                               ),
+         acceptedname_itis = stringr::word(acceptedname_itis, 1, 2) # in itis some accepted names are subspecies
+         ) |> 
+  dplyr::select(submittedname, acceptedname_itis)
+
+```
+
+```{r}
+harmonized_species <- full_join(
+  itis_routes, 
+  itis_bakx, 
+  by = "acceptedname_itis", 
+  suffix = c("_routes", "_bakx")
+)
+
+harmonized_species <- harmonized_species |>
+  mutate(
+    in_routes = !is.na(submittedname_routes),
+    in_bakx = !is.na(submittedname_bakx),
+    acceptedName = acceptedname_itis
+  ) |>
+  dplyr::select(
+    taxonId,
+    submittedname_bakx,
+    acceptedName,
+    in_routes,
+    in_bakx
+  )
+
+write.xlsx(harmonized_species, file.path("data", "fbs", "harmonized_species.xlsx"), sheet = 1)
+```
+
+Once harmonized both datasets using finbif we found that 
+
+```{r}
+table("routes" = harmonized_species$in_routes, "bakx" = harmonized_species$in_bakx)
+```
+We are missing the next birds from Bakx et al (2023):
+
+```{r}
+harmonized_species$submittedname_bakx[!harmonized_species$in_routes]
+
+```
+
+
+```{r}
+occurr_sect_route <- occurr_sect_route |> 
+  left_join(harmonized_species, by = "taxonId") 
+  
+```
+
+### Forest biotope
+
+Categories under forest biotope 
+
+- K SPRUCE FOREST (main species: spruce)
+- M PINE FOREST (main species: pine)
+- S MIXED FOREST (roughly equal mix of coniferous and deciduous trees)
+- L DECIDUOUS FOREST (main species: deciduous trees)
+- J NOBLE BROADLEAF FOREST (oak, beech, etc.)
+- P SHRUBLAND (under 5 meters tall; alpine birch scrub is still considered forest)
+- R PINE FEN (peatland with pine; drained fens often counted as shrublands)
+
+Categories out of biotope forest
+- H CLEAR-CUT AREA
+- N MIRE OR WETLAND
+- V FARMLAND AND SHORE MEADOWS
+- A SETTLEMENT
+- T FELL AND ALVAR
+- X OTHER
+
+
+```{r}
+biotope_forest <- c("K", "M", "S", "L", "J", "P", "R")
+
+occurr_sect_route <- occurr_sect_route |> 
+  mutate(is_biotope_forest = biotope %in% biotope_forest )
+
+```
+
+
+## Exploratory Data Analysis & Quality Checks
+
+
+### Create Master route Table
+
+```{r}
+master_routes <- routes |>
+  # FLAG 1: Temporal Filter ---
+  # Time window: late Spring/Summer routes of selected years ( because data availability of the multi source national forest inventory, MS-NFI)
+  # Check vents outside the desired time window.
+  mutate(
+    is_valid_date = (month >= 5 & month <= 7 & year %in% ms_nfi_years) 
+  ) |>
+  # FLAG 2: Species Filter ---
+  # Check which routes contain at least one observation of a target species.
+  left_join(
+    occurr_sect_route |>
+      filter(in_bakx == TRUE) |> # this flag summarize labels is.species, group == birds, and in_bakx
+      distinct(vakio, year) |>
+      mutate(has_target_species = TRUE),
+    by = c("vakio", "year")
+  ) |>
+  #
+  # FLAG 3: Biotope Data Quality ---
+  # check for routes that has forest biotope
+  left_join(
+    occurr_sect_route |>
+      filter(is_biotope_forest == TRUE) |>
+      distinct(vakio, year) |>
+      mutate(has_target_biotope = TRUE),
+    by = c("vakio", "year")
+  ) |>
+  # Check for routes that are missing biotope information in any given year.
+  #
+  left_join(
+    occurr_sect_route |>
+      group_by(vakio, year) |>
+      summarise(
+        sections_missing_biotope = sum(biotope == ""),
+        total_sections = n(),
+        .groups = 'drop'
+      ) |>
+      # A route is invalid if all its sections are missing biotope info
+      mutate(has_no_biotope_data = (sections_missing_biotope == total_sections)) |>
+      mutate(has_incomplete_biotope_data = (sections_missing_biotope > 0)) |> 
+      filter(has_incomplete_biotope_data), # Keep only the invalid routes to flag them
+    by = c("vakio", "year")
+  ) |>
+  #
+  # FLAG 4: Spatial Length Discrepancy ---
+  # Check if the recorded line length differs from the spatial object length.
+  left_join(coords, by = "vakio") |>
+  mutate(
+    length_difference = abs(linelength - spatial_length),
+    is_length_discrepant = (length_difference > 50)
+  ) |>
+  ## FLag 5: some routes are not covered by the MS-NFI, there is a need to automatize the flag
+  left_join(
+    occurr_sect_route |>
+      filter((vakio %in% c(431, 456, 576) & year == 2009) | (vakio %in% c(489, 608) & year == 2011)) |> 
+      distinct(vakio, year) |> 
+      mutate(no_data_NFI = TRUE),
+    by = c("vakio", "year")
+  ) |> 
+  ## FLag 5: some routes are not covered by the climatic variables, there is a need to automatize the flag
+  left_join(
+    occurr_sect_route |>
+      filter((vakio %in% c(9, 10, 23, 42) & year %in% c(2015, 2017, 2019, 2021))) |> 
+      distinct(vakio, year) |> 
+      mutate(no_data_clim = TRUE),
+    by = c("vakio", "year")
+  ) |> 
+  mutate(
+    has_target_species = tidyr::replace_na(has_target_species, FALSE),
+    has_no_biotope_data = tidyr::replace_na(has_no_biotope_data, FALSE),
+    has_incomplete_biotope_data = tidyr::replace_na(has_incomplete_biotope_data, FALSE),
+    has_target_biotope = tidyr::replace_na(has_target_biotope, FALSE),
+    no_data_NFI = tidyr::replace_na(no_data_NFI, FALSE),
+    no_data_clim = tidyr::replace_na(no_data_clim, FALSE)
+  )
+
+```
+
+
+### Exploratory Analysis of Filter Criteria
+
+How much data is affected by missing biotope information?
+
+```{r}
+# Summarize how many years each route is missing all biotope data
+biotope_missing_summary <- master_routes |>
+  filter(has_no_biotope_data == TRUE) |>
+  count(vakio, name = "times_missing")
+
+# Join this summary to the spatial data for mapping
+coords_for_plot <- coords |>
+  left_join(biotope_missing_summary, by = "vakio") |>
+  # If a route never had missing data, times_missing will be NA. We set it to 0.
+  mutate(times_missing = as.factor(ifelse(is.na(times_missing), 0, times_missing)))
+
+# What percentage of routes have this issue at least once?
+# And how many times have they been without biotope info?
+n_routes_total <- n_distinct(master_routes$vakio)
+n_routes_with_missing_data <- n_distinct(biotope_missing_summary$vakio)
+percent_affected <- round((n_routes_with_missing_data / n_routes_total) * 100, 2)
+
+print(paste0(percent_affected, "% of routes have at least one year with no biotope data."))
+
+# Display the frequency table
+table(coords_for_plot$times_missing) |>
+  as.data.frame() |>
+  rename(
+    `Years of Missing Biotope Data` = Var1,
+    `Number of Routes` = Freq
+  ) |>
+  gt()
+```
+
+How are the routes with missing biotope data distributed spatially?
+
+```{r}
+# mapping spreading of no biotope data
+fin <- st_as_sf(maps::map(database = "world", regions = "finland", plot = FALSE, fill = TRUE))
+
+# Create a color palette
+lvls <- levels(coords_for_plot$times_missing)
+turbo_discrete_colors <- viridis_pal(option = "turbo")(n = length(lvls) - 1)
+custom_colors <- c(
+  "0" = "gray",
+  setNames(turbo_discrete_colors, lvls[lvls != "0"])
+)
+
+# Plot the map
+coords_for_plot |>
+  ggplot() +
+  geom_sf(data = fin) +
+  geom_sf(aes(color = times_missing), size = 1.5) +
+  scale_color_manual(
+    values = custom_colors,
+    name = "Number of Years Missing Biotope Data",
+    drop = FALSE
+  ) +
+  labs(
+    title = "Frequency of Years with Missing Biotope Data per Survey Route",
+    subtitle = "Routes with no missing data are shown in grey."
+  ) +
+  theme_minimal()
+```
+How many routes are missing data each year?
+
+```{r}
+missing_by_year <- master_routes |>
+  group_by(year) |>
+  summarise(
+    # Count of routes missing data that year
+    n_routes_missing_biotope_data = sum(has_no_biotope_data),
+    # Total routes sampled that year
+    n_routes_sampled = n(),
+    # Percentage of routes missing data that year
+    percent_missing = (n_routes_missing_biotope_data / n_routes_sampled) * 100
+  )
+
+# Breakdown of missing biotope data by year
+missing_by_year |> 
+  gt()
+
+```
+
+What is the spatial distribution of routes with target species?
+
+```{r}
+# Summarize at the route level: does a route EVER have a target species?
+species_summary <- master_routes |>
+  group_by(vakio) |>
+  summarise(has_target_species_ever = any(has_target_species))
+
+# Join to spatial data for plotting
+coords_for_species_plot <- coords |>
+  left_join(species_summary, by = "vakio")
+
+# Plot the map
+coords_for_species_plot |>
+  ggplot() +
+  geom_sf(data = fin) +
+  geom_sf(aes(color = has_target_species_ever), size = 1.5, alpha = 0.8) +
+  scale_color_manual(
+    values = c("TRUE" = "gray", "FALSE" = "red"),
+    labels = c("TRUE" = "Species Information", "FALSE" = "No Species Information"),
+    name = "Data Availability",
+  ) +
+  labs(
+    title = "Spatial Distribution of Finnish Bird Survey Routes",
+    subtitle = "Highlighting routes with and without focal species data"
+  ) +
+  theme_minimal()
+```
+If we remove routes with no biotope data, how much information do we lose of the target species?
+
+```{r}
+# Get the list of eventIDs that will be removed due to the biotope filter
+events_to_remove <- master_routes |>
+  filter(has_no_biotope_data == TRUE | has_target_biotope == FALSE) |>
+  pull(eventId) |>
+  unique()
+
+# Flag occurrence data
+loss_analysis_data <- occurr_sect_route |> 
+  filter(in_bakx == T) |>
+  mutate(
+    # Flag records based on whether their eventID is in the removal list
+    biotope_logic = ifelse(eventId %in% events_to_remove, 0, 1)
+  )
+
+# --- summary ---
+occurrence_data <-  table(acceptedName = loss_analysis_data$acceptedName,
+                          biotope_logic = loss_analysis_data$biotope_logic) |>
+  as.data.frame() |>
+  pivot_wider(id_cols = acceptedName,
+              names_from = biotope_logic,
+              values_from = Freq,
+              names_prefix = "flag_") |>
+  rename(occurrences_lost = flag_0,
+         occurrences_kept = flag_1)
+
+paircount_data <- loss_analysis_data |>
+  group_by(acceptedName, biotope_logic) |>
+  summarise(total_pairCount = sum(pairCount, na.rm = TRUE), .groups = 'drop') |>
+  pivot_wider(
+    id_cols = acceptedName,
+    names_from = biotope_logic,
+    values_from = total_pairCount,
+    values_fill = 0,
+    names_prefix = "flag_"
+  ) |>
+  rename(paircount_lost = flag_0,
+         paircount_kept = flag_1)
+```
+
+
+```{r}
+#| label: data_loss_count
+#| tbl-cap: data loss count
+# Join and display the final table
+left_join(occurrence_data, paircount_data, by = "acceptedName") |>
+  mutate(
+    total_occurrences = occurrences_lost + occurrences_kept,
+    percent_occurrences_lost = round((occurrences_lost / total_occurrences) * 100, 2),
+    total_paircount = paircount_lost + paircount_kept,
+    percent_paircount_lost = round((paircount_lost / total_paircount) * 100, 2)
+  ) |>
+  arrange(desc(percent_paircount_lost)) |>
+  gt() |>
+    tab_header(title = "Potential Data Loss from Removing Routes with No Biotope Info")
+  
+
+
+```
+
+
+### Apply Filter
+
+```{r}
+valid_events <- master_routes |>
+  filter(
+    is_valid_date == TRUE,
+    has_target_species == TRUE,
+    has_no_biotope_data == FALSE, 
+    has_target_biotope == TRUE,
+    is_length_discrepant == FALSE,
+    no_data_NFI == FALSE,
+    no_data_clim == FALSE
+  )
+
+# Extract the unique IDs for the valid events and routes
+valid_event_ids <- unique(valid_events$eventId)
+valid_vakio_ids <- unique(valid_events$vakio)
+```
+
+Spatial distribution of valid routes in Finland
+
+```{r}
+
+all_routes_data <- coords |> 
+  mutate(category = "All Routes")
+
+valid_routes_data <- coords |> 
+  filter(vakio %in% valid_vakio_ids, vakio != 572) |> 
+  mutate(category = "Valid")
+
+map_data <- bind_rows(
+  all_routes_data,
+  valid_routes_data
+)
+
+route_color_mapping <- c(
+  "All Routes" = "red",
+  "Valid" = "black"
+)
+
+ggplot() +
+  geom_sf(data = fin) +
+  geom_sf(data = coords,
+          aes(color = "All Routes")) +
+  geom_sf(data = filter(coords, vakio %in% valid_vakio_ids, vakio != 572),
+          aes(color = "Valid")) + 
+  scale_color_manual(
+    values = route_color_mapping,
+    labels = c("All Routes" = "Removed", 
+               "Valid" = "Valid")
+  ) +
+  labs(
+    title = "Spatial Distribution of Routes after Filtering",
+    color = "Category"
+  )
+```
+
+```{r}
+# --- DATA CLEANING ---
+
+routes <- routes |>
+  filter(eventId %in% valid_event_ids)
+
+occurr_route <- occurr_route |>
+  filter(eventId %in% valid_event_ids)
+
+occurr_sect_route <- occurr_sect_route |>
+  filter(
+    eventId %in% valid_event_ids,
+    in_bakx == TRUE, # flags at the level of biotope, cannot handle inside the master df
+    is_biotope_forest == TRUE
+  )
+
+coords <- coords |>
+  filter(vakio %in% valid_vakio_ids,
+         vakio != 572)
+  # vakio 572 has a peculiarity, it is a vakio that has one species in bakx 
+  # it means has_target_species == TRUE and has_target_biotope == TRUE and also
+  # has_target_biotope == TRUE. However they dont appear at the same time in the
+  # occurrence data. The flag is misleading here. 
+
+```
+
+
+```{r}
+if(filter_rare_spp){
+  frequent_species <- occurr_sect_route |>
+  group_by(acceptedName) |>
+  summarise(n_occurrences = n(), .groups = "drop") |> 
+  filter(n_occurrences >= 35) |> 
+  pull(acceptedName)
+   
+  occurr_sect_route <- occurr_sect_route |> 
+    filter(acceptedName %in% frequent_species)
+}
+
+```
+
+
+#### Species analysis
+
+
+What is the distribution of bird orders among the target species after filtering?
+
+```{r}
+# # The code is the same, but the input is now correctly focused
+# aves_order_data_barplot <- occurr_sect_route |> 
+#   dplyr::select(scientificName) |> 
+#   distinct() |> 
+#   left_join(target_spp_in_route, by = "scientificName") |>
+#   filter(class == 'Aves') |>
+#   dplyr::count(order, name = 'n') |>
+#   arrange(desc(n))
+# 
+# ggplot(aves_order_data_barplot, aes(x = reorder(order, -n), y = n, fill = order)) +
+#   geom_col(color = 'black', show.legend = FALSE) +
+#   labs(title = 'Distribution of Orders Among Target Bird Species',
+#        x = 'Order',
+#        y = 'Number of Species') +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1),
+#         plot.title = element_text(hjust = 0.5, size = 14, face = 'bold')) +
+#   geom_text(aes(label = n), vjust = -0.5, size = 3.5)
+```
+
+Which Target Species Were Lost After Filtering?
+
+```{r}
+# Get a unique list of species present in the final, filtered dataset
+species_in_final_dataset <- occurr_sect_route |> 
+  pull(acceptedName) |> 
+  unique()
+
+target_species <- harmonized_species |> 
+  filter(in_routes == T, in_bakx == T) |> 
+  pull(acceptedName)
+
+# Compare original target list ('species') with the final list
+lost_species <- setdiff(target_species, species_in_final_dataset)
+
+# Display the result in a table
+if (length(lost_species) > 0) {
+  tibble(Lost_Target_Species = lost_species) |>
+    gt() |>
+    tab_header(
+      title = "Target Species Removed by Data Quality Filters"
+    )
+}
+```
+
+
+## Feature engineer
+
+### Create Biotope Polygon Buffers
+
+```{r}
+
+if(run_polygon_buffers){
+  
+  biotope_polygon_L3_log <- tidyr::expand_grid(
+  vakio = coords$vakio,
+  year = ms_nfi_years
+  ) |>
+  mutate(
+    path = NA_character_,
+    was_processed = FALSE,
+    was_extended = FALSE,
+    extension_distance_m = NA_real_,
+    point_warning = NA_character_
+  ) |>
+  arrange(year, vakio)
+
+  for (y in 1:length(ms_nfi_years)) {
+    #y <- 6
+    current_year <- ms_nfi_years[y]
+    message(paste("--- Processing year:", current_year, "---"))
+  
+    all_buffers_for_year <- list()
+  
+    for (a in 1:nrow(coords)) {
+      # a <- 470
+      route_id <- coords$vakio[a]
+      
+      log_row_index <- which(biotope_polygon_L3_log$vakio == route_id & biotope_polygon_L3_log$year == current_year)
+      
+      route_a <- coords |>
+        filter(vakio == route_id) |> 
+        # this solve spicules and a lot of problems on the topology of the line.
+        # However some lines become a bit longer, this is why in some rare/special cases
+        # we extend the line to match with the maximum claimed distance by the surveyor
+        st_simplify(preserveTopology = T, dTolerance = 20)
+  
+      biotope_route_a <- occurr_sect_route |>
+        filter(year == current_year, vakio == route_id) |>
+        dplyr::select(vakio, biotopeStripId, startMeters, endMeters, meters, biotope, biotopeSpecifier) |>
+        distinct() |> 
+        arrange(startMeters) |> 
+        mutate(
+          r_startMeters = startMeters / as.numeric(st_length(route_a)),
+          r_endMeters = endMeters / as.numeric(st_length(route_a))
+        )
+      
+      # to extend sample lines
+      if(any(biotope_route_a$r_startMeters > 1)){
+        d <- (biotope_route_a$r_endMeters[nrow(biotope_route_a)] - 1) * as.numeric(st_length(route_a))
+        route_a <- st_extend_line(line = route_a, distance = d, end = "end")
+        
+        biotope_route_a <- biotope_route_a |>
+          mutate(
+            r_startMeters = startMeters / as.numeric(st_length(route_a)),
+            r_endMeters = endMeters / as.numeric(st_length(route_a))
+          )
+        
+        biotope_polygon_L3_log$was_extended[log_row_index] <- TRUE
+        biotope_polygon_L3_log$extension_distance_m[log_row_index] <- d
+      
+      }else{
+        biotope_polygon_L3_log$was_extended[log_row_index] <- FALSE
+      }
+      
+      if (nrow(biotope_route_a) >= 1) {
+        
+        biotope_polygon_L3_log$was_processed[log_row_index] <- TRUE
+        
+        route_buffers <- list()
+        for (r in 1:nrow(biotope_route_a)) {
+          # r <- 30
+          # some strips are actually points, here we spot it using starting and final distance information
+          # then they are removed and flagged in the log file
+          equal <- biotope_route_a[r,c("r_startMeters", "r_endMeters")] |> 
+            unlist() |> 
+            diff()
+          
+          if(equal != 0){ 
+            
+          # Create the line segment for this biotope section
+          line_section <- st_linesubstring(
+            route_a,
+            from = biotope_route_a$r_startMeters[r],
+            to = biotope_route_a$r_endMeters[r]
+          )
+  
+          # A standard buffer on the raw, angular route lines can create unrealistic polygon 
+          # artifacts around sharp and "spicule type" corners.
+          # To solve this, we split each section and create sub-buffers and then join them.
+          
+          segments <- nngeo::st_segments(line_section, progress = F)
+         
+          segment_buffers <- st_buffer(segments, dist = 150, endCapStyle = "FLAT")
+          
+          final_buffer <- st_union(segment_buffers)
+          
+          final_buffer_sf <- st_sf(geometry = st_sfc(final_buffer), crs = st_crs(route_a)) |>
+              bind_cols(biotope_route_a[r,])
+  
+          route_buffers[[r]] <- final_buffer_sf
+          
+          }else{
+            
+            value_in_log <- biotope_polygon_L3_log$point_warning[log_row_index]
+            
+            point_strip_r <-  biotope_route_a$biotopeStripId[r]
+            
+            warning(paste(point_strip_r, "route", route_id, "year", current_year, "is a point observation, check log."))
+            
+            value_to_log <- paste(c(value_in_log, point_strip_r), collapse = ",")
+            
+            biotope_polygon_L3_log$point_warning[[log_row_index]] <- value_to_log
+            
+          }
+          
+        }
+        all_buffers_for_year[[a]] <- do.call(rbind, route_buffers)
+      }
+    }
+  
+    # Combine and save the final file for the year
+    valid_buffers <- all_buffers_for_year[!sapply(all_buffers_for_year, is.null)]
+    year_sf <- do.call(rbind, valid_buffers)
+    year_sf$year <- current_year
+  
+    output_filename <- paste0("data/fbs/route_sections_L3_", current_year, ".gpkg")
+    write_sf(year_sf, output_filename, delete_layer = TRUE)
+    biotope_polygon_L3_log[biotope_polygon_L3_log$year == current_year, "path"] <- output_filename
+    message(paste("Saved file:", output_filename))
+  
+  }
+  saveRDS(biotope_polygon_L3_log, file.path("data", "fbs", "biotope_polygon_L3_log.rds"))  
+  
+  rm(line_section, segments, segment_buffers, final_buffer, final_buffer_sf, 
+   route_buffers, all_buffers_for_year, valid_buffers, year_sf, output_filename)
+  
+}else{
+  
+  biotope_polygon_L3_log <- readRDS(file.path("data", "fbs", "biotope_polygon_L3_log.rds"))  
+  
+}
+
+```
+
+### Aggregate biotope information 
+
+From vakio+biotope+biotopeSpecifier to vakio+biotope. The former is too finer, see @tbl-data_loss_count
+
+#### Dissolve poligons
+
+```{r}
+l3_polygon_paths <- biotope_polygon_L3_log$path |> 
+  unique()
+l2_output_paths <- data.frame("year" = ms_nfi_years, "path_L2" = NA)
+
+for (i in 1:length(l3_polygon_paths)) {
+  l3_file <- l3_polygon_paths[i]
+  current_year <- ms_nfi_years[i]
+  message(paste("Processing:", basename(l3_file)))
+  
+  polygons_l3 <- st_read(l3_file, quiet = T)
+  
+  # Dissolve the geometries by route ID (vakio) and year
+  polygons_l2 <- polygons_l3 |>
+    group_by(vakio, year) |>
+    summarise(
+      geometry = st_union(geom),
+      dissolved_strip_ids = paste(unique(biotopeStripId), collapse = ","),
+      num_dissolved = n(),
+      .groups = "drop"
+    ) |> 
+    mutate(
+      sampleUnit = paste(vakio, year, sep = "_")
+    )
+  
+  output_filename_l2 <- file.path("data", "fbs", paste0("route_sections_L2_", current_year, ".gpkg"))
+  write_sf(polygons_l2, output_filename_l2, delete_layer = TRUE)
+  l2_output_paths$path_L2[l2_output_paths$year == current_year] <- output_filename_l2
+}
+```
+
+#### Sum up occurrences
+
+```{r}
+occurr_route_year <- occurr_sect_route |>
+  group_by(vakio, year, acceptedName) |>
+  summarise(
+    pairCount = sum(pairCount, na.rm = TRUE),
+    dissolved_strip_ids = paste(unique(biotopeStripId), collapse = ","),
+    num_dissolved = n(),
+    .groups = "drop"
+  ) |>
+  mutate(
+    sampleUnit = paste(vakio, year, sep = "_")
+  )
+
+```
+
+```{r}
+unique(occurr_biotope_route$sampleUnit) |> length()
+unique(occurr_biotope_route$vakio) |> length()
+```
+
+## Model Input Assembly
+
+### Species Occurrence Matrix (Y)
+
+```{r}
+Y <- occurr_route_year |> 
+  dplyr::select(sampleUnit, acceptedName, pairCount) |> 
+  pivot_wider(id_cols = sampleUnit, names_from = acceptedName, values_from = pairCount,
+              values_fn = sum, values_fill = 0) |> 
+  dplyr::select(-sampleUnit) |> 
+  as.data.frame()
+```
+
+```{r}
+P <-  colMeans(Y>0) |> 
+  sort()*100
+range(P) |> round(4)
+hist(P, xlab = "Species prevalence (P)")
+```
+
+Most species exhibit low prevalence, clustering towards the rare end of the spectrum, while a few species show a significantly higher prevalence, indicating they are common across the sampled areas, even an species is occurring in the `r max(P)` of sites (`r names(which(P == max(P)))`).
+
+```{r}
+#Y <- transform_Y_to_abunCpres(Y)
+Y <- transform_Y_to_presAbs(Y)
+Y <- Y[, order(colnames(Y))]
+```
+
+
+### XData
+
+Online repositories are not deployed as Web Feature Service in which we can work "in-situ". It was needed to download the data sets. Data sets are massive and splitted over several storage units. To consult how they were downloaded please refer to script "_utilities_download_covariates.R". Dowloaded files were processing following the "_utilities_fetch_covariates.R" script.
+
+Raw data of each route with a 150m buffer and from metso/non metso stands is extracted with the script "_utilities_fetch_covariates.R". Once with this information  we can compare each type of unit to inform potential risk of exrapolation. We sample 10000 stands for each type (metso/non metso) and all the route buffers.
+
+Now we are going to derive polygon-Level statistics from the raw values of the covariates.  We use the covariate data dictionary to filter each variable as either continuous or binary. Next, the two variable types are handled differently: for each polygon and year, continuous variables are summarized with a weighted mean and standard deviation, min and max, while binary variables are summarized by calculating the weighted proportion of '1's. 
+
+```{r}
+
+folder_name <- file.path("data", "covariates") 
+
+construct_hmsc_XData(
+  folder_name = folder_name,
+  run_calc = run_calculate_XData,
+  run_new = run_new_var_XData,  
+  dict_covar = dict_covar,     
+  mapping_funcs = mapping_functions,
+  ref_data = occurr_route_year,
+  data_sufix = "coords"
+)
+
+XData_list <- readRDS(file.path("data", "covariates", paste0("XData_hmsc_coords_", run_config$model_id, ".rds")))
+XData <- XData_list$XData
+
+```
+
+Chunk to add coordinates of each centroid of polygon biotope as covariates 
+```{r}
+sf_use_s2(TRUE)
+l2_xy <- lapply(X = l2_output_paths$path_L2, sf::read_sf) |> 
+  bind_rows() |> 
+  st_centroid() |>
+  st_transform("EPSG:4326") |>
+  st_coordinates() 
+```
+
+
+#### Multicollinearity analysis
+
+```{r}
+
+vars_to_remove <- c("old_grow_indicator_ratio", "old_grow_indicator_agesum", "elevation_mean", "average_stand_length_gt250_mean") # 
+# the last is an aliased coefficient with average_stand_length_gt200_mean, VIF can't run with
+
+predictor_data <- XData|> 
+  dplyr::select(-all_of(vars_to_remove), -contains("precipitation"), -starts_with("min_t"), -starts_with("max_t"))
+
+```
+
+```{r}
+vif_threshold <- 10
+vif_removed_variables <- c()
+vif_history <- list() # List to store VIF values at each step
+iteration <- 1
+
+repeat {
+  message(paste("iteration number", iteration))
+  if (ncol(predictor_data) < 2) {
+    print("Loop stopped: Not enough variables left to calculate VIF.")
+    break
+  }
+  
+  formula_str <- paste(names(predictor_data)[1], "~ .")
+  temp_model <- lm(as.formula(formula_str), data = predictor_data)
+  
+  vifs <- vif(temp_model)
+  
+  vif_history[[iteration]] <- as.data.frame(vifs)|>
+    rownames_to_column("Variable")|>
+    rename(VIF = vifs)
+  
+  max_vif <- max(vifs)
+  
+  if (max_vif < vif_threshold) {
+    vif_keep_variables <- names(predictor_data)
+    break
+  } else {
+    var_to_remove <- names(which.max(vifs))
+    vif_removed_variables <- c(vif_removed_variables, var_to_remove)
+    predictor_data <- predictor_data[, !(names(predictor_data) %in% var_to_remove)]
+    
+    iteration <- iteration + 1
+  }
+}
+```
+
+```{r}
+#| label: fig-vif_analysis
+#| fig-width: 14
+#| fig-height: 12
+#| fig-cap: "VIF Analysis"
+vif_plot_data <- bind_rows(vif_history, .id = "Iteration")
+vif_plot_data$Iteration <- as.factor(vif_plot_data$Iteration)
+
+ggplot(vif_plot_data, aes(x = Variable, y = VIF)) +
+  geom_col() +
+  geom_hline(yintercept = vif_threshold, color = "red", linetype = "dashed", linewidth = 0.5) +
+  labs(
+    title = "VIF Trajectory of Each Variable by Iteration",
+    subtitle = "Bars are grouped by variable; colors indicate the analysis step",
+    x = "Predictor Variable",
+    y = "Variance Inflation Factor (VIF)"
+  ) +
+  facet_wrap(~Iteration, scales = "free") +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1)
+  )
+  
+```
+
+
+```{r}
+length(vif_keep_variables)
+
+XData <- XData |> 
+   dplyr::select(any_of(vif_keep_variables)) # |>
+#   cbind(l2_xy) # this chunk is to add the coordinates as a spatial covariate
+```
+
+
+###  Phylogenetic Tree (phyloTree)
+
+Note: We have to check if we have to resolve names used in the phylogeny database and the finish bird survey.
+
+```{r}
+
+spp_Y <- colnames(Y)
+
+mctavish_mcc <- clootl:::treeGet(version = "1.4", taxonomy_year = "2023")
+
+mctavish_mcc$tip.label <- mctavish_mcc$tip.label |> 
+  str_replace("_", " ")
+
+not_in_mctavish <- !(spp_Y %in% mctavish_mcc$tip.label)
+
+if(run_syn_for_mctavish){
+  spp_Y_new <- spp_Y
+
+  for(i in 1:length(not_in_mctavish))(
+    #i <- 5
+    if(not_in_mctavish[i]){
+      spp_Y.i <- spp_Y[i]
+      to_rename <- taxize::synonyms(spp_Y.i, db = "itis")[[1]] |> 
+        dplyr::select(syn_name) |> 
+        pull() |> 
+        unique() |> 
+        stringr::word(1, 2)
+      spp_Y_new[i] <- to_rename
+    }
+  )
+  writeLines(spp_Y_new, file.path("data", "spp_Y_new_forPhylo.txt"))
+}else{
+  spp_Y_new <- readLines(file.path("data", "spp_Y_new_forPhylo.txt"))
+}
+
+# "Coloeus monedula" -> "Corvus monedula"
+# "Phylloscopus sibillatrix" -> "Phylloscopus sibilatrix"  
+
+phyloTree <- clootl::extractTree(species = spp_Y_new, taxonomy_year = 2023, version = 1.4)
+
+phyloTree$tip.label <- spp_Y[match(str_replace(phyloTree$tip.label, "_", " ") , spp_Y_new)]
+
+saveRDS(phyloTree, file.path("data", "AvesData-main", "phyloTree.rds"))
+
+```
+
+
+```{r}
+#| label: fig-bird-tree
+#| fig-width: 12
+#| fig-height: 10
+#| fig-cap: "Species phylogenetic tree"
+
+plot(phyloTree, cex = 0.7, no.margin = TRUE)
+
+
+```
+
+## Species Trait Data (T)
+
+```{r}
+
+spp_Y_new <- data.frame("scientificName" = spp_Y_new)
+
+TrData <- avonet |> 
+  rename(scientificName = Species2) |>
+  right_join(spp_Y_new, "scientificName")
+
+TrData$scientificName <- spp_Y[match(TrData$scientificName, spp_Y_new$scientificName)]
+
+TrData <- TrData |> 
+  arrange(scientificName)
+
+saveRDS(TrData, file.path("data", "traits", "TrData_complete.rds"))
+
+TrData <- TrData |> 
+  dplyr::select(Mass, scientificName, Trophic.Niche, Primary.Lifestyle, Migration) |> 
+  as.data.frame()
+
+row.names(TrData) <- TrData$scientificName 
+TrData <- TrData |> 
+  dplyr::select(-scientificName)
+
+
+
+```
+
+
+## Set up the model
+
+### Study desing
+
+```{r}
+studyDesign <- lapply(l2_output_paths$path_L2, sf::read_sf) |> 
+  bind_rows() |> 
+  st_drop_geometry() |> 
+  dplyr::select(vakio, year) |> 
+  mutate(across(everything(), as.factor)) |> 
+  as.data.frame()
+
+row.names(studyDesign) <- paste0(studyDesign$sampleUnit)
+
+xy <- coords |> 
+  dplyr::select(vakio) |> 
+  st_centroid() |> 
+  st_transform("EPSG:4326") |>
+  st_coordinates() 
+
+rownames(xy) <-  levels(studyDesign$vakio)
+
+colnames(xy) <-  c("long", "lat")
+
+write.csv(xy, file.path("data", "xy.csv"), row.names = T)
+
+```
+
+### Final analysis biotope and routes
+
+```{r}
+studyDesign_clean <- studyDesign|>
+  mutate(biotope = str_extract(sampleUnit, "[A-Z]$")) 
+
+# How many times was each unique route visited across all years?
+route_visits <- studyDesign_clean|>
+  distinct(vakio, year)|>
+  count(vakio, name = "n_visits")
+
+sampling_stats <- route_visits|>
+  summarise(
+    total_routes = n(),
+    mean_visits = mean(n_visits),
+    sd_visits   = sd(n_visits),
+    min_visits  = min(n_visits),
+    max_visits  = max(n_visits)
+  )
+
+sampling_stats|>
+  gt()|>
+  tab_header(title = "Sampling Intensity per Route (2008-2021)")|>
+  fmt_number(columns = c(mean_visits, sd_visits), decimals = 2)
+```
+
+
+```{r}
+# How many routes were surveyed in each specific year?
+annual_stats <- studyDesign_clean|>
+  distinct(vakio, year)|>
+  count(year, name = "n_routes_per_year")|>
+  summarise(
+    mean_routes = mean(n_routes_per_year),
+    sd_routes   = sd(n_routes_per_year),
+    min_routes  = min(n_routes_per_year),
+    max_routes  = max(n_routes_per_year),
+    n_years     = n()
+  )
+
+annual_stats|>
+  gt()|>
+  tab_header(title = "Annual Sampling Effort")|>
+  fmt_number(columns = c(mean_routes, sd_routes), decimals = 1)
+```
+
+
+```{r}
+# Distribution of the basic sampling units (biotopes)
+biotope_stats <- studyDesign_clean|>
+  count(biotope)|>
+  mutate(prop = n / sum(n) * 100)|>
+  arrange(desc(prop))
+
+biotope_stats|>
+  gt()|>
+  tab_header(title = "Distribution of Forest Biotopes")|>
+  fmt_number(columns = prop, decimals = 1)|>
+  cols_label(prop = "Percentage (%)")
+```
+
+
+```{r}
+# Total visits
+total_route_visits <- sum(studyDesign_clean|> distinct(vakio, year)|> count(vakio)|> pull(n))
+total_route_visits
+```
+
+
+```{r}
+# Average number of distinct biotopes? and How many biotopes (segments) per route?
+route_composition_stats <- studyDesign_clean %>%
+  group_by(vakio, year) %>%
+  summarise(
+    n_distinct_types = n_distinct(biotope), # e.g., How many types (K, M, S...) found?
+    n_total_segments = n()                  # e.g., How many rows (data points) per route?
+  ) %>%
+  ungroup() %>%
+  summarise(
+    mean_distinct_types = mean(n_distinct_types),
+    sd_distinct_types   = sd(n_distinct_types),
+    mean_segments       = mean(n_total_segments),
+    sd_segments         = sd(n_total_segments)
+  )
+
+route_composition_stats %>%
+  gt() %>%
+  tab_header(title = "Route Heterogeneity & Sampling Density") %>%
+  cols_label(
+    mean_distinct_types = "Avg. Distinct Biotope Types",
+    sd_distinct_types = "SD (Types)",
+    mean_segments = "Avg. Total Segments",
+    sd_segments = "SD (Segments)"
+  ) %>%
+  fmt_number(everything(), decimals = 2)
+```
+
+
+```{r}
+# In average how many times a biotope in a route was surveyed?
+# Assuming that "vakio 53 - Spruce" is the same spatial entity across years
+biotope_repetition <- studyDesign_clean %>%
+  mutate(stable_id = paste(vakio, biotope, sep = "_")) %>% 
+  count(stable_id, name = "years_surveyed")
+
+biotope_repetition_stats <- biotope_repetition %>%
+  summarise(
+    mean_years = mean(years_surveyed),
+    sd_years = sd(years_surveyed),
+    min_years = min(years_surveyed),
+    max_years = max(years_surveyed)
+  )
+
+biotope_repetition_stats %>%
+  gt() %>%
+  tab_header(title = "Temporal Stability of Biotope Units") %>%
+  cols_label(
+    mean_years = "Avg. Years Surveyed",
+    sd_years = "SD",
+    min_years = "Min",
+    max_years = "Max"
+  ) %>%
+  fmt_number(columns = c(mean_years, sd_years), decimals = 2)
+
+```
+
+```{r}
+# Is there a trend in the number of biotopes and routes surveyed?
+
+survey_trend <- studyDesign_clean %>%
+  group_by(year) %>%
+  summarise(
+    n_routes = n_distinct(vakio),
+    n_biotopes = n()
+  ) %>%
+  arrange(year)
+
+survey_trend %>%
+  gt() %>%
+  tab_header(
+    title = "Temporal Trend of Survey Effort",
+    subtitle = "Number of Routes and Biotope Segments Surveyed per Year"
+  ) %>%
+  cols_label(
+    year = "Year",
+    n_routes = "Routes Surveyed",
+    n_biotopes = "Biotope Segments"
+  ) %>%
+  fmt_number(columns = c(n_routes, n_biotopes), decimals = 0)
+```
+
+
+### Random effects
+
+```{r}
+
+rL.year <- HmscRandomLevel(units = levels(studyDesign$year))
+rL.locality <-  HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
+```
+
+
+```{r}
+
+# XFormula <- average_stand_diameter_gt15_mean + average_stand_diameter_gt20_mean + average_stand_length_gt200_mean + average_stand_length_gt250_mean + old_grow_indicator + canopy_cover_whole_stand + canopy_cover_whole_stand_gt60_mean + canopy_cover_broadleaves + volume_spruce_gt150 + tree_extent + tree_height_mean + tree_height_stdev + tree_remove 
+
+XFormula <- paste0("~ ", paste(colnames(XData), collapse = " + "), " + poly(mean_temperature_yr_last, degree = 2) + poly(mean_temperature_yr, degree = 2)") |>
+  as.formula() 
+
+```
+
+
+```{r}
+colnames(TrData)
+TrFormula <- ~ log(Mass) + Trophic.Niche + Primary.Lifestyle + Migration
+
+```
+
+### Define model
+
+#### Three random levels: spatial, samling unit, and temporal level and NNGP in GPU proccessing
+
+```{r}
+
+m <- Hmsc(
+  Y = Y,
+  XData = XData, 
+  XFormula = XFormula,
+  TrData = TrData, 
+  TrFormula = TrFormula,
+  phyloTree = phyloTree,
+  distr = "probit",
+  studyDesign = studyDesign, 
+  ranLevels = list("vakio" = rL.locality, "year" = rL.year)
+)
+```
+
+```{r}
+# Get the number of covariates (nc) and traits (nt)
+# nc <- m$nc
+# nt <- m$nt
+
+# 2. Set a strong shrinkage (ridge) prior
+# Set the prior variance UGamma to a small value (e.g., 0.1)
+# This forces the Gamma parameters (and thus Beta) to be close to zero.
+# UGamma_strict <- diag(0.1, nc * nt) 
+
+# m <- setPriors(m, UGamma = UGamma_strict) # Strong shrinkage (small variance)
+```
+
+
+```{r}
+dir.create("models", showWarnings = F)
+models <-  list(m)
+names(models) <- run_config$model_id
+output_filename <- file.path("models", paste0("unfitted_", run_config$model_id, ".RData"))
+save(models, file = output_filename)
+```
+
+```{r}
+sampleMcmc(m, samples=2)
+```
