@@ -1105,8 +1105,8 @@ hist(P, xlab = "Species prevalence (P)")
 Most species exhibit low prevalence, clustering towards the rare end of the spectrum, while a few species show a significantly higher prevalence, indicating they are common across the sampled areas, even an species is occurring in the `r max(P)` of sites (`r names(which(P == max(P)))`).
 
 ```{r}
-#Y <- transform_Y_to_abunCpres(Y)
-Y <- transform_Y_to_presAbs(Y)
+Y <- transform_Y_to_abunCpres(Y)
+#Y <- transform_Y_to_presAbs(Y)
 Y <- Y[, order(colnames(Y))]
 ```
 
@@ -1469,7 +1469,8 @@ m <- Hmsc(
   TrData = TrData, 
   TrFormula = TrFormula,
   phyloTree = phyloTree,
-  distr = "probit",
+  #distr = "probit",
+  distr = "lognormal poisson", 
   studyDesign = studyDesign, 
   ranLevels = list("vakio" = rL.locality, "year" = rL.year)
 )
