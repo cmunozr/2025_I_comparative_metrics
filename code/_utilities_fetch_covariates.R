@@ -13,7 +13,7 @@ library(zip)
 os <- Sys.info()['sysname']
 
 if (os == "Windows") {
-  output_base_path <- "E:"
+  output_base_path <- "D:"
 } else if (os %in% c("Linux", "Darwin")) {
   output_base_path <- "/home/avesta/munozcs/Documents/data/covariates/raw/"
   #output_base_path <- "/media/pitm/My Passport/"
@@ -40,8 +40,8 @@ MS_NFI_years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
 
 set.seed(11072024)
 
-extract_metso <- T
-extract_coords <- F
+extract_metso <- F
+extract_coords <- T
 
 #--------------
 # Prepare paths and organize information for each set of covariates
@@ -236,7 +236,7 @@ if(os == "Windows"){
 
 #-----------------------
 
-master_covariates <- bind_rows(tree_high_europe, luke, clim) #dem
+master_covariates <- bind_rows(tree_high_europe, luke, clim, dem) #(dem)
 # master_covariates <- dem
 write.csv(master_covariates, file.path("data", "master_covariates_temp.csv"), row.names = F)
 coords_utm_join <- bind_rows(coords_utm_join)

@@ -9,7 +9,7 @@ options(timeout = 1000)
 
 dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";")
 
-years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
+years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021, 2023)
 
 #-----------------
 # Download TREE HEIGHT

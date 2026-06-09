@@ -119,7 +119,8 @@ source(file.path("code", "config_model.r"))
 
 
 ```{r}
-options("GDAL_DATA" = Sys.getenv("GDAL_DATA")) # Ensure GDAL_DATA is set if needed
+# Ensure GDAL_DATA is set if needed
+options("GDAL_DATA" = Sys.getenv("GDAL_DATA")) 
 options("OSR_USE_NON_DEPRECATED" = "NO")
 ```
 
@@ -159,9 +160,9 @@ run_get_finbif <- F
 run_itis_routes <- F
 run_itis_bakx <- F
 filter_rare_spp <- F
-run_polygon_buffers <- T
+run_polygon_buffers <- F
 run_calculate_XData <- T
-run_new_var_XData <- T
+run_new_var_XData <- F
 run_syn_for_mctavish <- T
 ```
 
@@ -1039,7 +1040,7 @@ for (i in 1:length(l3_polygon_paths)) {
   message(paste("Processing:", basename(l3_file)))
   
   polygons_l3 <- st_read(l3_file, quiet = T)
-  
+
   # Dissolve the geometries by route ID (vakio) and year
   polygons_l2 <- polygons_l3 |>
     group_by(vakio, year) |>
@@ -1077,8 +1078,8 @@ occurr_route_year <- occurr_sect_route |>
 ```
 
 ```{r}
-unique(occurr_biotope_route$sampleUnit) |> length()
-unique(occurr_biotope_route$vakio) |> length()
+unique(occurr_route_year$sampleUnit) |> length()
+unique(occurr_route_year$vakio) |> length()
 ```
 
 ## Model Input Assembly
@@ -1152,7 +1153,8 @@ l2_xy <- lapply(X = l2_output_paths$path_L2, sf::read_sf) |>
 
 ```{r}
 
-vars_to_remove <- c("old_grow_indicator_ratio", "old_grow_indicator_agesum", "elevation_mean", "average_stand_length_gt250_mean") # 
+vars_to_remove <- c("old_grow_indicator_ratio", "old_grow_indicator_agesum", "elevation_mean", "average_stand_length_gt250_mean", 
+                    "old_grow_indicator") # 
 # the last is an aliased coefficient with average_stand_length_gt200_mean, VIF can't run with
 
 predictor_data <- XData|> 
@@ -1212,8 +1214,7 @@ ggplot(vif_plot_data, aes(x = Variable, y = VIF)) +
     title = "VIF Trajectory of Each Variable by Iteration",
     subtitle = "Bars are grouped by variable; colors indicate the analysis step",
     x = "Predictor Variable",
-    y = "Variance Inflation Factor (VIF)"
-  ) +
+    y = "Variance Inflation Factor (VIF)") +
   facet_wrap(~Iteration, scales = "free") +
   theme_minimal(base_size = 11) +
   theme(
@@ -1229,6 +1230,10 @@ length(vif_keep_variables)
 XData <- XData |> 
    dplyr::select(any_of(vif_keep_variables)) # |>
 #   cbind(l2_xy) # this chunk is to add the coordinates as a spatial covariate
+
+to_exp <- file.path("miscelaneus", "exports")
+dir.create(to_exp, showWarnings = F)
+write.csv(XData, paste0(to_exp, "/XData_", run_config$model_id)) 
 ```
 
 
@@ -1332,7 +1337,9 @@ studyDesign <- lapply(l2_output_paths$path_L2, sf::read_sf) |>
   mutate(across(everything(), as.factor)) |> 
   as.data.frame()
 
-row.names(studyDesign) <- paste0(studyDesign$sampleUnit)
+studyDesign$sampleUnit <- as.factor(paste0(studyDesign$vakio, "_", studyDesign$year))
+
+row.names(studyDesign) <- studyDesign$sampleUnit
 
 xy <- coords |> 
   dplyr::select(vakio) |> 
@@ -1344,15 +1351,13 @@ rownames(xy) <-  levels(studyDesign$vakio)
 
 colnames(xy) <-  c("long", "lat")
 
-write.csv(xy, file.path("data", "xy.csv"), row.names = T)
-
+write.csv(XData, paste0(to_exp, "/xy.csv", run_config$model_id)) 
 ```
 
 ### Final analysis biotope and routes
 
 ```{r}
-studyDesign_clean <- studyDesign|>
-  mutate(biotope = str_extract(sampleUnit, "[A-Z]$")) 
+studyDesign_clean <- studyDesign
 
 # How many times was each unique route visited across all years?
 route_visits <- studyDesign_clean|>
@@ -1395,83 +1400,11 @@ annual_stats|>
 ```
 
 
-```{r}
-# Distribution of the basic sampling units (biotopes)
-biotope_stats <- studyDesign_clean|>
-  count(biotope)|>
-  mutate(prop = n / sum(n) * 100)|>
-  arrange(desc(prop))
-
-biotope_stats|>
-  gt()|>
-  tab_header(title = "Distribution of Forest Biotopes")|>
-  fmt_number(columns = prop, decimals = 1)|>
-  cols_label(prop = "Percentage (%)")
-```
-
 
 ```{r}
 # Total visits
 total_route_visits <- sum(studyDesign_clean|> distinct(vakio, year)|> count(vakio)|> pull(n))
 total_route_visits
-```
-
-
-```{r}
-# Average number of distinct biotopes? and How many biotopes (segments) per route?
-route_composition_stats <- studyDesign_clean %>%
-  group_by(vakio, year) %>%
-  summarise(
-    n_distinct_types = n_distinct(biotope), # e.g., How many types (K, M, S...) found?
-    n_total_segments = n()                  # e.g., How many rows (data points) per route?
-  ) %>%
-  ungroup() %>%
-  summarise(
-    mean_distinct_types = mean(n_distinct_types),
-    sd_distinct_types   = sd(n_distinct_types),
-    mean_segments       = mean(n_total_segments),
-    sd_segments         = sd(n_total_segments)
-  )
-
-route_composition_stats %>%
-  gt() %>%
-  tab_header(title = "Route Heterogeneity & Sampling Density") %>%
-  cols_label(
-    mean_distinct_types = "Avg. Distinct Biotope Types",
-    sd_distinct_types = "SD (Types)",
-    mean_segments = "Avg. Total Segments",
-    sd_segments = "SD (Segments)"
-  ) %>%
-  fmt_number(everything(), decimals = 2)
-```
-
-
-```{r}
-# In average how many times a biotope in a route was surveyed?
-# Assuming that "vakio 53 - Spruce" is the same spatial entity across years
-biotope_repetition <- studyDesign_clean %>%
-  mutate(stable_id = paste(vakio, biotope, sep = "_")) %>% 
-  count(stable_id, name = "years_surveyed")
-
-biotope_repetition_stats <- biotope_repetition %>%
-  summarise(
-    mean_years = mean(years_surveyed),
-    sd_years = sd(years_surveyed),
-    min_years = min(years_surveyed),
-    max_years = max(years_surveyed)
-  )
-
-biotope_repetition_stats %>%
-  gt() %>%
-  tab_header(title = "Temporal Stability of Biotope Units") %>%
-  cols_label(
-    mean_years = "Avg. Years Surveyed",
-    sd_years = "SD",
-    min_years = "Min",
-    max_years = "Max"
-  ) %>%
-  fmt_number(columns = c(mean_years, sd_years), decimals = 2)
-
 ```
 
 ```{r}
@@ -1481,7 +1414,6 @@ survey_trend <- studyDesign_clean %>%
   group_by(year) %>%
   summarise(
     n_routes = n_distinct(vakio),
-    n_biotopes = n()
   ) %>%
   arrange(year)
 
@@ -1489,23 +1421,23 @@ survey_trend %>%
   gt() %>%
   tab_header(
     title = "Temporal Trend of Survey Effort",
-    subtitle = "Number of Routes and Biotope Segments Surveyed per Year"
+    subtitle = "Number of Routes Surveyed per Year"
   ) %>%
   cols_label(
     year = "Year",
     n_routes = "Routes Surveyed",
-    n_biotopes = "Biotope Segments"
   ) %>%
-  fmt_number(columns = c(n_routes, n_biotopes), decimals = 0)
+  fmt_number(columns = c(n_routes), decimals = 0)
 ```
 
 
 ### Random effects
 
 ```{r}
-
+rL.sampleUnit <- HmscRandomLevel(units = levels(studyDesign$sampleUnit))
 rL.year <- HmscRandomLevel(units = levels(studyDesign$year))
 rL.locality <-  HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
+
 ```
 
 

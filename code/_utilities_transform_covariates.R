@@ -1083,9 +1083,11 @@ construct_hmsc_XData <- function(folder_name,
   names(output_rds_paths) <- unique_vars
   
   # 3. Execution Loop
+  
   all_results_list <- list()
   
   for (var_name in vars_to_process) {
+    # var_name <- "elevation"
     if (!(var_name %in% mapping_funcs$var_pre_processed)) next
     
     # Call the worker function

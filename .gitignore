@@ -77,3 +77,6 @@ R/S01_define_models_finland.html
 /miscelaneus
 /analysis
 /quarto_renderized
+/.vscode
+/code/.cdsapirc
+/.quarto
