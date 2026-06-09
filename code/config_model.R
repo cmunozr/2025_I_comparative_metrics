@@ -9,7 +9,7 @@ run_config <- list(
   # MCMC sampling parameters
   mcmc = data.frame(
     samples = 1000,
-    thin = 1000,
+    thin = 50,
     n_chains = 4,
     transient_proportion = 0.5, # following standard method on Hmsc course
     adapt_nf_proportion = 0.4 # following standard method on Hmsc course
@@ -34,7 +34,7 @@ run_config <- list(
     k = 4,
     mcmc = data.frame(
       samples = 1000,
-      thin = 250,
+      thin = 50,
       n_chains = 4,
       transient_proportion = 0.5, # following standard method on Hmsc course
       adapt_nf_proportion = 0.4 # following standard method on Hmsc course

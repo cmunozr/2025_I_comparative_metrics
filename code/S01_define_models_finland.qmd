@@ -1157,7 +1157,8 @@ l2_xy <- lapply(X = l2_output_paths$path_L2, sf::read_sf) |>
 
 ```{r}
 
-vars_to_remove <- c("old_grow_indicator_ratio", "old_grow_indicator_agesum", "elevation_mean", "average_stand_length_gt250_mean") # 
+vars_to_remove <- c("old_grow_indicator_ratio", "old_grow_indicator_agesum", "elevation_mean", "average_stand_length_gt250_mean",
+                    "old_grow_indicator") # 
 # the last is an aliased coefficient with average_stand_length_gt200_mean, VIF can't run with
 
 predictor_data <- XData|> 

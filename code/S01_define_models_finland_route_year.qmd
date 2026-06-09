@@ -161,9 +161,9 @@ run_itis_routes <- F
 run_itis_bakx <- F
 filter_rare_spp <- F
 run_polygon_buffers <- F
-run_calculate_XData <- T
+run_calculate_XData <- F
 run_new_var_XData <- F
-run_syn_for_mctavish <- T
+run_syn_for_mctavish <- F
 ```
 
 ## Data loading
@@ -1330,6 +1330,7 @@ TrData <- TrData |>
 ### Study desing
 
 ```{r}
+# Define your structural design rows
 studyDesign <- lapply(l2_output_paths$path_L2, sf::read_sf) |> 
   bind_rows() |> 
   st_drop_geometry() |> 
@@ -1337,9 +1338,8 @@ studyDesign <- lapply(l2_output_paths$path_L2, sf::read_sf) |>
   mutate(across(everything(), as.factor)) |> 
   as.data.frame()
 
-studyDesign$sampleUnit <- as.factor(paste0(studyDesign$vakio, "_", studyDesign$year))
-
-row.names(studyDesign) <- studyDesign$sampleUnit
+# Explicitly index using your route-year key
+row.names(studyDesign) <- paste0(studyDesign$vakio, "_", studyDesign$year)
 
 xy <- coords |> 
   dplyr::select(vakio) |> 
@@ -1434,7 +1434,6 @@ survey_trend %>%
 ### Random effects
 
 ```{r}
-rL.sampleUnit <- HmscRandomLevel(units = levels(studyDesign$sampleUnit))
 rL.year <- HmscRandomLevel(units = levels(studyDesign$year))
 rL.locality <-  HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
 
