@@ -298,4 +298,10 @@ fbs_M014: abundance version
 
 In parallel, for models fbs_M008PA and fbs_M008 I am testing route crossvalidation (random selection) to understand better if the model can transfer to not seen routes or it has the same problems as with METSO. I first run a pilot with 250 thin for mcmc (--samples 1000 --transient 125000 --thin 250). Ideal complete MCMC can be quite expensive in time and processing (we cannot use warm initialization as it would be data leakage). It will help to further investigate if the biotope is intrinsically problematic.
 
+### Jun 09, 2026
 
+Stopped fbs_M008PA and fbs_M008 CV by blocks. 5 Days without any result on the model fit. It got stuck on prediction of the first chain.
+
+### Jun 10, 2026
+
+Starting running: fbs_M014PA. 1000 samples, 50 thining.
