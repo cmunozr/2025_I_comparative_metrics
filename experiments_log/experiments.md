@@ -304,4 +304,7 @@ Stopped fbs_M008PA and fbs_M008 CV by blocks. 5 Days without any result on the m
 
 ### Jun 10, 2026
 
-Starting running: fbs_M014PA. 1000 samples, 50 thining.
+Starting running: 
+
+fbs_M014PA. 1000 samples, 50 thining. Morrison
+fbs_M014. 1000 samples, 150 thining. Burgess
