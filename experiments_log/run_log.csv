@@ -26,5 +26,5 @@ fbs_M008_PA_thin_1000_samples_1000_chains_4;fbs_M008_PA;20260421;1000;1000;50000
 fbs_M008_PA_thin_1000_samples_1000_ho_metso_chains_4;fbs_M008_PA;20260422;1000;1000;500000;4;Asimov;351217a;297,2;22;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models;;
 fbs_M008_PA_thin_1000_samples_1000_route_blocked_cv_chains_4;fbs_M008_PA;20260525;1000;250;125000;4;Asimov;351217a;304,4;21;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models;;
 fbs_M008_PA_thin_1000_samples_1000_random_cv_chains_4;fbs_M008_PA;20260525;1000;250;250000;4;Asimov;351217a;292;23;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models;;
-fbs_M014PA_thin_50_samples_1000_random_cv_chains_4;fbs_M014PA;20260610;1000;50;50000;4;Asimov;3515466;;48;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models;;
-fbs_M014_thin_150_samples_1000_random_cv_chains_4;fbs_M014;20260610;1000;150;150000;4;Asimov;1a68ae8;;23;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models;;
+fbs_M014PA_thin_50_samples_1000_random_cv_chains_4;fbs_M014PA;20260610;1000;50;50000;4;Asimov;3515466;2,2;48;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models;;
+fbs_M014_thin_150_samples_1000_random_cv_chains_4;fbs_M014;20260610;1000;150;150000;4;Asimov;1a68ae8;8,48;23;C:\Users\Carlos Munoz\Documents\Ph.D\6_courses\2025_I_comparative_metrics\models;;
