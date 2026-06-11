@@ -85,25 +85,15 @@ knitr::opts_knit$set(root.dir = "c:/Users/Carlos Munoz/Documents/Ph.D/6_courses/
 #| message: false
 #| warning: false
 
-library(matrixStats)
 library(Hmsc)
 library(tidyverse)
-library(data.table)
-library(terra)
 library(sf)
 library(maps)
 library(ape)
 library(taxize)
-library(remotes)
-library(phytools)
 library(openxlsx)
-library(tidyterra)
 library(viridis)
-library(lwgeom)
-library(ggrepel)
 library(gt)
-library(exactextractr)
-library(patchwork)
 library(units)
 library(clootl) # devtools::install_github("eliotmiller/clootl")
 library(finbif) # https://github.com/luomus/finbif; usethis::edit_r_environ()
@@ -142,7 +132,6 @@ transform_Y_to_presAbs <- function(data) {
     mutate(across(everything(), ~ ifelse(. != 0, 1, .)))
 }
 ```
-
 
 ```{r}
 source(file.path("code", "_utilities_transform_covariates.R"))
@@ -424,14 +413,12 @@ We are missing the next birds from Bakx et al (2023):
 
 ```{r}
 harmonized_species$submittedname_bakx[!harmonized_species$in_routes]
-
 ```
 
 
 ```{r}
 occurr_sect_route <- occurr_sect_route |> 
   left_join(harmonized_species, by = "taxonId") 
-  
 ```
 
 ### Forest biotope
@@ -717,9 +704,6 @@ left_join(occurrence_data, paircount_data, by = "acceptedName") |>
   arrange(desc(percent_paircount_lost)) |>
   gt() |>
     tab_header(title = "Potential Data Loss from Removing Routes with No Biotope Info")
-  
-
-
 ```
 
 
@@ -736,6 +720,10 @@ valid_events <- master_routes |>
     no_data_NFI == FALSE,
     no_data_clim == FALSE
   )
+
+# Keep only one unique survey event per route-year to prevent double-counting
+valid_events <- valid_events |>
+  distinct(vakio, year, .keep_all = TRUE)
 
 # Extract the unique IDs for the valid events and routes
 valid_event_ids <- unique(valid_events$eventId)
@@ -1105,12 +1093,56 @@ hist(P, xlab = "Species prevalence (P)")
 Most species exhibit low prevalence, clustering towards the rare end of the spectrum, while a few species show a significantly higher prevalence, indicating they are common across the sampled areas, even an species is occurring in the `r max(P)` of sites (`r names(which(P == max(P)))`).
 
 ```{r}
-Y <- transform_Y_to_abunCpres(Y)
-#Y <- transform_Y_to_presAbs(Y)
+#Y <- transform_Y_to_abunCpres(Y)
+Y <- transform_Y_to_presAbs(Y)
 Y <- Y[, order(colnames(Y))]
 ```
 
+### Survey covariates
 
+Extract survey-level temporal and effort variables
+
+```{r}
+survey_covs <- routes |>
+  mutate(
+    date_str = paste(year, month, day, sep = "-"),
+    survey_doy = as.integer(format(as.Date(date_str, format = "%Y-%m-%d"), "%j")),
+    survey_doy_scaled = as.numeric(scale(survey_doy)),
+    start_decimal = startHour + (startMinute / 60),
+    end_decimal = endHour + (endMinute / 60),
+    duration_hours = end_decimal - start_decimal,
+    log_linelength = log(linelength),
+    # Extract the main observer (assuming primary is listed first before the semicolon)
+    observer_id = stringr::word(observers, 1, sep = ";") |> stringr::str_trim()
+  ) |>
+  dplyr::select(vakio, year, survey_doy_scaled, start_decimal, duration_hours, log_linelength, observer_id, linelength)
+```
+
+
+Extract biotope-level geometric variables
+
+```{r}
+biotope_covs <- occurr_sect_route |>
+  filter(is_biotope_forest == TRUE) |>
+  group_by(vakio, year) |>
+  summarise(
+    sampled_meters = sum(meters, na.rm = TRUE),
+    n_segments = n_distinct(biotopeStripId),
+    .groups = "drop"
+  )
+```
+
+Combine into a route-year observation dataset
+
+```{r}
+observation_XData <- biotope_covs |>
+  inner_join(survey_covs, by = c("vakio", "year")) |>
+  mutate(
+    prop_route = sampled_meters / linelength,
+    sampleUnit = paste(vakio, year, sep = "_")
+  ) |>
+  dplyr::select(-linelength) # Remove raw linelength to avoid multicollinearity with log_linelength
+```
 ### XData
 
 Online repositories are not deployed as Web Feature Service in which we can work "in-situ". It was needed to download the data sets. Data sets are massive and splitted over several storage units. To consult how they were downloaded please refer to script "_utilities_download_covariates.R". Dowloaded files were processing following the "_utilities_fetch_covariates.R" script.
@@ -1469,8 +1501,8 @@ m <- Hmsc(
   TrData = TrData, 
   TrFormula = TrFormula,
   phyloTree = phyloTree,
-  #distr = "probit",
-  distr = "lognormal poisson", 
+  distr = "probit",
+  #distr = "lognormal poisson", 
   studyDesign = studyDesign, 
   ranLevels = list("vakio" = rL.locality, "year" = rL.year)
 )

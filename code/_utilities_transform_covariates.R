@@ -841,6 +841,12 @@ old_grow_agesum <- function(stand_age, polygon_id) {
 }
 
 #----------------------
+# returns as it
+identity <- function(x){
+  return(x)
+}
+
+#----------------------
 #' Determine which variables need processing
 #' based on the user's execution flags and the current state of the output directory.
 #'
@@ -985,6 +991,8 @@ compute_covariate <- function(var_name, file_path, mapping_functions) {
           args$cov_frac <- current_group_data$coverage_fraction
           args$val <- current_group_data$value
         } else if (task$function_to == "max_") {
+          args$x <- current_group_data$value
+        } else if (task$function_to == "identity") {
           args$x <- current_group_data$value
         } else if (task$function_to == "bin") {
           # Dependent on previous results in this loop
