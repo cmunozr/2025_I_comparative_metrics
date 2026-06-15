@@ -309,5 +309,12 @@ Starting running:
 fbs_M014PA. 1000 samples, 50 thining. Morrison
 fbs_M014. 1000 samples, 150 thining. Burgess --> bad convergence --> move to 250 thinning
 
+## June 12, 2026
 
+Running diagnosis of performance of models fbs_M014PA and fbs_M014.
 
+## June 15, 2026
+
+There were some problems at running the model evaluation. It got stuck on computing chains. It was needed to work on scripts #4. 
+
+Now: fbs_M014. 1000 samples, 250 thining. Burgess --> moderate good convergence --> move to 500 thinning
