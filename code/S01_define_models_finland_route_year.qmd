@@ -1124,6 +1124,9 @@ Extract biotope-level geometric variables
 ```{r}
 biotope_covs <- occurr_sect_route |>
   filter(is_biotope_forest == TRUE) |>
+  # 1. Isolate the unique physical segments (ignore the birds)
+  distinct(vakio, year, biotopeStripId, meters) |> 
+  # 2. Now group and sum
   group_by(vakio, year) |>
   summarise(
     sampled_meters = sum(meters, na.rm = TRUE),
@@ -1141,8 +1144,9 @@ observation_XData <- biotope_covs |>
     prop_route = sampled_meters / linelength,
     sampleUnit = paste(vakio, year, sep = "_")
   ) |>
-  dplyr::select(-linelength) # Remove raw linelength to avoid multicollinearity with log_linelength
+  dplyr::select(-c(linelength, vakio, year, sampleUnit, sampled_meters)) # Remove raw linelength to avoid multicollinearity with log_linelength
 ```
+
 ### XData
 
 Online repositories are not deployed as Web Feature Service in which we can work "in-situ". It was needed to download the data sets. Data sets are massive and splitted over several storage units. To consult how they were downloaded please refer to script "_utilities_download_covariates.R". Dowloaded files were processing following the "_utilities_fetch_covariates.R" script.
@@ -1168,9 +1172,16 @@ construct_hmsc_XData(
 XData_list <- readRDS(file.path("data", "covariates", paste0("XData_hmsc_coords_", run_config$model_id, ".rds")))
 XData <- XData_list$XData
 
+if(exists("observation_XData")){
+  XData <- XData |> 
+    bind_cols(
+      dplyr::select(observation_XData, -observer_id)
+    )
+}
+
 ```
 
-Chunk to add coordinates of each centroid of polygon biotope as covariates 
+Chunk to calculate coordinates of each centroid of polygon biotope as covariates 
 ```{r}
 sf_use_s2(TRUE)
 l2_xy <- lapply(X = l2_output_paths$path_L2, sf::read_sf) |> 
@@ -1370,7 +1381,15 @@ studyDesign <- lapply(l2_output_paths$path_L2, sf::read_sf) |>
   mutate(across(everything(), as.factor)) |> 
   as.data.frame()
 
-# Explicitly index using your route-year key
+#if(exists("observation_XData")){
+#  studyDesign <- studyDesign |> 
+#    bind_cols(
+#      dplyr::select(observation_XData, observer_id)
+#    ) |> 
+#    mutate(across(everything(), as.factor))
+#}
+
+# Explicitly index using route-year key
 row.names(studyDesign) <- paste0(studyDesign$vakio, "_", studyDesign$year)
 
 xy <- coords |> 
@@ -1468,7 +1487,7 @@ survey_trend %>%
 ```{r}
 rL.year <- HmscRandomLevel(units = levels(studyDesign$year))
 rL.locality <-  HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP', nNeighbours = 8)
-
+rL.observer <- HmscRandomLevel(units = levels(studyDesign$observer_id))
 ```
 
 
@@ -1504,7 +1523,7 @@ m <- Hmsc(
   distr = "probit",
   #distr = "lognormal poisson", 
   studyDesign = studyDesign, 
-  ranLevels = list("vakio" = rL.locality, "year" = rL.year)
+  ranLevels = list("vakio" = rL.locality, "year" = rL.year)#, "observer_id" = rL.observer)
 )
 ```
 

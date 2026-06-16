@@ -315,6 +315,12 @@ Running diagnosis of performance of models fbs_M014PA and fbs_M014.
 
 ## June 15, 2026
 
-There were some problems at running the model evaluation. It got stuck on computing chains. It was needed to work on scripts #4. 
+There were some problems at running the model evaluation after a refactoring the code. It got stuck on computing chains. It was needed to work on scripts #4. 
 
 Now: fbs_M014. 1000 samples, 250 thining. Burgess --> moderate good convergence --> move to 500 thinning
+
+## June 16, 2026
+
+Model fbs_M015 with survey covariates ready to run. The idea is to incorporate observation-process covariates (effort, observer, timing) in order to separate the ecological process from the observation process.
+
+fbs_M015PA: start with a MCMC of 1000 samples, 100 thining. A bigger thining to account for more covariates.

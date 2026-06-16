@@ -32,4 +32,4 @@ fbs_M014_thin_250_samples_1000_chains_4;fbs_M014;20260610;1000;250;125000;4;Burg
 fbs_M014PA_thin_1000_samples_1000_ho_metso_chains_4;fbs_M014PA;20260610;1000;50;25000;4;Morrison;3515466;2,2;48;;
 fbs_M014PA_thin_1000_samples_1000_route_blocked_cv_chains_4;fbs_M014PA;20260610;1000;50;25000;4;Morrison;3515466;2,2;48;;
 fbs_M014PA_thin_1000_samples_1000_random_cv_chains_4;fbs_M014PA;20260610;1000;50;25000;4;Morrison;3515466;2,2;48;;
-fbs_M014_thin_250_samples_1000_chains_4;fbs_M014;20260615;1000;500;250000;4;Morrison;71b5bbb;;;;
+fbs_M014_thin_250_samples_1000_chains_4;fbs_M014;20260615;1000;500;250000;4;Morrison;71b5bbb;24;48;;
