@@ -400,7 +400,7 @@ import_posterior <- function(mcmc = mcmc_i, config = run_config, run_nm = run_na
     
     # Load the original unfitted model structure
     if(is.null(partition_number)){
-      unfitted_path <- file.path("models", paste0("unfitted_", config$model_id, ".RData"))
+      unfitted_path <- file.path("models", "unfitted_RData", paste0("unfitted_", config$model_id, ".RData"))
       load(unfitted_path)
       unfitted_model <- models[[1]]  
     }else{
@@ -463,3 +463,172 @@ import_posterior <- function(mcmc = mcmc_i, config = run_config, run_nm = run_na
 }
 
 c.Hmsc <- getS3method("c","Hmsc")
+
+#' @title Robust Evaluation of Model Fit for Hmsc Models
+#'
+#' @description error-tolerant based on \code{Hmsc::evaluateModelFit}. 
+#' This version is specifically optimized for non-random cross-validation schemes (such as the METSO-domain 
+#' hold-out or route-blocked CV) where zero-variance slices trigger computation crashes.
+#'
+#' Same parameters as in \code{Hmsc::evaluateModelFit}.
+#' @param hM A fitted \code{Hmsc} model object.
+#' @param predY Array of predictions, typically a posterior sample array.
+#'
+#' @details This function introduces modifications to AUC and TJUR diagnostic functions 
+#' \itemize{
+#'   \item \strong{Asynchronous NA Alignment:} Modifies row filtering inside the AUC loop to intersect 
+#'   \code{!is.na(Y[, i]) & !is.na(predY[, i])} simultaneously. This prevents vector length mismatches 
+#'   caused by missing values.
+#'   \item \strong{Explicit Case-Control Verification:} Assures both presences (1) and absences (0) 
+#'   co-occur within the filtered array slice before initializing the ROC engine. If a species exhibits 
+#'   zero variance within a targeted regional validation block, it receives an \code{NA} instead of 
+#'   throwing a fatal execution error.
+#'   \item \strong{tryCatch Encapsulation:} Encloses the external \code{pROC::auc} calculation 
+#'   inside an error-catching layer.
+#'   \item \strong{Zero-Variance Safety Guards:} Introduces logical checks in the Tjur's $R^2$ logic 
+#'   to intercept empty presence/absence subsets, blocking the calculation of means over zero-length intervals.
+#' }
+#'
+#' @return A list of model fit arrays (including RMSE, AUC, TjurR2, and pseudo-R2 vectors) matching 
+#' the exact element naming and dimensionality conventions of the standard package, preserving compatibility 
+#' with downstream synthesis and plotting scripts.
+#'
+#' @seealso \code{\link[Hmsc]{evaluateModelFit}}
+#'
+#' @export
+evaluateModelFitRobust = function(hM, predY){
+  
+  require(abind)
+  
+  computeRMSE = function(Y, predY){
+    ns = dim(Y)[2]
+    RMSE = rep(NA,ns)
+    for (i in 1:ns){
+      RMSE[i] = sqrt(mean((Y[,i]-predY[,i])^2, na.rm=TRUE))
+    }
+    return(RMSE)
+  }
+  
+  computeR2 = function(Y, predY, method="pearson"){
+    ns = dim(Y)[2]
+    R2 = rep(NA,ns)
+    for (i in 1:ns){
+      co = cor(Y[,i], predY[,i], method=method, use='pairwise')
+      R2[i] = sign(co)*co^2
+    }
+    return(R2)
+  }
+  
+  computeAUC = function(Y, predY){
+    ns = dim(Y)[2]
+    AUC = rep(NA,ns)
+    Y <- ifelse(Y > 0, 1, 0)
+    for (i in 1:ns){
+      # align non-missing rows for both Y and predY simultaneously
+      sel = !is.na(Y[,i]) & !is.na(predY[,i])
+      
+      # verify both classes exist after NA removal
+      if(sum(Y[sel,i] == 1) > 0 && sum(Y[sel,i] == 0) > 0){
+        # guarantee loop continuity
+        AUC[i] = tryCatch({
+          pROC::auc(Y[sel,i], predY[sel,i], levels=c(0,1), direction="<")
+        }, error = function(e) {
+          return(NA) 
+        })
+      }
+    }
+    return(AUC)
+  }
+  
+  computeTjurR2 = function(Y, predY) {
+    ns = dim(Y)[2]
+    R2 = rep(NA, ns)
+    for (i in 1:ns) {
+      # Check against zero variance dividing or averaging empty sets
+      has_presence <- any(Y[, i] == 1, na.rm = TRUE)
+      has_absence  <- any(Y[, i] == 0, na.rm = TRUE)
+      
+      if(has_presence && has_absence) {
+        R2[i] = mean(predY[which(Y[, i] == 1), i], na.rm=TRUE) - 
+          mean(predY[which(Y[, i] == 0), i], na.rm=TRUE)
+      } else {
+        R2[i] = NA
+      }
+    }
+    return(R2)
+  }
+  
+  median2 = function(x){return (median(x,na.rm=TRUE))}
+  mean2 = function(x){return (mean(x,na.rm=TRUE))}
+  
+  mPredY = matrix(NA, nrow=hM$ny, ncol=hM$ns)
+  sel = hM$distr[,1]==3
+  if (sum(sel)>0){
+    mPredY[,sel] = as.matrix(apply(abind(predY[,sel,,drop=FALSE], along=3),
+                                   c(1,2), median2))
+  }
+  sel = !hM$distr[,1]==3
+  if (sum(sel)>0){
+    mPredY[,sel] = as.matrix(apply(abind(predY[,sel,,drop=FALSE], along=3),
+                                   c(1,2), mean2))
+  }
+  
+  RMSE = computeRMSE(hM$Y, mPredY)
+  R2 = NULL
+  AUC = NULL
+  TjurR2 = NULL
+  SR2 = NULL
+  O.AUC = NULL
+  O.TjurR2 = NULL
+  O.RMSE = NULL
+  C.SR2 = NULL
+  C.RMSE = NULL
+  
+  sel = hM$distr[,1]==1
+  if (sum(sel)>0){
+    R2 = rep(NA,hM$ns)
+    R2[sel] = computeR2(hM$Y[,sel,drop=FALSE],mPredY[,sel,drop=FALSE])
+  }
+  
+  sel = hM$distr[,1]==2
+  if (sum(sel)>0){
+    AUC = rep(NA,hM$ns)
+    TjurR2 = rep(NA,hM$ns)
+    AUC[sel] = computeAUC(hM$Y[,sel,drop=FALSE], mPredY[,sel,drop=FALSE])
+    TjurR2[sel] = computeTjurR2(hM$Y[,sel,drop=FALSE], mPredY[,sel,drop=FALSE])
+  }
+  
+  sel = hM$distr[,1]==3
+  if (sum(sel)>0){
+    SR2 = rep(NA,hM$ns)
+    O.AUC = rep(NA,hM$ns)
+    O.TjurR2 = rep(NA,hM$ns)
+    O.RMSE = rep(NA,hM$ns)
+    C.SR2 = rep(NA,hM$ns)
+    C.RMSE = rep(NA,hM$ns)
+    SR2[sel] = computeR2(hM$Y[,sel,drop=FALSE],mPredY[,sel,drop=FALSE], method="spearman")
+    predO = 1*(predY[,sel,,drop=FALSE]>0)
+    mPredO = as.matrix(apply(abind(predO,along=3),c(1,2),mean2))
+    O.AUC[sel] = computeAUC(1*(hM$Y[,sel,drop=FALSE]>0),mPredO)
+    O.TjurR2[sel] = computeTjurR2(1*(hM$Y[,sel,drop=FALSE]>0), mPredO)
+    O.RMSE[sel] = computeRMSE(1*(hM$Y[,sel,drop=FALSE]>0), mPredO)
+    mPredCY = mPredY[,sel,drop=FALSE]/mPredO
+    CY=hM$Y[,sel,drop=FALSE]
+    CY[CY==0]=NA
+    C.SR2[sel] = computeR2(CY, mPredCY, method="spearman")
+    C.RMSE[sel] = computeRMSE(CY, mPredCY)
+  }
+  
+  MF = list(RMSE=RMSE)
+  if (!is.null(R2)){MF$R2 = R2}
+  if (!is.null(AUC)){MF$AUC = AUC}
+  if (!is.null(TjurR2)){MF$TjurR2 = TjurR2}
+  if (!is.null(SR2)){MF$SR2 = SR2}
+  if (!is.null(O.AUC)){MF$O.AUC = O.AUC}
+  if (!is.null(O.TjurR2)){MF$O.TjurR2 = O.TjurR2}
+  if (!is.null(O.RMSE)){MF$O.RMSE = O.RMSE}
+  if (!is.null(C.SR2)){MF$C.SR2 = C.SR2}
+  if (!is.null(C.RMSE)){MF$C.RMSE = C.RMSE}
+  
+  return(MF)
+}

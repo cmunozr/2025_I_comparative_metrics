@@ -47,7 +47,7 @@ for(i in 1:nrow(mcmc_params)){
         dplyr::left_join(ho_routes, by = "vakio")
       
       partition <- ifelse(
-        !is.na(study_design_with_ho$is_metso) & study_design_with_ho$is_metso == 1,
+        is.na(study_design_with_ho$is_metso) | study_design_with_ho$is_metso == 0,
         2, 1
       )
       parts <- 1
