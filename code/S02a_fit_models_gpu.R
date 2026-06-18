@@ -6,7 +6,7 @@ source("code/config_model.R")
 source("code/_utilities_hmsc_gpu.R")
 
 # --- 2. Configuration and Setup ---
-models_dir <- file.path(here::here(), "models")
+models_dir <- file.path(here::here(), "models", "unfitted_RData")
 unfitted_models_file <- file.path("models", paste0("unfitted_", run_config$model_id, ".RData"))
 
 dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)

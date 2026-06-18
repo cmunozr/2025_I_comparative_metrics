@@ -14,7 +14,7 @@ source("code/config_model.R")
 
 # --- 2. Setup Directories and Initialize Data Lists ---
 model_id <- run_config$model_id
-output_dir <- file.path(here::here(), "models")
+output_dir <- file.path(here::here(), "models", "convergence_graphs")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 message(paste0("--- Starting comparison for Model ID: ", model_id, " ---"))
