@@ -4,12 +4,12 @@ run_config <- list(
   
   # A unique ID for the model's structure (data, formulas, random effects).
   # This should match an entry in experiments_log/model_definition_log.csv
-  model_id = "fbs_M003",
+  model_id = "fbs_M015PA",
   
   # MCMC sampling parameters
   mcmc = data.frame(
     samples = 1000,
-    thin = 1000,
+    thin = 100,
     n_chains = 4,
     transient_proportion = 0.5, # following standard method on Hmsc course
     adapt_nf_proportion = 0.4 # following standard method on Hmsc course
@@ -21,7 +21,7 @@ run_config <- list(
     n_gpus_available = 2
   ),
   
-  # Server environment (for execution_mode = 3) 
+  # Server environment (for execution_mode = 3)
   server = list(
     python_env = "/home/avesta/munozcs/Documents/hmsc-venv",
     nohup_dir = "/home/avesta/munozcs/Documents/nohup_chains",
@@ -34,7 +34,7 @@ run_config <- list(
     k = 4,
     mcmc = data.frame(
       samples = 1000,
-      thin = 1000,
+      thin = 150,
       n_chains = 4,
       transient_proportion = 0.5, # following standard method on Hmsc course
       adapt_nf_proportion = 0.4 # following standard method on Hmsc course

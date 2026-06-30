@@ -1,15 +1,24 @@
 library(data.table)
 library(dplyr)
+library(arrow)
 
-load(file.path("data", "metso", "raw", "treatment_long.RData"))
-matched_pairs <- readRDS("data/metso/raw/matched_pairs.rds") # got 2026-01-12
+# Info from Dario
+# raw: got 2026-01-12
+# raw2: got 2026-06-15
+
+load(file.path("data", "metso", "raw2", "treatment_long.RData"))
+# row: 1432125 rows
+# row: 2345772 rows
+matched_pairs <- arrow::read_parquet("data/metso/raw2/matched_units.parquet") 
 
 #------------
 
 # data from 2000 to 2024 (25 years)
 num_stands <- unique(trt.long$standid) |> 
   length()
-# 57285 unique number stands
+# unique number stands
+# raw: 57285 
+# raw: 90222
 num_stands * length(unique(trt.long$year))
 # number stands * number of years = 1432125
 
@@ -39,7 +48,7 @@ table(trt.stands$contract_type) |>
   barplot()
 
 matched_pairs <- matched_pairs |> 
-  filter(standid_treated %in% trt.stands$standid)
+  filter(standid %in% trt.stands$standid)
 
 #------------
 

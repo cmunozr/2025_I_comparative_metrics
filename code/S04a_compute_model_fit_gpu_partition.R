@@ -7,7 +7,7 @@ source("code/_utilities_hmsc_gpu.R")
 set.seed(11072024)
 
 # Define all strategies required for diagnosis
-validation_strategies <- c("metso_holdout", "route_blocked_cv", "random_cv") # c("route_blocked_cv") #
+validation_strategies <- c("metso_holdout")#, "route_blocked_cv", "random_cv") # c("route_blocked_cv") #
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")
@@ -48,7 +48,7 @@ for(i in 1:nrow(mcmc_params)){
       
       partition <- ifelse(
         is.na(study_design_with_ho$is_metso) | study_design_with_ho$is_metso == 0,
-        2, 1
+        1, 2
       )
       parts <- 1
       hM_ <- list(set_training_model(k = 2, hM = m, partition = partition))
@@ -114,8 +114,7 @@ for(i in 1:nrow(mcmc_params)){
   }
 }
 
-# --- 6. Write Command Scripts and Metadata ---
-write.csv(do.call(rbind, validation_metadata), file.path(models_dir, paste0(run_config$model_id, "_validation_metadata.csv")), row.names = FALSE)
+# --- 6. Write Command Scripts ---
 
 write_commands_scripts(
   execution_mode = run_config$gpu$execution_mode, 
