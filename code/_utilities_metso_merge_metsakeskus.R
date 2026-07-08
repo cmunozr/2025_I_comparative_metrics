@@ -1,38 +1,20 @@
 library(sf)
 library(dplyr)
 
-paths_in <- list.files(file.path("D:", "metsakeskus", "metsavarakuviot"), full.names = T, recursive = F)
-metso_trt_control <- read.csv(file.path("data", "metso", "treatment_control_standid.csv")) |> 
-  filter(metso == 0)
+paths_in <- list.files(path = "data/metso/raw2/", full.names = T, recursive = F, pattern = ".gpkg")
+metso_trt_control <- read.csv(file.path("data", "metso", "treatment_control_standid.csv"))
+epsg <-  "EPSG:3067"
 
-# function to read geopackages from metsakeskus zip files
-read_gpkg_from_zip <- function(zip_file, epsg = "EPSG:3067", metso = metso_trt_control, 
-                                tmp.fol = file.path("data", "metsakeskus", "metsavarakuviot")) {
-  #zip_file <- paths_in[6]
-  temp_dir <- tmp.fol # Gets a system-specific temporary directory
-  gpkg_unzip_dir <- file.path(temp_dir, "unzipped_gpkg_data")
-  
-  unzip(zipfile = zip_file, exdir = gpkg_unzip_dir)
-  gpkg_files <- list.files(gpkg_unzip_dir, pattern = "\\.gpkg$", full.names = TRUE, recursive = TRUE)
-  gpkg_dsn_unzipped <- gpkg_files[1]
-  
-  gpkg <- read_sf(gpkg_dsn_unzipped) |> 
-    st_transform(crs = st_crs(epsg)) |> 
-    st_zm() #2d only
-  
-  gpkg <- gpkg[(gpkg$standid %in% metso$standid), ] |> 
-    left_join(metso, by = "standid") |> 
-    relocate(metso, .before = geometry)
-  
-  unlink(gpkg_unzip_dir, recursive = TRUE)
-  
-  return(gpkg)
-}
+gpkg <- read_sf(paths_in) |> 
+  st_transform(crs = st_crs(epsg)) |> 
+  st_zm() #2d only
 
-gpkgs_ <- lapply(X = paths_in, function(X){
-    tmp <- read_gpkg_from_zip(X, tmp.fol = "data/metso/tmp")
-  })
+metso_trt_control_stands <- gpkg[(gpkg$standid %in% metso_trt_control$standid), ] |> 
+  left_join(metso_trt_control, by = "standid") |> 
+  relocate(geom, .after = metso)
 
-metso_trt_control_stands <- bind_rows(gpkgs)
+write_sf(metso_trt_control_stands, file.path("data", "metso", "treatment_control_stand_v3.gpkg"), delete_layer = T)
 
-write_sf(metso_trt_control_stands, file.path("data", "metso", "treatment_control_stand_v2.gpkg"), delete_layer = T)
+
+
+

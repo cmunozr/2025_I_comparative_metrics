@@ -15,8 +15,8 @@ os <- Sys.info()['sysname']
 if (os == "Windows") {
   output_base_path <- "D:"
 } else if (os %in% c("Linux", "Darwin")) {
-  output_base_path <- "/home/avesta/munozcs/Documents/data/covariates/raw/"
-  #output_base_path <- "/media/pitm/My Passport/"
+  #output_base_path <- "/home/avesta/munozcs/Documents/data/covariates/raw/"
+  output_base_path <- "/media/pitm/My Passport/"
 }
 
 if(!(Sys.getenv("RSTUDIO") == "1")){
@@ -40,8 +40,8 @@ MS_NFI_years <- c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
 
 set.seed(11072024)
 
-extract_metso <- F
-extract_coords <- T
+extract_metso <- T
+extract_coords <- F
 
 #--------------
 # Prepare paths and organize information for each set of covariates
@@ -154,41 +154,49 @@ clim <-
 
 # Prepare sampling sites (buffers level 2) and METSO and NON_METSO stands and routes polygons
 
-coords <- list.files(file.path("data", "fbs"), pattern = "route_sections_L2", full.names = T) |> # external
-  lapply(st_read)
-
-metso <- st_read(file.path("data", "metso", "treatment_control_stand_v2.gpkg")) # external
-
 utm_10 <- st_read(file.path("data", "utm35_zones", "TM35_karttalehtijako.gpkg"), layer = "utm10") # external
 utm_200 <- st_read(file.path("data", "utm35_zones", "TM35_karttalehtijako.gpkg"), layer = "utm200") # external
 
-metso_utm_join <- metso |> 
-  dplyr::select(standid, metso) |> 
-  mutate(set = "metso") |> 
-  st_transform(st_crs(utm_200)) |> 
-  st_join(y = utm_200) |> 
-  rename(UTM200 = lehtitunnus) |> 
-  st_join(y = utm_10) |> 
-  rename(UTM10 = lehtitunnus) |> 
-  dplyr::select(standid, metso, set, UTM200, UTM10)
+if(extract_coords){
+  coords <- list.files(file.path("data", "fbs"), pattern = "route_sections_L2", full.names = T) |> # external
+    lapply(st_read)
+  
+  coords_utm_join <- lapply(X = coords, FUN = function(X){
+      X.i <- X |> 
+        dplyr::select(sampleUnit, vakio, year) |> 
+        mutate(set = "coords") |> 
+        st_transform(st_crs(utm_200)) |> 
+        st_join(y = utm_200) |> 
+        rename(UTM200 = lehtitunnus) |> 
+        st_join(y = utm_10) |> 
+        rename(UTM10 = lehtitunnus) |> 
+        dplyr::select(sampleUnit, vakio, year, set, UTM200, UTM10) |> 
+        st_buffer(dist = 150) 
+      X.i$poly_id <- 1:nrow(X.i) #id
+      return(X.i)
+      }
+    )
+  coords_utm_join <- bind_rows(coords_utm_join)
 
-metso_utm_join$poly_id <- 1:nrow(metso_utm_join) # id
+}else{
+  metso <- st_read(file.path("data", "metso", "treatment_control_stand_v2.gpkg")) # external
+  
+  metso_utm_join <- metso |> 
+    dplyr::select(standid, metso, year_event_5) |> 
+    rename(year = year_event_5) |> 
+    mutate(set = "metso") |> 
+    st_transform(st_crs(utm_200)) |> 
+    st_join(y = utm_200) |> 
+    rename(UTM200 = lehtitunnus) |> 
+    st_join(y = utm_10) |> 
+    rename(UTM10 = lehtitunnus) |> 
+    dplyr::select(standid, metso, year, set, UTM200, UTM10) 
+  
+  metso_utm_join$poly_id <- 1:nrow(metso_utm_join) # id
+  
+}
 
-coords_utm_join <- lapply(X = coords, FUN = function(X){
-    X.i <- X |> 
-      dplyr::select(sampleUnit, vakio, year) |> 
-      mutate(set = "coords") |> 
-      st_transform(st_crs(utm_200)) |> 
-      st_join(y = utm_200) |> 
-      rename(UTM200 = lehtitunnus) |> 
-      st_join(y = utm_10) |> 
-      rename(UTM10 = lehtitunnus) |> 
-      dplyr::select(sampleUnit, vakio, year, set, UTM200, UTM10) |> 
-      st_buffer(dist = 150) 
-    X.i$poly_id <- 1:nrow(X.i) #id
-    return(X.i)
-    }
-  )
+
 
 #--------------------
 
@@ -236,10 +244,12 @@ if(os == "Windows"){
 
 #-----------------------
 
-master_covariates <- bind_rows(tree_high_europe, luke, clim, dem) #(dem)
-# master_covariates <- dem
-write.csv(master_covariates, file.path("data", "master_covariates_temp.csv"), row.names = F)
-coords_utm_join <- bind_rows(coords_utm_join)
+master_covariates <- bind_rows(tree_high_europe, luke, clim, dem)
+if(extract_coords){
+  write.csv(master_covariates, file.path("data", "master_covariates_temp.csv"), row.names = F)  
+}else{
+  write.csv(master_covariates, file.path("data", "master_covariates_temp_trt_control.csv"), row.names = F)
+}
 
 #-----------------------
 
@@ -256,7 +266,7 @@ list_of_groups <- master_covariates |>
   group_by(dataset, var, year) |> 
   group_split()
 
-run <- T
+run <- F
 
 log_info("Starting raw value extraction...")
 if(run){
@@ -272,10 +282,11 @@ if(run){
   if(extract_metso){
     log_info("Extracting METSO data...")
     metso_raw_data <- purrr::map(list_of_groups, 
-                                 ~extract_raw_values(metso_utm_join, .x,
+                                 ~extract_raw_values(polygons_sf = metso_utm_join, 
+                                                     raster_info_df = .x,
                                                      root_output_dir = output_base_path, 
                                                      id_column = "standid",
-                                                     only_paths = F, year_metso = 2021))  
+                                                     only_paths = F))  
   }
   
 }else{
@@ -320,11 +331,6 @@ if(extract_metso){
 
 #-------------------
 
-# toKeep <- c("dict_covar", "output_base_path", "coords_utm_join", "metso_utm_join",
-#             "prepare_covariates_data_toplot", "generate_covariate_plot", "generate_binary_plot",
-#             "log_info", "os", "extract_coords", "extract_metso")
-# rm(list = setdiff(ls(), toKeep));gc()
-
 # transform to year separated data to one consolidated for covariate for all polygon type
 
 folder_name <- file.path("data", "covariates", "pre_processed") 
@@ -349,11 +355,11 @@ if(extract_coords){
 
 
 for(p in 1:length(polygon_types)){
-
+  # p <- 1
   rds_files <- list.files(rds_data_dir, pattern = paste0(polygon_types[p], ".rds$"), recursive = TRUE, full.names = TRUE)
   
   for (i in 1:length(covar_nm)) {
-    # i <- 1
+    # i <- 2
     covar_nm_i <- covar_nm[i] 
     log_info(paste("Merging and saving:", i, "of", length(covar_nm), "variables -", covar_nm_i))
     
@@ -373,16 +379,13 @@ for(p in 1:length(polygon_types)){
 
 #--------------------
 
-toKeep <- c("covar_nm", "coords_utm_join", "metso_utm_join", "dict_covar", "folder_name",
-            "prepare_covariates_data_toplot", "generate_covariate_plot" , "generate_binary_plot",
-            "log_info", "os")
-rm(list = setdiff(ls(), toKeep));gc()
+# plot
 
 if(os != "Windows"){
   stop("finishing routine for linux server")
 }
 
-# processing to plot sample
+## processing to plot sample
 
 rds_files <- list.files(folder_name, pattern = ".rds$", recursive = TRUE, full.names = TRUE)
   
@@ -416,7 +419,8 @@ for (i in 1:length(covar_nm)) {
     mutate(poly_id = as.integer(poly_id)) |> 
     group_by(metso) |>
     slice_sample(n = n_, replace = FALSE) |>
-    ungroup()
+    ungroup() |>
+    select(-year)
   
   metso_ <- left_join(metso_, ids_, join_by("polygon_id" == "poly_id")) |> 
     filter(!is.na(metso)) |> 

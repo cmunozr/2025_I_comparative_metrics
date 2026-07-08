@@ -2,63 +2,84 @@ library(data.table)
 library(dplyr)
 library(arrow)
 
-# Info from Dario
-# raw: got 2026-01-12
-# raw2: got 2026-06-15
-
+# Load data assets
 load(file.path("data", "metso", "raw2", "treatment_long.RData"))
-# row: 1432125 rows
-# row: 2345772 rows
-matched_pairs <- arrow::read_parquet("data/metso/raw2/matched_units.parquet") 
+matched_units <- arrow::read_parquet("data/metso/raw2/matched_units.parquet")
+sp <- arrow::read_parquet("data/metso/raw2/stacked_panel.parquet")
 
-#------------
-
-# data from 2000 to 2024 (25 years)
-num_stands <- unique(trt.long$standid) |> 
-  length()
-# unique number stands
-# raw: 57285 
-# raw: 90222
-num_stands * length(unique(trt.long$year))
-# number stands * number of years = 1432125
-
-trt.long.filter <- trt.long |> 
-  filter(metso_any_bin != 0, year <= 2021)
-table(trt.long.filter$year) |> 
-  barplot(); abline(h = length(unique(trt.long.filter$standid)), col = "red", lty = 3)
-
-trt.stands <- trt.long.filter |> 
-  mutate(across(
+# 1. Data description
+trt_stands_summary <- trt.long |> 
+  dplyr::filter(metso_any_bin != 0, year <= 2021) |> 
+  dplyr::mutate(across(
     starts_with("metso_") & !contains("any"), 
     ~ if_else(. > 0, 1, 0)
   )) |> 
-  mutate(contract_type = case_when(
+  dplyr::mutate(contract_type = case_when(
     metso_perm == 1       ~ "metso_perm",
     metso_statepurch == 1 ~ "metso_statepurch",
     metso_temp == 1       ~ "metso_temp",
     metso_10k_13k == 1    ~ "metso_10k_13k",
-    TRUE                  ~ NA_character_ # For rows where all are 0
+    metso_kemera == 1     ~  "metso_kemera",
+    TRUE                  ~ NA_character_
   )) |> 
-  group_by(standid) |> 
-  summarise(year_in = min(year), contract_type = unique(na.omit(contract_type))) |> 
-  mutate(year_length = 2021-year_in, metso = 1)
-table(trt.stands$year_in) |> 
-  barplot()
-table(trt.stands$contract_type) |> 
-  barplot()
+  dplyr::group_by(standid) |> 
+  dplyr::summarise(
+    year_in = min(year), 
+    contract_type = unique(na.omit(contract_type))[1],
+    .groups = "drop"
+  ) |> 
+  dplyr::mutate(year_length = 2021 - year_in, metso = 1)
 
-matched_pairs <- matched_pairs |> 
-  filter(standid %in% trt.stands$standid)
+table(trt_stands_summary$year_in) |>barplot()
 
-#------------
+table(trt_stands_summary$contract_type) |> barplot()
 
-control.stands <- matched_pairs |>  
-  select(standid_matched_control) |> 
-  rename(standid = standid_matched_control) |> 
-  mutate(metso = 0)
+# 2: Process the stacked panel data
+sp <- data.table::as.data.table(sp)
 
-trt.control <- bind_rows(trt.stands, control.stands)
+P <- 5L # Pre-event window years
+L <- 5L # Post-event window snapshot (5-year target horizon)
+first_data_year <- 2001
+last_data_year <- 2021 
 
-data.table::fwrite(trt.control, file.path("data","metso", "treatment_control_standid.csv"))
+# Extract cohort enrollment years within the data.table class
+cohort_years <- sp[
+  treated_stack == 1L,
+  .(cohort_year = as.integer(min(year, na.rm = TRUE))),
+  by = stack_id
+]
 
+# Identify cohorts with complete historical and post-treatment records
+eligible_cohorts <- cohort_years[
+  cohort_year - P >= first_data_year & 
+  cohort_year + L <= last_data_year
+]
+
+# Append the explicit calendar year corresponding to event_time == 5
+eligible_cohorts <- eligible_cohorts[, year_event_5 := cohort_year + L] |> 
+  dplyr::filter(year_event_5 %in% c(2009, 2011, 2013, 2015, 2017, 2019, 2021))
+
+# 3: Filter matched units and join temporal attributes
+matched_units <- data.table::as.data.table(matched_units)
+
+# Filter for eligible stacks
+matched_units_filtered <- matched_units[
+  stack_id %in% eligible_cohorts$stack_id
+]
+
+# Join the target event year back to both treated and control units
+matched_units_filtered <- merge(
+    matched_units_filtered,
+    eligible_cohorts[, .(stack_id, year_event_5)],
+    by = "stack_id",
+    all.x = TRUE
+  )|> 
+    dplyr::mutate(
+      metso = if_else(match_role == "treated", 1, 0)  
+    )
+
+data.table::fwrite(
+  matched_units_filtered, 
+  file.path("data", "metso", "treatment_control_standid.csv")
+)
 

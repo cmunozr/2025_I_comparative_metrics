@@ -486,8 +486,8 @@ extract_raw_values <- function(polygons_sf,
   
   # Metso doesnt vary with years
   if(polygons_sf$set[1] == "metso"){
-    polygons_sf <- polygons_sf |> 
-      mutate(year = year_metso)
+    polygons_sf <- polygons_sf #|> 
+      #mutate(year = year_metso)
     progress_bar <- T
   }else{
     progress_bar <- F
@@ -1019,10 +1019,10 @@ compute_covariate <- function(var_name, file_path, mapping_functions) {
     var_by_polygon <- var_by_polygon |>
       ungroup() |> 
       mutate(
-        is_current_year = if (raw_data$polygon_source[1] == "coords") {
+        is_current_year = if(!is.na(raw_data$polygon_source[1])) {
           str_split(polygon_id, pattern = "_", simplify = TRUE)[, 2] == year
         } else {
-          year == max(year)
+          stop()
         },
         year_suffix = ifelse(is_current_year, "_yr", "_yr_last")
       ) |>
@@ -1095,7 +1095,7 @@ construct_hmsc_XData <- function(folder_name,
   all_results_list <- list()
   
   for (var_name in vars_to_process) {
-    # var_name <- "elevation"
+    # var_name <- "rr_cv"
     if (!(var_name %in% mapping_funcs$var_pre_processed)) next
     
     # Call the worker function

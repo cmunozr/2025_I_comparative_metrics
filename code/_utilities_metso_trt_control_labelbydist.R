@@ -1,4 +1,4 @@
-# Some control stands are far away from metso sites, take them as could
+# Some control stands are far away from metso sites, take them as it could be a
 # bias positively the change
 
 library(sf)
@@ -9,7 +9,7 @@ library(tidyr)
 library(dplyr)
 set.seed(11072024)
 
-stands <- read_sf(file.path("data", "metso", "treatment_control_stand_v2.gpkg"))
+stands <- read_sf(file.path("data", "metso", "treatment_control_stand_v3.gpkg"))
 
 distance_buffer_km <- 10
 

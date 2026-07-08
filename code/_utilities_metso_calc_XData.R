@@ -1,6 +1,6 @@
 library(sf)
 library(openxlsx)
-library(tidyverse)
+library(dplyr)
 library(here)
 
 source(file.path("code", "config_model.R"))
@@ -10,15 +10,35 @@ if(!(Sys.getenv("RSTUDIO") == "1")){
   setwd(here::here())
 }
 
-# Define
+# 2. Define
 folder_name <- file.path("data", "covariates") 
 run_calculate_XData <- T
 run_new_var_XData <- F
 dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";")
 mapping_functions <- read.xlsx(file.path("data", "covariates", "mapping_covariate_functions.xlsx"), sheet = 1)
-sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_v2.gpkg")) 
-matches <- readRDS(file.path("data", "metso", "raw", "matched_pairs.rds")) |> 
+sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_v3.gpkg")) 
+trt.control <- read.csv(file.path("data", "metso", "treatment_control_standid.csv")) |> 
   na.omit()
+
+# 3. to run the function construct_hmsc_XData the pre-processed variables need to be split between control and treated (metso)
+path_preprocessed <- list.files(file.path("data", "covariates", "pre_processed"), 
+                                pattern = paste0("metso", ".rds$"), full.names = T, 
+                                recursive = T)
+lapply(X = path_preprocessed, FUN = function(X){
+  # X <- path_preprocessed[1]
+  var <- readRDS(X) 
+  c <- var |> 
+    filter(polygon_id %in% trt.control$standid[trt.control$match_role == "control"])
+  new_path <- sub(pattern = "metso", replacement = "control", x = X)
+  saveRDS(object = c, file = new_path)
+  m <- var |> 
+    filter(polygon_id %in% trt.control$standid[trt.control$match_role == "treated"])
+  saveRDS(object = m, file = X)
+  invisible("success")
+})
+
+# 4. each type of polygon needs to be run by itself
+
 sufix <- "control"
 
 if(sufix == "metso"){
@@ -27,23 +47,7 @@ if(sufix == "metso"){
 
 }else if(sufix == "control"){
   
-  path_preprocessed <- list.files(file.path("data", "covariates", "pre_processed"), 
-                                  pattern = paste0("metso", ".rds$"), full.names = T, 
-                                  recursive = T)
-  lapply(X = path_preprocessed, FUN = function(X){
-    var <- readRDS(X) 
-    c <- var |> 
-      filter(polygon_id %in% matches$standid_matched_control)
-    new_path <- sub(pattern = "metso", replacement = "control", x = X)
-    saveRDS(object = c, file = new_path)
-    m <- var |> 
-      filter(polygon_id %in% matches$standid_treated)
-    saveRDS(object = m, file = X)
-    invisible("success")
-  })
-  
-  sp_df <- sp_df |> 
-    dplyr::filter(metso == 0, standid %in% matches$standid_matched_control) 
+  sp_df <- sp_df |> dplyr::filter(metso == 0) 
 }
 
 path_rds <- file.path(folder_name, paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
@@ -59,6 +63,8 @@ construct_hmsc_XData(
   data_sufix = sufix
 )
 
+# 5. control/treated(metso) covariates need to be the same as the fitted model   
+
 run_name <- generate_run_name(run_config)
 fitted_full_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
 hM <- readRDS(fitted_full_model_path)
@@ -66,7 +72,7 @@ hM <- readRDS(fitted_full_model_path)
 XData_ <- readRDS(path_rds)
 
 XData_$XData <- XData_$XData |> 
-  dplyr::select(dplyr::all_of(names(hM$XData)))
+  dplyr::select(dplyr::any_of(names(hM$XData)))
 
 saveRDS(XData_, file = path_rds)
 
