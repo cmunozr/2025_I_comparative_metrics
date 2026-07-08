@@ -7,7 +7,7 @@ source("code/_utilities_hmsc_gpu.R")
 set.seed(11072024)
 
 # Define all strategies required for diagnosis (matches S04a)
-validation_strategies <- c("route_blocked_cv", "metso_holdout", "random_cv")
+validation_strategies <- "metso_holdout" # c("route_blocked_cv", "metso_holdout", "random_cv")
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")
