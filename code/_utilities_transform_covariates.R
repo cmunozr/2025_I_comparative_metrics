@@ -1161,10 +1161,10 @@ construct_hmsc_XData <- function(folder_name,
       old_XData <- old_XData$XData
     }
     
-    final_XData <- bind_cols(old_XData, merged_new_data)
+    final_XData <- bind_cols(old_XData, merged_data)
   } else {
     # If recalculating everything, the new result IS the final result
-    final_XData <- merged_new_data
+    final_XData <- merged_data
   }
   
   final_object <- list("polygon_id" = polygon_id, "NA_polygon_id" = NA_polygon_id, "XData" = final_XData)

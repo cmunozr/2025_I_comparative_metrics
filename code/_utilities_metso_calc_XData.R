@@ -46,7 +46,7 @@ if(pre_process){
 
 # 4. each type of polygon needs to be run by itself
 
-sufix <- "control"
+sufix <- "metso"
 
 if(sufix == "metso"){
 
