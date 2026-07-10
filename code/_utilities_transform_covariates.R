@@ -1019,7 +1019,7 @@ compute_covariate <- function(var_name, file_path, mapping_functions) {
     var_by_polygon <- var_by_polygon |>
       ungroup() |> 
       mutate(
-        is_current_year = if(!is.na(raw_data$polygon_source[1])) {
+        is_current_year = if(str_detect(polygon_id[1], pattern = "_")) {
           str_split(polygon_id, pattern = "_", simplify = TRUE)[, 2] == year
         } else {
           stop()
@@ -1130,18 +1130,17 @@ construct_hmsc_XData <- function(folder_name,
   
   index_complete <- complete.cases(merged_new_data)
 
-  merged_new_data <- merged_new_data[index_complete, ] 
-  polygon_id <- merged_new_data$polygon_id 
+  merged_data <- merged_new_data[index_complete, ] 
+  polygon_id <- merged_data$polygon_id |> 
+    droplevels() |> 
+    unique()
   
-  if(is.factor(polygon_id)){
-    polygon_id <-  droplevels(polygon_id) |> 
-    as.character() |> 
-    as.numeric()
-  }else{
-    polygon_id <- unique(polygon_id)
-  }
+  merged_NA_data <- merged_new_data[!index_complete, ]
+  NA_polygon_id <- merged_NA_data$polygon_id |> 
+    droplevels() |> 
+    unique()
   
-  merged_new_data <- merged_new_data |> 
+  merged_data <- merged_data |> 
     select(-polygon_id)
 
   # 5. Save data file
@@ -1168,7 +1167,7 @@ construct_hmsc_XData <- function(folder_name,
     final_XData <- merged_new_data
   }
   
-  final_object <- list("polygon_id" = polygon_id, "XData" = final_XData)
+  final_object <- list("polygon_id" = polygon_id, "NA_polygon_id" = NA_polygon_id, "XData" = final_XData)
   saveRDS(final_object, file = final_path)
   message("Successfully saved XData_hmsc.rds")
   

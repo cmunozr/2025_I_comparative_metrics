@@ -2,6 +2,7 @@ library(sf)
 library(openxlsx)
 library(dplyr)
 library(here)
+library(stringr)
 
 source(file.path("code", "config_model.R"))
 source(file.path("code", "_utilities_transform_covariates.R"))
@@ -21,21 +22,27 @@ trt.control <- read.csv(file.path("data", "metso", "treatment_control_standid.cs
   na.omit()
 
 # 3. to run the function construct_hmsc_XData the pre-processed variables need to be split between control and treated (metso)
+# one time process
+
 path_preprocessed <- list.files(file.path("data", "covariates", "pre_processed"), 
                                 pattern = paste0("metso", ".rds$"), full.names = T, 
                                 recursive = T)
-lapply(X = path_preprocessed, FUN = function(X){
-  # X <- path_preprocessed[1]
-  var <- readRDS(X) 
-  c <- var |> 
-    filter(polygon_id %in% trt.control$standid[trt.control$match_role == "control"])
-  new_path <- sub(pattern = "metso", replacement = "control", x = X)
-  saveRDS(object = c, file = new_path)
-  m <- var |> 
-    filter(polygon_id %in% trt.control$standid[trt.control$match_role == "treated"])
-  saveRDS(object = m, file = X)
-  invisible("success")
-})
+pre_process <- F
+
+if(pre_process){
+  lapply(X = path_preprocessed, FUN = function(X){
+    # X <- path_preprocessed[1]
+    var <- readRDS(X) 
+    c <- var |> 
+      filter(polygon_id %in% trt.control$standid[trt.control$match_role == "control"])
+    new_path <- sub(pattern = "metso", replacement = "control", x = X)
+    saveRDS(object = c, file = new_path)
+    m <- var |> 
+      filter(polygon_id %in% trt.control$standid[trt.control$match_role == "treated"])
+    saveRDS(object = m, file = X)
+    invisible("success")
+  })
+}
 
 # 4. each type of polygon needs to be run by itself
 
@@ -76,4 +83,4 @@ XData_$XData <- XData_$XData |>
 
 saveRDS(XData_, file = path_rds)
 
-proc.time()
+
