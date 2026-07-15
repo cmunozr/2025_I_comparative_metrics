@@ -179,11 +179,10 @@ if(extract_coords){
   coords_utm_join <- bind_rows(coords_utm_join)
 
 }else{
-  metso <- st_read(file.path("data", "metso", "treatment_control_stand_v2.gpkg")) # external
+  metso <- st_read(file.path("data", "metso", "treatment_control_stand_v3.gpkg")) # external
   
   metso_utm_join <- metso |> 
-    dplyr::select(standid, metso, year_event_5) |> 
-    rename(year = year_event_5) |> 
+    dplyr::select(standid, metso, year) |> 
     mutate(set = "metso") |> 
     st_transform(st_crs(utm_200)) |> 
     st_join(y = utm_200) |> 
@@ -266,7 +265,7 @@ list_of_groups <- master_covariates |>
   group_by(dataset, var, year) |> 
   group_split()
 
-run <- F
+run <- T
 
 log_info("Starting raw value extraction...")
 if(run){
@@ -355,11 +354,11 @@ if(extract_coords){
 
 
 for(p in 1:length(polygon_types)){
-  # p <- 1
+
   rds_files <- list.files(rds_data_dir, pattern = paste0(polygon_types[p], ".rds$"), recursive = TRUE, full.names = TRUE)
   
   for (i in 1:length(covar_nm)) {
-    # i <- 2
+    # i <- 1
     covar_nm_i <- covar_nm[i] 
     log_info(paste("Merging and saving:", i, "of", length(covar_nm), "variables -", covar_nm_i))
     

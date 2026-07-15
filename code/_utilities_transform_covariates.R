@@ -712,17 +712,28 @@ weighted_sd <- function(x, w, na.rm = TRUE) {
 #----------------------
 # Ratio calculation
 # This function expects 'cov_frac' and a 'val' column (which is the 'value' column for these vars)
-# The original logic returns the sum of coverage fractions where value is 1
+# It divides the sum of coverage fractions where value is 1 by the total sum of coverage fractions
 ratio <- function(cov_frac, val, na.rm = TRUE) {
   if (na.rm) {
     complete_cases <- !is.na(cov_frac) & !is.na(val)
     cov_frac <- cov_frac[complete_cases]
     val <- val[complete_cases]
   }
+  
   if (length(cov_frac) == 0) return(NA)
-  sum(cov_frac[val == 1])
+  
+  # Calculate total polygon area in pixel units
+  total_area <- sum(cov_frac)
+  
+  # Avoid division by zero if all coverage fractions are zero
+  if (total_area == 0) return(0)
+  
+  # Calculate polygon area where value is 1
+  active_area <- sum(cov_frac[val == 1])
+  
+  # Return the proportion (strictly bounded between 0 and 1)
+  return(active_area / total_area)
 }
-
 #------------------------
 # Weighted mean using 'coverage_fraction' as weight
 weighted_mean <- function(x, w, na.rm = TRUE) {
@@ -1132,12 +1143,12 @@ construct_hmsc_XData <- function(folder_name,
 
   merged_data <- merged_new_data[index_complete, ] 
   polygon_id <- merged_data$polygon_id |> 
-    droplevels() |> 
+  # droplevels() |> 
     unique()
   
   merged_NA_data <- merged_new_data[!index_complete, ]
   NA_polygon_id <- merged_NA_data$polygon_id |> 
-    droplevels() |> 
+  # droplevels() |> 
     unique()
   
   merged_data <- merged_data |> 

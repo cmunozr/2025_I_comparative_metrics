@@ -150,7 +150,7 @@ run_itis_routes <- F
 run_itis_bakx <- F
 filter_rare_spp <- F
 run_polygon_buffers <- F
-run_calculate_XData <- F
+run_calculate_XData <- T
 run_new_var_XData <- F
 run_syn_for_mctavish <- F
 ```
