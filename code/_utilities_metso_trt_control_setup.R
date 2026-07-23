@@ -7,7 +7,7 @@ load(file.path("data", "metso", "raw2", "treatment_long.RData"))
 matched_units <- arrow::read_parquet("data/metso/raw2/matched_units.parquet")
 sp <- arrow::read_parquet("data/metso/raw2/stacked_panel.parquet")
 
-# 1. Data description
+# 0. Data description
 trt_stands_summary <- trt.long |> 
   dplyr::filter(metso_any_bin != 0, year <= 2021) |> 
   dplyr::mutate(across(
@@ -34,52 +34,69 @@ table(trt_stands_summary$year_in) |>barplot()
 
 table(trt_stands_summary$contract_type) |> barplot()
 
-# 2: Process the stacked panel data
+#--------------
+
+# 1: Process the stacked panel data
 sp <- data.table::as.data.table(sp)
 
-P <- 5L # Pre-event window years
-L <- 5L # Post-event window snapshot (5-year target horizon)
-first_data_year <- 2001
-last_data_year <- 2021 
+P <- 1L # Pre-event window years
+first_data_year <- 2009
+last_data_year  <- 2021
 
 # Extract cohort enrollment years within the data.table class
 cohort_years <- sp[
   treated_stack == 1L,
-  .(cohort_year = as.integer(min(year, na.rm = TRUE))),
+  .(stack_id, cohort_year = unique(g)),
   by = stack_id
 ]
 
-# Identify cohorts with complete historical and post-treatment records
-eligible_cohorts <- cohort_years[
-  cohort_year - P >= first_data_year & 
-  cohort_year + L <= last_data_year
+# Process 5-year post-event horizons
+eligible_5 <- cohort_years[
+  cohort_year - P >= first_data_year &
+    cohort_year + 5 <= last_data_year
 ]
 
-# Append the explicit calendar year corresponding to event_time == 5
-eligible_cohorts <- eligible_cohorts[, year_event_5 := cohort_year + L] |> 
-  dplyr::filter(year_event_5 %in% c(2009, 2011, 2013, 2015, 2017, 2019, 2021))
+eligible_5[, `:=`(event_horizon = 5L, year_event = cohort_year + 5L)]
 
-# 3: Filter matched units and join temporal attributes
+# Process 6-year post-event horizons
+eligible_6 <- cohort_years[
+  cohort_year - P >= first_data_year &
+    cohort_year + 6 <= last_data_year
+]
+
+eligible_6[, `:=`(event_horizon = 6L, year_event = cohort_year + 6L)]
+
+# Combine both horizons into a unified tracking data table
+eligible_cohorts <- rbind(eligible_5, eligible_6) 
+
+# 2: Filter matched units and join temporal attributes
 matched_units <- data.table::as.data.table(matched_units)
 
-# Filter for eligible stacks
-matched_units_filtered <- matched_units[
-  stack_id %in% eligible_cohorts$stack_id
-]
-
-# Join the target event year back to both treated and control units
-matched_units_filtered <- merge(
-    matched_units_filtered,
-    eligible_cohorts[, .(stack_id, year_event_5)],
+# Merge mapping metrics to duplicate stacks qualifying for both targets
+matched_units_filtered <- matched_units |> 
+  merge(
+    eligible_cohorts[, .(stack_id, event_horizon, year_event)],
     by = "stack_id",
-    all.x = TRUE
+    all.y = TRUE
   )|> 
-    dplyr::mutate(
-      metso = if_else(match_role == "treated", 1, 0)  
-    )
+  dplyr::filter(
+    stack_id %in% eligible_cohorts$stack_id
+  ) 
+
+# Allocate explicit treatment indicators using data.table infrastructure
+matched_units_filtered[, metso := data.table::fifelse(match_role == "treated", 1L, 0L)]
+
+matched_units_filtered <- matched_units_filtered |> 
+  as.data.frame() |> 
+  dplyr::rename(year = year_event) |>
+  dplyr::mutate(
+    standid = paste0(standid, "_", year, "_", event_horizon)
+  ) |> 
+  dplyr::filter(
+    year %in% c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
+  )
 
 data.table::fwrite(
   matched_units_filtered, 
   file.path("data", "metso", "treatment_control_standid.csv")
 )
-
