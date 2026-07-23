@@ -6,8 +6,8 @@ source("code/config_model.R")
 source("code/_utilities_hmsc_gpu.R")
 
 # --- 2. Configuration and Setup ---
-models_dir <- file.path(here::here(), "models", "unfitted_RData")
-unfitted_models_file <- file.path("models", paste0("unfitted_", run_config$model_id, ".RData"))
+models_dir <- file.path(here::here(), "models")
+unfitted_models_file <- file.path(models_dir, "unfitted_RData", paste0("unfitted_", run_config$model_id, ".RData"))
 
 dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -30,7 +30,7 @@ for(i in 1:nrow(mcmc_params)){
   mcmc_params_i <- mcmc_params[i, ]
   message(paste0("\nProcessing config ", i, ": thin = ", mcmc_params_i$thin, ", samples = ", mcmc_params_i$samples))
   
-  base_model_name <- run_name[i] 
+  base_model_name <- run_name 
   
   run_specific_dir_local <- file.path(models_dir, base_model_name)
   run_specific_dir_server <- file.path(run_config$server$server_models_dir, base_model_name)

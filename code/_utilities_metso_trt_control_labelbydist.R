@@ -9,7 +9,7 @@ library(tidyr)
 library(dplyr)
 set.seed(11072024)
 
-stands <- read_sf(file.path("data", "metso", "treatment_control_stand_v3.gpkg"))
+stands <- read_sf(file.path("data", "metso", "treatment_control_stand_v4.gpkg"))
 
 distance_buffer_km <- 2
 
@@ -35,6 +35,6 @@ stands <- stands |>
 #------- creating spatial object
 
 stands |> 
-  sf::write_sf(file.path("data", "metso", paste0("treatment_control_stand_V3.gpkg")), delete_layer = T)
+  sf::write_sf(file.path("data", "metso", paste0("treatment_control_stand_V4.gpkg")), delete_layer = T)
 
 

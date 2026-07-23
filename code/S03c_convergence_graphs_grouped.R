@@ -263,7 +263,7 @@ get_col <- function(df, col) {
 
 # --- PDF GENERATION ---
 pdf_grouped_file <- file.path(output_dir, paste0("fbs_Models_all_psrf_ess.pdf"))
-pdf(file = pdf_grouped_file, width = 11, height = 8.5)
+pdf(file = pdf_grouped_file, width = 14, height = 8.5)
 
 plot_convergence_dot_grid(get_col(combined_ess_summary, "Beta"), get_col(combined_psrf_summary, "Beta"), "Beta", 
                           model_shapes_for_plot, class_shape_legend_map, short_model_names, sum_name)

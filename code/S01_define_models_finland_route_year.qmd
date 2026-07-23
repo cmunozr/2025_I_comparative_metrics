@@ -150,7 +150,7 @@ run_itis_routes <- F
 run_itis_bakx <- F
 filter_rare_spp <- F
 run_polygon_buffers <- F
-run_calculate_XData <- T
+run_calculate_XData <- F
 run_new_var_XData <- F
 run_syn_for_mctavish <- F
 ```
@@ -1093,8 +1093,8 @@ hist(P, xlab = "Species prevalence (P)")
 Most species exhibit low prevalence, clustering towards the rare end of the spectrum, while a few species show a significantly higher prevalence, indicating they are common across the sampled areas, even an species is occurring in the `r max(P)` of sites (`r names(which(P == max(P)))`).
 
 ```{r}
-Y <- transform_Y_to_abunCpres(Y)
-#Y <- transform_Y_to_presAbs(Y)
+#Y <- transform_Y_to_abunCpres(Y)
+Y <- transform_Y_to_presAbs(Y)
 Y <- Y[, order(colnames(Y))]
 ```
 
@@ -1166,7 +1166,8 @@ construct_hmsc_XData(
   dict_covar = dict_covar,     
   mapping_funcs = mapping_functions,
   ref_data = occurr_route_year,
-  data_sufix = "coords"
+  data_sufix = "coords",
+  nm_pre_process = "pre_processed"
 )
 
 XData_list <- readRDS(file.path("data", "covariates", paste0("XData_hmsc_coords_", run_config$model_id, ".rds")))
@@ -1520,8 +1521,8 @@ m <- Hmsc(
   TrData = TrData, 
   TrFormula = TrFormula,
   phyloTree = phyloTree,
-  #distr = "probit",
-  distr = "lognormal poisson", 
+  distr = "probit",
+  #distr = "lognormal poisson", 
   studyDesign = studyDesign, 
   ranLevels = list("vakio" = rL.locality, "year" = rL.year)#, "observer_id" = rL.observer)
 )

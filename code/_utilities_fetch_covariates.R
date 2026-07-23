@@ -179,7 +179,7 @@ if(extract_coords){
   coords_utm_join <- bind_rows(coords_utm_join)
 
 }else{
-  metso <- st_read(file.path("data", "metso", "treatment_control_stand_v3.gpkg")) # external
+  metso <- st_read(file.path("data", "metso", "treatment_control_stand_v4.gpkg")) # external
   
   metso_utm_join <- metso |> 
     dplyr::select(standid, metso, year) |> 
@@ -194,8 +194,6 @@ if(extract_coords){
   metso_utm_join$poly_id <- 1:nrow(metso_utm_join) # id
   
 }
-
-
 
 #--------------------
 
