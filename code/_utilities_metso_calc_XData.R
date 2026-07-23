@@ -17,7 +17,7 @@ run_calculate_XData <- T
 run_new_var_XData <- F
 dict_covar <- read.csv(file.path("data", "covariates", "dictionary_covariates.csv"), sep = ";")
 mapping_functions <- read.xlsx(file.path("data", "covariates", "mapping_covariate_functions.xlsx"), sheet = 1)
-sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_v3.gpkg")) 
+sp_df <- sf::read_sf(file.path("data", "metso", "treatment_control_stand_v4.gpkg")) 
 trt.control <- read.csv(file.path("data", "metso", "treatment_control_standid.csv")) |> 
   na.omit()
 
@@ -46,7 +46,7 @@ if(pre_process){
 
 # 4. each type of polygon needs to be run by itself
 
-sufix <- "control"
+sufix <- "metso"
 
 if(sufix == "metso"){
 
@@ -56,8 +56,6 @@ if(sufix == "metso"){
   
   sp_df <- sp_df |> dplyr::filter(metso == 0) 
 }
-
-path_rds <- file.path(folder_name, paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
 
 # Call the function
 construct_hmsc_XData(
@@ -72,14 +70,26 @@ construct_hmsc_XData(
 
 # 5. control/treated(metso) covariates need to be the same as the fitted model   
 
+write_complete_covariates <- F
+
 run_name <- generate_run_name(run_config)
 fitted_full_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
 hM <- readRDS(fitted_full_model_path)
+
+if(write_complete_covariates){
+  path_rds <- file.path(folder_name, paste0("XData_hmsc_", sufix, "_", run_config$model_id, "_complete.rds"))
+}else{
+  path_rds <- file.path(folder_name, paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
+}
 
 XData_ <- readRDS(path_rds)
 
 XData_$XData <- XData_$XData |> 
   dplyr::select(dplyr::any_of(names(hM$XData)))
+
+if(write_complete_covariates){
+  path_rds <- file.path(folder_name, paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
+}
 
 saveRDS(XData_, file = path_rds)
 

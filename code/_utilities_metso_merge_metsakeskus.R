@@ -14,9 +14,11 @@ gpkg <- read_sf(paths_in) |>
 
 metso_trt_control_stands <- gpkg[gpkg$standid %in% metso_trt_control$temp_standid, ] |> 
   left_join(metso_trt_control, join_by("standid" == "temp_standid") ) |> 
-  relocate(geom, .after = metso)
+  relocate(geom, .after = metso) |>
+  select(-standid) |>
+  rename("standid" = "standid.y")
 
-write_sf(metso_trt_control_stands, file.path("data", "metso", "treatment_control_stand_v3.gpkg"), delete_layer = T)
+write_sf(metso_trt_control_stands, file.path("data", "metso", "treatment_control_stand_v4.gpkg"), delete_layer = T)
 
 
 
