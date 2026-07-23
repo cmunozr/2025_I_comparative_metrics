@@ -1078,7 +1078,8 @@ construct_hmsc_XData <- function(folder_name,
                              mapping_funcs, 
                              ref_data,
                              data_sufix = "coords",
-                             modelid = run_config$model_id) {
+                             modelid = run_config$model_id,
+                             nm_pre_process = "pre_processed") {
   
   # 1. Validation and Setup
   if (!run_calc && !run_new) {
@@ -1087,7 +1088,7 @@ construct_hmsc_XData <- function(folder_name,
   }
   
   # Locate files
-  output_rds_paths <- list.files(file.path(folder_name, "pre_processed"), 
+  output_rds_paths <- list.files(file.path(folder_name, nm_pre_process), 
                                  pattern = paste0(data_sufix, ".rds$"), 
                                  recursive = TRUE, 
                                  full.names = TRUE)
