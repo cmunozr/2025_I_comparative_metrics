@@ -7,7 +7,7 @@ source("code/_utilities_hmsc_gpu.R")
 set.seed(11072024)
 
 # Define all strategies required for diagnosis (matches S04a)
-validation_strategies <- "metso_holdout" # c("route_blocked_cv", "metso_holdout", "random_cv")
+validation_strategies <- c("metso_holdout", "route_blocked_cv") #, "random_cv")
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")
@@ -72,7 +72,7 @@ for(i in 1:nrow(mcmc_params)){
   
   #--- cross validation evaluation
   for(strategy in validation_strategies) {
-    # strategy <- "random_cv"
+    # strategy <- "route_blocked_cv"
     message(paste0("\n  Processing strategy: ", strategy))
     
     # 4.1 Assign label
@@ -108,7 +108,7 @@ for(i in 1:nrow(mcmc_params)){
     
     # 4.3 Combined Import and Predict Loop
     for(p in 1:length(parts)){
-      # p <- 4
+      # p <- 2
       if(strategy == "metso_holdout"){
         if(p != 1) next
       }
