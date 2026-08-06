@@ -324,3 +324,17 @@ Now: fbs_M014. 1000 samples, 250 thining. Burgess --> moderate good convergence 
 Model fbs_M015 with survey covariates ready to run. The idea is to incorporate observation-process covariates (effort, observer, timing) in order to separate the ecological process from the observation process.
 
 fbs_M015PA: start with a MCMC of 1000 samples, 100 thining. A bigger thining to account for more covariates.
+
+## July 03, 2026
+
+Model fbs_M016 and fbs_M016PA with survey covariates ready to run. Same structure of M015 and M015PA but tree_extent corrected with Dario's calculation. 
+
+MCMC setup M016: 
+chains 4
+sampling 1000
+thin 150, 250, 500 
+
+MCMC setup M016PA: 
+chains 4
+sampling 1000
+thin 50, 100, 150, 250 
