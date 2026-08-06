@@ -15,7 +15,7 @@
 #   niches (Beta), functional traits (Gamma), and species associations (Omega).
 # - parameter_estimates_log.txt: Text log detailing parameter extraction settings.
 # - parameter_estimates_VP*.csv: Numerical tables of variance partitioning results.
-# - parameter_estimates_[Beta/Omega].xlsx: Tables containing posterior means and 
+# - parameter_estimates_[Beta/Gamma/Omega].xlsx: Tables containing posterior means and 
 #   statistical support probabilities for model parameters.
 
 # Source configuration
@@ -25,18 +25,28 @@ library(Hmsc)
 library(colorspace)
 library(corrplot)
 library(writexl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(gt)
+
+# Global switches for optional parameter evaluations
+plot_gamma_switch <- FALSE
+plot_omega_switch <- FALSE
+
+# Targeted categories for Beta plot visualization
+target_categories_beta <- c("Intercept", "forest_structure")
 
 # Set default parameters for estimates evaluation
 support_level_beta <- 0.95
 support_level_gamma <- 0.95
-support_level_omega <- 0.9
-var_part_order_explained <- NULL #Default: in variance partitioning of explained variance, species are shown in the order they are in the model
-var_part_order_raw <- NULL #Default: in variance partitioning of raw variance, species are shown in the order they are in the model
-show_sp_names_beta <- NULL #Default: species names shown in beta plot if there are at most 30 species and no phylogeny
-plot_tree <- NULL #Default: tree is plotted in Beta plot if the model includes it
-omega_order <- NULL #Default: species shown in the order they are in the model
-show_sp_names_omega <- NULL #Default: species names shown in beta plot if there are at most 30 species
-
+support_level_omega <- 0.90
+var_part_order_explained <- NULL 
+var_part_order_raw <- NULL 
+show_sp_names_beta <- NULL 
+plot_tree <- FALSE 
+omega_order <- NULL 
+show_sp_names_omega <- NULL
 ## Uncomment to activate characteristic
 
 #use support levels to selected the level of statistical support shown
@@ -82,11 +92,11 @@ show_sp_names_omega <- NULL #Default: species names shown in beta plot if there 
 # Iterate through each model configuration
 for (i in 1:nrow(run_config$mcmc)) {  
   run_name <- generate_run_name(run_config)[i]
-
+  
   # Define paths
   model_dir <- file.path("models", run_name)
   estimates_dir <- file.path(model_dir, "parameter_estimates")
-
+  
   if (!dir.exists(estimates_dir)) {
     dir.create(estimates_dir, recursive = TRUE)
   }
@@ -103,18 +113,23 @@ for (i in 1:nrow(run_config$mcmc)) {
     cat("This file contains additional information regarding parameter estimates.\n\n", file = text_file)
     cat(c("Run: ", run_name, "\n\n"), file = text_file, sep = "", append = TRUE)
     
-    pdf(file = file.path(estimates_dir, "parameter_estimates.pdf"))
+    pdf(file = file.path(estimates_dir, "parameter_estimates.pdf"), height = 10, width = 10)
     
-    # Match model covariates to dictionary (Executed early for both VP and Beta)
+    # Match model covariates to dictionary
     cov_names_model <- m$covNames
     dict <- readxl::read_excel("data/covariates/mapping_covariate_functions.xlsx")
     
     cov_map <- data.frame(model_cov = cov_names_model, var_target = cov_names_model) |>
       dplyr::left_join(dplyr::select(dict, var_target, type), by = "var_target") |>
-      dplyr::mutate(type = dplyr::coalesce(type, "Uncategorized")) |> 
-      dplyr::mutate(type = dplyr::if_else(stringr::str_detect(var_target, "temp|prec"), "climate", type))
+      dplyr::mutate(type = dplyr::case_when(
+        model_cov == "(Intercept)" ~ "Intercept",
+        stringr::str_detect(var_target, "temp|prec") ~ "climate",
+        TRUE ~ dplyr::coalesce(type, "Uncategorized")
+      ))
     
-    # Variance Partitioning
+    # ------------------------------------------------------------------------
+    # 1. Variance Partitioning
+    # ------------------------------------------------------------------------
     if (m$XFormula == "~.") {
       covariates <- colnames(m$X)[-1]
     } else {
@@ -172,7 +187,8 @@ for (i in 1:nrow(run_config$mcmc)) {
       cat(c("\nvar.part.order.explained\n\n"), file = text_file, sep = "", append = TRUE)
       cat(m$spNames[c_var_part_order_explained], file = text_file, sep = "\n", append = TRUE)
       
-      plotVariancePartitioning(hM = m, VP = VP, main = paste0("Proportion of explained variance, ", run_name), cex.main = 0.8, cols = mycols, args.leg = list(bg = "white", cex = 0.7))
+      plotVariancePartitioning(hM = m, VP = VP, main = paste0("Proportion of explained variance, ", run_name), 
+                               cex.main = 0.8, cols = mycols, args.leg = list(bg = "white", cex = 0.7))
       
       if (is.null(var_part_order_raw) || all(var_part_order_raw == 0)) {
         c_var_part_order_raw <- 1:m$ns
@@ -190,16 +206,18 @@ for (i in 1:nrow(run_config$mcmc)) {
         VPr$vals <- VPr$vals[, c_var_part_order_raw]
         cat(c("\nvar.part.order.raw\n\n"), file = text_file, sep = "", append = TRUE)
         cat(m$spNames[c_var_part_order_raw], file = text_file, sep = "\n", append = TRUE)
-        plotVariancePartitioning(hM = m, VP = VPr, main = paste0("Proportion of raw variance, ", run_name), cex.main = 0.8, cols = mycols, args.leg = list(bg = "white", cex = 0.7), ylim = c(0, 1))
+        plotVariancePartitioning(hM = m, VP = VPr, main = paste0("Proportion of raw variance, ", run_name), 
+                                 cex.main = 0.8, cols = mycols, args.leg = list(bg = "white", cex = 0.7), ylim = c(0, 1))
       }
     }
     
-    # Beta parameters
+    # ------------------------------------------------------------------------
+    # 2. Beta Parameters Evaluation & Subsetted Visualization
+    # ------------------------------------------------------------------------
     if (m$nc > 1) {
       postBeta <- getPostEstimate(m, parName = "Beta")
       filename_beta <- file.path(estimates_dir, "parameter_estimates_Beta.xlsx")
       
-      # Helper function to pivot estimate matrices to long format
       pivot_estimates <- function(est_matrix, value_name) {
         df <- as.data.frame(t(est_matrix))
         colnames(df) <- cov_names_model
@@ -207,12 +225,10 @@ for (i in 1:nrow(run_config$mcmc)) {
         tidyr::pivot_longer(df, cols = -Species, names_to = "model_cov", values_to = value_name)
       }
       
-      # Extract and pivot mean, positive support, and negative support
       me <- pivot_estimates(postBeta$mean, "mean")
       po <- pivot_estimates(postBeta$support, "support")
       ne <- pivot_estimates(postBeta$supportNeg, "supportNeg")
       
-      # Join estimates with global dictionary types and arrange by group
       beta_summary <- me |>
         dplyr::left_join(po, by = c("Species", "model_cov")) |>
         dplyr::left_join(ne, by = c("Species", "model_cov")) |>
@@ -222,87 +238,152 @@ for (i in 1:nrow(run_config$mcmc)) {
       vals <- list("Beta_Summary" = beta_summary)
       writexl::write_xlsx(vals, path = filename_beta)
       
-      # 4. Create a temporary model object to pass grouped names to plotBeta
+      # Select targeted indices for Intercept and forest_structure
+      if(!is.null(target_categories_beta)){
+        selected_indices <- which(cov_map$type %in% target_categories_beta)
+        selected_indices <- selected_indices[order(match(cov_map$type[selected_indices], target_categories_beta))]
+      }else{
+        selected_indices <- 1:length(cov_map$type)
+      }
+      
+      
+      cov_map_sub <- cov_map[selected_indices, ]
+      
+      postBeta_sub <- postBeta
+      postBeta_sub$mean <- postBeta$mean[selected_indices, , drop = FALSE]
+      postBeta_sub$support <- postBeta$support[selected_indices, , drop = FALSE]
+      if (!is.null(postBeta$supportNeg)) {
+        postBeta_sub$supportNeg <- postBeta$supportNeg[selected_indices, , drop = FALSE]
+      }
+      
       m_plot <- m
-      m_plot$covNames <- paste0("[", cov_map$type, "] ", cov_map$model_cov)
+      m_plot$nc <- length(selected_indices)
+      m_plot$covNames <- paste0("[", cov_map_sub$type, "] ", cov_map_sub$model_cov)
       
       c_show_sp_names <- if (is.null(show_sp_names_beta)) (is.null(m$phyloTree) && m$ns <= 30) else show_sp_names_beta
       c_plotTree <- !is.null(m$phyloTree)
       if (!is.null(plot_tree)) c_plotTree <- c_plotTree & plot_tree
       
-      plotBeta(m_plot, post = postBeta, supportLevel = support_level_beta, param = "Sign",
+      plotBeta(m_plot, post = postBeta_sub, supportLevel = support_level_beta, param = "Sign",
                plotTree = c_plotTree,
-               covNamesNumbers = c(TRUE, FALSE),
+               covNamesNumbers = c(FALSE, TRUE),
                spNamesNumbers = c(c_show_sp_names, FALSE),
                cex = c(0.6, 0.6, 0.8))
       
-      mymain <- paste0("BetaPlot, ", run_name)
+      mymain <- paste0("BetaPlot (Forest Structure & Intercept), ", run_name)
       if (!is.null(m$phyloTree)) {
         mpost <- convertToCodaObject(m)
         rhovals <- unlist(poolMcmcChains(mpost$Rho))
         mymain <- paste0(mymain, ", E[rho] = ", round(mean(rhovals), 2), ", Pr[rho>0] = ", round(mean(rhovals > 0), 2))
       }
       title(main = mymain, line = 2.5, cex.main = 0.8)
+      
+
+      # reference key
+      covariate_index_key <- data.frame(
+        Plot_Index = paste0("C", 1:nrow(cov_map_sub)),
+        Original_Covariate = cov_map_sub$model_cov,
+        Category = cov_map_sub$type
+      )
+      
+      gt_key <- covariate_index_key |>
+        gt() |>
+        tab_header(
+          title = md("**Covariate Reference Key**"),
+        ) |>
+        cols_label(
+          Plot_Index = "Index", Original_Covariate = "Model Covariate", Category = "Domain"
+        ) |>
+        cols_align(
+          align = "center", columns = c(Plot_Index, Category)
+        ) |>
+        cols_align(
+          align = "left", columns = Original_Covariate
+        ) |>
+        opt_row_striping() |>
+        tab_options(
+          table.font.size = px(12),
+          heading.title.font.size = px(14),
+          heading.subtitle.font.size = px(11),
+          column_labels.font.weight = "bold",
+          table.width = pct(100)
+        )
+      
+      gt::gtsave(
+        data = gt_key,
+        filename = file.path(estimates_dir, "covariate_key_table.html")
+      )
     }
     
-    # Gamma parameters
-    if (m$nt > 1 & m$nc > 1) {
-      postGamma <- getPostEstimate(m, parName = "Gamma")
-      plotGamma(m, post = postGamma, supportLevel = support_level_gamma, param = "Sign",
-                covNamesNumbers = c(TRUE, FALSE),
-                trNamesNumbers = c(m$nt < 21, FALSE),
-                cex = c(0.6, 0.6, 0.8))
-      title(main = paste0("GammaPlot ", run_name), line = 2.5, cex.main = 0.8)
+    # ------------------------------------------------------------------------
+    # 3. Gamma Parameters Evaluation (Traits)
+    # ------------------------------------------------------------------------
+    if (plot_gamma_switch) {
+      if (!is.null(m$nt) && m$nt > 1 && m$nc > 1) {
+        message("Processing Gamma parameters...")
+        postGamma <- getPostEstimate(m, parName = "Gamma")
+        
+        plotGamma(m, post = postGamma, supportLevel = support_level_gamma, param = "Sign",
+                  covNamesNumbers = c(TRUE, FALSE),
+                  trNamesNumbers = c(m$nt < 21, FALSE),
+                  cex = c(0.6, 0.6, 0.8))
+        title(main = paste0("GammaPlot ", run_name), line = 2.5, cex.main = 0.8)
+      }
     }
     
-    # Omega parameters (Associations)
-    if (m$nr > 0 & m$ns > 1) {
-      OmegaCor <- computeAssociations(m)
-      for (r in 1:m$nr) {
-        toPlot <- ((OmegaCor[[r]]$support > support_level_omega) + (OmegaCor[[r]]$support < (1 - support_level_omega)) > 0) * sign(OmegaCor[[r]]$mean)
-        c_show_sp_names <- if (is.null(show_sp_names_omega)) (m$ns <= 30) else show_sp_names_omega
-        
-        if (!c_show_sp_names) {
-          colnames(toPlot) <- rep("", m$ns)
-          rownames(toPlot) <- rep("", m$ns)
+    # ------------------------------------------------------------------------
+    # 4. Omega Parameters Evaluation (Species Associations)
+    # ------------------------------------------------------------------------
+    if (plot_omega_switch) {
+      if (m$nr > 0 && m$ns > 1) {
+        message("Processing Omega parameters...")
+        OmegaCor <- computeAssociations(m)
+        for (r in 1:m$nr) {
+          toPlot <- ((OmegaCor[[r]]$support > support_level_omega) + (OmegaCor[[r]]$support < (1 - support_level_omega)) > 0) * sign(OmegaCor[[r]]$mean)
+          c_show_sp_names <- if (is.null(show_sp_names_omega)) (m$ns <= 30) else show_sp_names_omega
+          
+          if (!c_show_sp_names) {
+            colnames(toPlot) <- rep("", m$ns)
+            rownames(toPlot) <- rep("", m$ns)
+          }
+          
+          if (is.null(omega_order) || all(omega_order == 0)) {
+            plotOrder <- 1:m$ns
+          } else if (all(omega_order == "AOE")) {
+            plotOrder <- corrMatOrder(OmegaCor[[r]]$mean, order = "AOE")
+          } else {
+            plotOrder <- omega_order
+          }
+          
+          cat(c("\nomega.order\n\n"), file = text_file, sep = "", append = TRUE)
+          cat(m$spNames[plotOrder], file = text_file, sep = "\n", append = TRUE)
+          
+          mymain <- paste0("Associations, ", run_name, ": ", names(m$ranLevels)[[r]])
+          if (m$ranLevels[[r]]$sDim > 0) {
+            mpost <- convertToCodaObject(m)
+            alphavals <- unlist(poolMcmcChains(mpost$Alpha[[1]][, 1]))
+            mymain <- paste0(mymain, ", E[alpha1] = ", round(mean(alphavals), 2), ", Pr[alpha1>0] = ", round(mean(alphavals > 0), 2))
+          }
+          
+          corrplot(toPlot[plotOrder, plotOrder], method = "color",
+                   col = colorRampPalette(c("blue", "white", "red"))(3),
+                   mar = c(0, 0, 1, 0),
+                   main = mymain, cex.main = 0.8)
+          
+          me <- as.data.frame(OmegaCor[[r]]$mean)
+          me <- cbind(m$spNames, me)
+          colnames(me)[1] <- ""
+          po <- as.data.frame(OmegaCor[[r]]$support)
+          po <- cbind(m$spNames, po)
+          colnames(po)[1] <- ""
+          ne <- as.data.frame(1 - OmegaCor[[r]]$support)
+          ne <- cbind(m$spNames, ne)
+          colnames(ne)[1] <- ""
+          
+          vals <- list("Posterior mean" = me, "Pr(x>0)" = po, "Pr(x<0)" = ne)
+          filename_omega <- file.path(estimates_dir, paste0("parameter_estimates_Omega_", names(m$ranLevels)[[r]], ".xlsx"))
+          writexl::write_xlsx(vals, path = filename_omega)
         }
-        
-        if (is.null(omega_order) || all(omega_order == 0)) {
-          plotOrder <- 1:m$ns
-        } else if (all(omega_order == "AOE")) {
-          plotOrder <- corrMatOrder(OmegaCor[[r]]$mean, order = "AOE")
-        } else {
-          plotOrder <- omega_order
-        }
-        
-        cat(c("\nomega.order\n\n"), file = text_file, sep = "", append = TRUE)
-        cat(m$spNames[plotOrder], file = text_file, sep = "\n", append = TRUE)
-        
-        mymain <- paste0("Associations, ", run_name, ": ", names(m$ranLevels)[[r]])
-        if (m$ranLevels[[r]]$sDim > 0) {
-          mpost <- convertToCodaObject(m)
-          alphavals <- unlist(poolMcmcChains(mpost$Alpha[[1]][, 1]))
-          mymain <- paste0(mymain, ", E[alpha1] = ", round(mean(alphavals), 2), ", Pr[alpha1>0] = ", round(mean(alphavals > 0), 2))
-        }
-        
-        corrplot(toPlot[plotOrder, plotOrder], method = "color",
-                 col = colorRampPalette(c("blue", "white", "red"))(3),
-                 mar = c(0, 0, 1, 0),
-                 main = mymain, cex.main = 0.8)
-        
-        me <- as.data.frame(OmegaCor[[r]]$mean)
-        me <- cbind(m$spNames, me)
-        colnames(me)[1] <- ""
-        po <- as.data.frame(OmegaCor[[r]]$support)
-        po <- cbind(m$spNames, po)
-        colnames(po)[1] <- ""
-        ne <- as.data.frame(1 - OmegaCor[[r]]$support)
-        ne <- cbind(m$spNames, ne)
-        colnames(ne)[1] <- ""
-        
-        vals <- list("Posterior mean" = me, "Pr(x>0)" = po, "Pr(x<0)" = ne)
-        filename_omega <- file.path(estimates_dir, paste0("parameter_estimates_Omega_", names(m$ranLevels)[[r]], ".xlsx"))
-        writexl::write_xlsx(vals, path = filename_omega)
       }
     }
     

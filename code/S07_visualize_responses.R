@@ -11,8 +11,17 @@
 # respective directory: "models/[run_name]/gradient_simulations/".
 #
 # Generated files include:
-# - [covariate]_gradient_simulations.pdf: A single PDF per covariate containing 
-#   visualizations of summed responses, example species, and community-weighted mean traits.
+# - forest_structure_simulations_[run_name].pdf: A multi-page PDF containing a multi-panel grid 
+#   (rows = covariates, columns = total vs. marginal effects) for summed responses, 
+#   example species, and community-weighted mean traits.
+
+# PLOT ORGANIZATION:
+# Visualizations are structured into 2-column multi-row grids where each row represents 
+# a single forest structure covariate. The left column displays the Total Effect 
+# (empirical covariation, type = 2), while the right column displays the Marginal Effect 
+# (holding non-focal variables constant, non.focalVariables = 1). Each major response type 
+# (Summed Responses, Example Species, and CWM Traits) is assigned to its own dedicated PDF page 
+# with an outer main title.
 
 # Source configuration
 source("code/config_model.R")
@@ -26,6 +35,8 @@ library(here)
 setwd(here::here())
 
 # Set default parameters for prediction evaluation
+switch_ex_sp <- FALSE
+switch_cwm <- FALSE
 species_list <- NULL # Default: one example species shown, selected as prevalence closest to 0.5 (probit) or most abundant (other)
 trait_list <- NULL   # Default: community weighted mean shown for all traits
 
@@ -65,7 +76,7 @@ for (i in 1:nrow(run_config$mcmc)) {
       dplyr::left_join(dplyr::select(dict, var_target, type), by = "var_target")
     
     # Select only covariates marked with 1 in 'to_gradient'
-    covariates <- cov_map$model_cov[!is.na(cov_map$type) & cov_map$type == "forest_structure"]
+    covariates <- cov_map$model_cov[!is.na(cov_map$type) & cov_map$type == c("forest_structure")]
     
     # Determine the example species
     ex_sp <- which.max(colMeans(m$Y, na.rm = TRUE))
@@ -78,8 +89,15 @@ for (i in 1:nrow(run_config$mcmc)) {
     
     # Loop through filtered covariates to construct gradients and plot
     if (length(covariates) > 0) {
+      
+      # Open single PDF device for all covariates in this run
+      pdf(file = file.path(responses_dir, paste0("forest_structure_simulations_", run_name, ".pdf")), 
+          width = 8, height = 3 * length(covariates))
+      
+      # 1. Summed Response Plots
+      par(mfrow = c(length(covariates), 2), oma = c(0, 0, 3, 0), mar = c(4, 4, 2, 1))
+      
       for (k in 1:(length(covariates))) {
-        # k <- 1
         covariate <- covariates[[k]]
         
         Gradient <- constructGradient(m, focalVariable = covariate)
@@ -106,65 +124,67 @@ for (i in 1:nrow(run_config$mcmc)) {
         predY <- predict(m_temp, Gradient = Gradient, expected = TRUE)  
         predY2 <- predict(m_temp, Gradient = Gradient2, expected = TRUE)  
         
-        # Open PDF device for the specific covariate
-        pdf(file = file.path(responses_dir, paste0(covariate, "_simul.pdf")))
-        
-        # 1. Summed Response Plots
-        par(mfrow = c(2, 1))
-        pl <- plotGradient(m, Gradient, pred = predY, yshow = 0, measure = "S", showData = TRUE, 
-                           main = paste0(run_name, ": summed response (total effect)"))
-        if (inherits(pl, "ggplot")) {
-          print(pl + labs(title = paste0(run_name, ": summed response (total effect)")))
-        }
-        
-        pl <- plotGradient(m, Gradient2, pred = predY2, yshow = 0, measure = "S", showData = TRUE, 
-                           main = paste0(run_name, ": summed response (marginal effect)"))
-        if (inherits(pl, "ggplot")) {
-          print(pl + labs(title = paste0(run_name, ": summed response (marginal effect)")))
-        }
-        
-        # 2. Example Species Plots
+        plotGradient(m, Gradient, pred = predY, yshow = 0, measure = "S", showData = TRUE, main = "")
+        plotGradient(m, Gradient2, pred = predY2, yshow = 0, measure = "S", showData = TRUE, main = "")
+      }
+      mtext(paste0(run_name, ": Summed Response (Left: Total Effect | Right: Marginal Effect)"), outer = TRUE, cex = 1.2, line = 1, font = 2)
+      
+      # 2. Example Species Plots
+      if (switch_ex_sp) {
         for (l in 1:length(ex_sp)) {
-          par(mfrow = c(2, 1))
-          pl <- plotGradient(m, Gradient, pred = predY, yshow = if(m$distr[1,1] == 2){c(-0.1, 1.1)} else {0}, 
-                             measure = "Y", index = ex_sp[l], showData = TRUE, 
-                             main = paste0(run_name, ": example species (total effect)"))
-          if (inherits(pl, "ggplot")) {
-            print(pl + labs(title = paste0(run_name, ": example species (total effect)")))
+          par(mfrow = c(length(covariates), 2), oma = c(0, 0, 3, 0), mar = c(4, 4, 2, 1))
+          for (k in 1:(length(covariates))) {
+            covariate <- covariates[[k]]
+            
+            Gradient <- constructGradient(m, focalVariable = covariate)
+            Gradient2 <- constructGradient(m, focalVariable = covariate, non.focalVariables = 1)
+            
+            Gradient$XDataNew <- inject_poly(Gradient$XDataNew)
+            Gradient2$XDataNew <- inject_poly(Gradient2$XDataNew)
+            
+            predY <- predict(m_temp, Gradient = Gradient, expected = TRUE)  
+            predY2 <- predict(m_temp, Gradient = Gradient2, expected = TRUE)  
+            
+            plotGradient(m, Gradient, pred = predY, yshow = if(m$distr[1,1] == 2){c(-0.1, 1.1)} else {0}, 
+                         measure = "Y", index = ex_sp[l], showData = TRUE, main = "")
+            plotGradient(m, Gradient2, pred = predY2, yshow = if(m$distr[1,1] == 2){c(-0.1, 1.1)} else {0}, 
+                         measure = "Y", index = ex_sp[l], showData = TRUE, main = "")
           }
-          
-          pl <- plotGradient(m, Gradient2, pred = predY2, yshow = if(m$distr[1,1] == 2){c(-0.1, 1.1)} else {0}, 
-                             measure = "Y", index = ex_sp[l], showData = TRUE, 
-                             main = paste0(run_name, ": example species (marginal effect)"))
-          if (inherits(pl, "ggplot")) {
-            print(pl + labs(title = paste0(run_name, ": example species (marginal effect)")))
-          }
+          mtext(paste0(run_name, ": Example Species ", ex_sp[l], " (Left: Total Effect | Right: Marginal Effect)"), outer = TRUE, cex = 1.2, line = 1, font = 2)
         }
-        
-        # 3. Community Weighted Mean Trait Plots
+      }
+      
+      # 3. Community Weighted Mean Trait Plots
+      if (switch_cwm) {
         if (m$nt > 1) {
           traitSelection <- 2:m$nt
           if (!is.null(trait_list)) traitSelection <- trait_list
           
           for (l in traitSelection) {
-            par(mfrow = c(2, 1))
-            pl <- plotGradient(m, Gradient, pred = predY, measure = "T", index = l, showData = TRUE, yshow = 0,
-                               main = paste0(run_name, ": community weighted mean trait (total effect)"))
-            if (inherits(pl, "ggplot")) {
-              print(pl + labs(title = paste0(run_name, ": community weighted mean trait (total effect)")))
+            par(mfrow = c(length(covariates), 2), oma = c(0, 0, 3, 0), mar = c(4, 4, 2, 1))
+            for (k in 1:(length(covariates))) {
+              covariate <- covariates[[k]]
+              
+              Gradient <- constructGradient(m, focalVariable = covariate)
+              Gradient2 <- constructGradient(m, focalVariable = covariate, non.focalVariables = 1)
+              
+              Gradient$XDataNew <- inject_poly(Gradient$XDataNew)
+              Gradient2$XDataNew <- inject_poly(Gradient2$XDataNew)
+              
+              predY <- predict(m_temp, Gradient = Gradient, expected = TRUE)  
+              predY2 <- predict(m_temp, Gradient = Gradient2, expected = TRUE)  
+              
+              plotGradient(m, Gradient, pred = predY, measure = "T", index = l, showData = TRUE, yshow = 0, main = "")
+              plotGradient(m, Gradient2, pred = predY2, measure = "T", index = l, showData = TRUE, yshow = 0, main = "")
             }
-            
-            pl <- plotGradient(m, Gradient2, pred = predY2, measure = "T", index = l, showData = TRUE, yshow = 0,
-                               main = paste0(run_name, ": community weighted mean trait (marginal effect)"))
-            if (inherits(pl, "ggplot")) {
-              print(pl + labs(title = paste0(run_name, ": community weighted mean trait (marginal effect)")))
-            }
+            mtext(paste0(run_name, ": CWM Trait ", l, " (Left: Total Effect | Right: Marginal Effect)"), outer = TRUE, cex = 1.2, line = 1, font = 2)
           }
-        }
-        
-        # Close PDF device for the specific covariate
-        dev.off()
+        }  
       }
+      #hello abi
+      
+      # Close PDF device
+      dev.off()
     }
     
   } else {
