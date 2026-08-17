@@ -7,7 +7,7 @@ source("code/_utilities_hmsc_gpu.R")
 set.seed(11072024)
 
 # Define all strategies required for diagnosis
-validation_strategies <- c("metso_holdout", "route_blocked_cv", "random_cv") # c("route_blocked_cv") #
+validation_strategies <- c("metso_holdout", "north_south") # c("metso_holdout", "route_blocked_cv", "random_cv") # c("route_blocked_cv") #
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")
@@ -22,6 +22,7 @@ validation_metadata <- list() # To track generated setups
 
 # --- 5. Loop and Generate partition Commands ---
 for(i in 1:nrow(mcmc_params)){
+  # i <- 1
   run_name <- generate_run_name(run_config)[i]
   mcmc_params_i <- mcmc_params[i, ]
   message(paste0("\nProcessing config ", i, ": thin = ", mcmc_params_i$thin, ", samples = ", mcmc_params_i$samples))
@@ -39,7 +40,9 @@ for(i in 1:nrow(mcmc_params)){
     
     if(strategy == "metso_holdout"){
       label <- "ho_metso"
-      m$studyDesign$vakio <- as.numeric(m$studyDesign$vakio)
+      m$studyDesign$vakio <- m$studyDesign$vakio |> 
+        as.character() |> 
+        as.numeric()
       ho_routes <- read.csv(run_config$test$test_dir) |> 
         dplyr::select(vakio, is_metso) |> 
         dplyr::distinct(vakio, .keep_all = TRUE)
@@ -64,6 +67,37 @@ for(i in 1:nrow(mcmc_params)){
       partition <- createPartition(m, nfolds = run_config$cv$k)
       parts <- sort(unique(partition))
       hM_ <- lapply(X = parts, FUN = function(X) set_training_model(k = X, hM = m, partition = partition))
+      
+    } else if ( strategy == "north_south"){
+      label <- "north_south"
+      library(sf)
+      geo_data_fbs <- read_sf("data/fbs/vakiolinja/Vakiolinjat_routes_2393.gpkg") |> 
+        mutate(vakio = as.numeric(stringr::str_split(name,pattern = ",", simplify = T)[,1])) |> 
+        select(vakio)
+      geo_data_reg <- read_sf("data/ELY/ELY_Regions.shp") |> 
+        st_transform(st_crs(geo_data_fbs))|> 
+        mutate(north = if_else(ely == 15, 1, 0)) |> 
+        select(north) |> 
+        group_by(north) |> 
+        summarise()
+      
+      fbs_with_regions <- st_join(geo_data_fbs, geo_data_reg) |> 
+        st_drop_geometry()
+      
+      m$studyDesign$vakio <- m$studyDesign$vakio |> 
+        as.character() |> 
+        as.numeric()
+      
+      study_design_with_north <- m$studyDesign |>
+        dplyr::left_join(fbs_with_regions, by = "vakio")
+      
+      partition <- ifelse(
+        study_design_with_north$north == 0,
+        1, 2
+      )
+      parts <- 1
+      hM_ <- list(set_training_model(k = 2, hM = m, partition = partition))
+      
     }
     
     # Save unfitted models
