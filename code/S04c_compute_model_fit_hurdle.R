@@ -14,12 +14,20 @@ models_dir <- file.path(here::here(), "models")
 run_parallel <- TRUE
 
 # Define models
-model_id_pa <- "fbs_M015PA"
-model_id_abund <- "fbs_M015"
+model_id_pa <- "fbs_M016PA"
+model_id_abund <- "fbs_M016"
 
 # Reconstruct storage convention
-run_name_pa <- paste0(model_id_pa, "_thin_100_samples_1000_chains_4")
-run_name_abund <- paste0(model_id_abund, "_thin_150_samples_1000_chains_4")
+run_name_pa <- paste0(model_id_pa, "_thin_150_samples_1000_chains_4")
+run_name_abund <- paste0(model_id_abund, "_thin_250_samples_1000_chains_4")
+
+# Load full PA model to be used the evaluation reference
+fitted_pa_path <- file.path("models", run_name_pa, paste0("fitted_", run_name_pa, ".rds"))
+if(!file.exists(fitted_pa_path)) {
+  stop("Full fitted abundance model not found. Cannot proceed with evaluation reference.")
+}
+hM_full_pa <- readRDS(fitted_pa_path)
+hM_full_pa <- Hmsc::alignPosterior(hM_full_pa)
 
 # Load full abundance model to be used the evaluation reference
 fitted_abund_path <- file.path("models", run_name_abund, paste0("fitted_", run_name_abund, ".rds"))
@@ -30,11 +38,37 @@ hM_full_abund <- readRDS(fitted_abund_path)
 hM_full_abund <- Hmsc::alignPosterior(hM_full_abund)
 
 # MCMC parameter specs for the import function
-mcmc_spec_pa <- data.frame(samples = 1000, thin = 100, n_chains = 4, transient_proportion = 0.5, adapt_nf_proportion = 0.4)
-mcmc_spec_abund <- data.frame(samples = 1000, thin = 150, n_chains = 4, transient_proportion = 0.5, adapt_nf_proportion = 0.4)
+mcmc_spec_pa <- data.frame(samples = 1000, thin = 150, n_chains = 4, transient_proportion = 0.5, adapt_nf_proportion = 0.4)
+mcmc_spec_abund <- data.frame(samples = 1000, thin = 250, n_chains = 4, transient_proportion = 0.5, adapt_nf_proportion = 0.4)
 
-dir_fit_hurdle <- file.path(models_dir, "fbs_M014_hurdle", "model_fit")
+dir_fit_hurdle <- file.path(models_dir, "fbs_M016_hurdle", "model_fit")
 dir.create(dir_fit_hurdle, showWarnings = FALSE, recursive = TRUE)
+
+# --- Explanatory Power ---
+expl_output_path <- file.path(dir_fit_hurdle, paste0("mf_", "fbs_M016_hurdle", ".rds"))
+
+if (!file.exists(expl_output_path)) {
+  message("  Calculating WAIC and Explanatory Model Fit (Full Model)...")
+  
+  if (!file.exists(expl_output_path)) {
+    predY_full_pa <- predict(hM_full_pa, expected = TRUE)
+    predY_full_ab <- predict(hM_full_abund, expected = TRUE)
+    
+    # Execute sample-by-sample Hurdle multiplication
+    full_hurdle <- predY_full_pa * predY_full_ab
+    
+    MF_explanatory <- Hmsc::evaluateModelFit(hM = hM_full_abund, predY = full_hurdle)
+    saveRDS(MF_explanatory, file = expl_output_path)
+    message("    Explanatory Model Fit saved to: ", expl_output_path)
+    rm(full_hurdle, MF_explanatory)
+  } else {
+    message("    Explanatory Model Fit file already exists. Skipping calculation.")
+  }
+  gc()
+} else {
+  message("  WAIC and Explanatory Model Fit files already exist. Skipping full model processing.")
+}
+
 
 # --- 3. Main Loop: Iterate Over Strategies ---
 for(strategy in validation_strategies) {
@@ -116,7 +150,12 @@ for(strategy in validation_strategies) {
       predY <- array(NA, dim = c(hM_full_abund$ny, hM_full_abund$ns, postN))
     }
     
-    val_idx <- partition == parts[p]
+    if(strategy == "metso_holdout" | strategy == "north_south" ){
+        val_idx <- partition == 2 
+      }else{
+        val_idx <- partition == parts[p] 
+      }
+      
     XData_val <- hM_full_abund$XData[val_idx, , drop = FALSE]
     dfPi_val <- droplevels(hM_full_abund$dfPi[val_idx, , drop = FALSE])
     
@@ -175,8 +214,10 @@ for(strategy in validation_strategies) {
     } else {
       message("    Predicting sequentially on a single core processing pipeline...")
       
-      pred_fold_pa <- predict(m_fold_pa, post = postList_fold_pa, XData = XData_val, studyDesign = dfPi_val, mcmcStep = 1, expected = TRUE)
-      pred_fold_abund <- predict(m_fold_abund, post = postList_fold_abund, XData = XData_val, studyDesign = dfPi_val, mcmcStep = 1, expected = TRUE)
+      pred_fold_pa <- predict(m_fold_pa, post = postList_fold_pa, 
+                              XData = XData_val, studyDesign = dfPi_val, mcmcStep = 1, expected = TRUE)
+      pred_fold_abund <- predict(m_fold_abund, post = postList_fold_abund, 
+                                 XData = XData_val, studyDesign = dfPi_val, mcmcStep = 1, expected = TRUE)
       
       pred_fold_hurdle <- lapply(seq_along(pred_fold_pa), function(s) {
         pred_fold_pa[[s]] * pred_fold_abund[[s]]
