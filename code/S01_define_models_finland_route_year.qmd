@@ -706,6 +706,30 @@ left_join(occurrence_data, paircount_data, by = "acceptedName") |>
     tab_header(title = "Potential Data Loss from Removing Routes with No Biotope Info")
 ```
 
+```{r}
+# for species info table
+# Total route-years in the raw dataset (filtered only by time window)
+raw_valid_events <- master_routes |>
+  filter(is_valid_date == TRUE) |>
+  distinct(vakio, year) |>
+  mutate(sampleUnit = paste(vakio, year, sep = "_"))
+
+n_sampleUnits_raw <- nrow(raw_valid_events)
+
+# Aggregate Raw Data
+raw_summary <- occurr_sect_route |>
+  # Join with the raw valid events to enforce the temporal window only
+  inner_join(raw_valid_events |> select(vakio, year, sampleUnit), by = c("vakio", "year")) |>
+  filter(in_bakx == TRUE) |> 
+  group_by(acceptedName) |>
+  summarise(
+    paircount_raw = sum(pairCount, na.rm = TRUE),
+    prev_raw = (n_distinct(sampleUnit) / n_sampleUnits_raw) * 100,
+    .groups = "drop"
+  )
+
+```
+
 
 ### Apply Filter
 
@@ -1069,7 +1093,6 @@ occurr_route_year <- occurr_sect_route |>
 unique(occurr_route_year$sampleUnit) |> length()
 unique(occurr_route_year$vakio) |> length()
 ```
-
 ## Model Input Assembly
 
 ### Species Occurrence Matrix (Y)
@@ -1091,6 +1114,56 @@ hist(P, xlab = "Species prevalence (P)")
 ```
 
 Most species exhibit low prevalence, clustering towards the rare end of the spectrum, while a few species show a significantly higher prevalence, indicating they are common across the sampled areas, even an species is occurring in the `r max(P)` of sites (`r names(which(P == max(P)))`).
+
+```{r}
+# for species info table
+# Total route-years in the clean dataset (the final Y matrix input)
+n_sampleUnits_clean <- length(unique(occurr_route_year$sampleUnit))
+
+# Aggregate Clean Data
+clean_summary <- occurr_route_year |>
+  group_by(acceptedName) |>
+  summarise(
+    paircount_clean = sum(pairCount, na.rm = TRUE),
+    prev_clean = (n_distinct(sampleUnit) / n_sampleUnits_clean) * 100,
+    .groups = "drop"
+  )
+
+# Extract the specific columns from the Bakx dataset
+bakx_traits <- bakx_species |>
+  select(Latin_name, `Red-list`, Specialist)
+
+# 2. Extract the mapping keys from your harmonized dataset
+species_keys <- harmonized_species |>
+  filter(in_bakx == TRUE) |>
+  select(acceptedName, submittedname_bakx) |>
+  distinct()
+
+# Construct the final table
+species_info_table <- species_keys |>
+  left_join(raw_summary, by = "acceptedName") |>
+  left_join(clean_summary, by = "acceptedName") |>
+  left_join(bakx_traits, by = c("submittedname_bakx" = "Latin_name")) |>
+  select(
+    species = acceptedName,
+    paircount_raw,
+    paircount_clean,
+    Specialist,
+    `Red-list`,
+    prev_raw,
+    prev_clean
+  ) |>
+  # Handle species completely lost during the cleaning process
+  mutate(
+    paircount_raw = tidyr::replace_na(paircount_raw, 0),
+    prev_raw = tidyr::replace_na(prev_raw, 0),
+    paircount_clean = tidyr::replace_na(paircount_clean, 0),
+    prev_clean = tidyr::replace_na(prev_clean, 0)
+  ) |>
+  arrange(desc(paircount_raw))
+
+write.csv(species_info_table, "data/species_info_table.csv", row.names = F)
+```
 
 ```{r}
 #Y <- transform_Y_to_abunCpres(Y)
