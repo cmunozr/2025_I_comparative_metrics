@@ -9,12 +9,12 @@ ensure_dir <- file.path(base_dir)
 dir.create(ensure_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Define all possible cross-validation / hold-out strategies to look for
-validation_strategies <- c("route_blocked_cv", "metso_holdout", "random_cv") 
+validation_strategies <- c("route_blocked_cv", "metso_holdout", "north_south") 
 
 strategy_map <- c(
   "metso_holdout"    = "ho_metso",
   "route_blocked_cv" = "cv_route",
-  "random_cv"        = "cv_random"
+  "north_south"      = "north_south"
 )
 
 # --- 3. Folder Processing Function ---
@@ -101,7 +101,7 @@ if(nrow(master_df) > 0) {
     group_by(Model_Type) %>% 
     mutate(WAIC_Label = fct_reorder(as.factor(round(WAIC, 1)), WAIC)) %>% 
     ungroup() %>%
-    mutate(Strategy = factor(Strategy, levels = c("Full_Model", "random_cv", "route_blocked_cv", "metso_holdout")))
+    mutate(Strategy = factor(Strategy, levels = c("Full_Model", "random_cv", "route_blocked_cv", "metso_holdout", "north_south")))
 }
 
 # --- 5. Panel Builder Object ---
@@ -123,6 +123,7 @@ build_metric_panel <- function(data_subset, metric_column, strategy_name, limit_
     strategy_name == "random_cv"        ~ "Predictive: Random CV",
     strategy_name == "route_blocked_cv" ~ "Predictive: Route Blocked",
     strategy_name == "metso_holdout"    ~ "Predictive: METSO Holdout",
+    strategy_name == "north_south"      ~ "Predictive: North Holdout",
     TRUE                                ~ strategy_name
   )
   
@@ -169,7 +170,7 @@ if (nrow(pa_master) > 0) {
   pdf_pa <- file.path(base_dir, "model_fit_PA_comparison.pdf")
   pa_pages <- list()
   
-  all_strategies <- c("Full_Model", "random_cv", "route_blocked_cv", "metso_holdout")
+  all_strategies <- c("Full_Model", "route_blocked_cv", "metso_holdout", "north_south")
   shared_legend  = get_shared_legend(pa_master)
   
   # Page 1: Tjur R2 across all strategies
@@ -204,7 +205,7 @@ if (nrow(ca_master) > 0) {
   pdf_ca <- file.path(base_dir, "model_fit_AbuCP_comparison.pdf")
   ca_pages <- list()
   
-  all_strategies <- c("Full_Model", "random_cv", "route_blocked_cv", "metso_holdout")
+  all_strategies <- c("Full_Model", "route_blocked_cv", "metso_holdout", "north_south")
   shared_legend  = get_shared_legend(ca_master)
   
   # Page 1: SR2 across all strategies

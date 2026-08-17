@@ -39,7 +39,7 @@ source(file.path("code", "_utilities_hmsc_gpu.R"))
 set.seed(110724)
 
 # Define vector of strategies to plot
-validation_strategies <- c("route_blocked_cv", "metso_holdout", "random_cv")
+validation_strategies <- c("route_blocked_cv", "metso_holdout", "random_cv", "north_south")
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")
@@ -72,6 +72,8 @@ for (i in 1:nrow(run_config$mcmc)) {
     } else if (strategy == "route_blocked_cv") {
       label <- "cv_route"
     } else if (strategy == "random_cv") {
+      label <- "cv_random"
+    } else if (strategy == "north_south") {
       label <- "cv_random"
     }
     
