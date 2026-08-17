@@ -7,7 +7,7 @@ source("code/_utilities_hmsc_gpu.R")
 set.seed(11072024)
 
 # Define all strategies required for diagnosis (matches S04a)
-validation_strategies <- c("metso_holdout", "route_blocked_cv") #, "random_cv")
+validation_strategies <- c("metso_holdout", "north_south") # "route_blocked_cv") #, "random_cv")
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")
@@ -82,6 +82,8 @@ for(i in 1:nrow(mcmc_params)){
       label <- "cv_route"
     } else if (strategy == "random_cv") {
       label <- "cv_random"
+    } else if (strategy == "north_south") {
+      label <- "north_south"
     }
     
     # Check if cross-validation evaluation output file already exists
@@ -109,8 +111,10 @@ for(i in 1:nrow(mcmc_params)){
     # 4.3 Combined Import and Predict Loop
     for(p in 1:length(parts)){
       # p <- 2
-      if(strategy == "metso_holdout"){
-        if(p != 1) next
+      if(strategy == "metso_holdout" | strategy == "north_south" ){
+        if(p != 1){
+          next
+        }
       }
       
       message("    Importing and predicting fold: ", parts[p])
@@ -139,7 +143,12 @@ for(i in 1:nrow(mcmc_params)){
         predY <- array(NA, dim = c(hM_full$ny, hM_full$ns, postN))
       }
       
-      val_idx <- partition == parts[p] 
+      if(strategy == "metso_holdout" | strategy == "north_south" ){
+        val_idx <- partition == 2 
+      }else{
+        val_idx <- partition == parts[p] 
+      }
+      
       
       XData_val <- hM_full$XData[val_idx, , drop = FALSE]
       dfPi_val <- droplevels(hM_full$dfPi[val_idx, , drop = FALSE])
