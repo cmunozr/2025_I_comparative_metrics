@@ -17,6 +17,7 @@ master_fit_path   <- file.path(base_dir, "model_fit_master_all_metrics.csv")
 pa_model_dir  <- file.path(base_dir, "fbs_M016PA_thin_150_samples_1000_chains_4")
 acp_model_dir <- file.path(base_dir, "fbs_M016_thin_250_samples_1000_chains_4")
 
+output_csv <- file.path(base_dir, "diagnostic_models_df.csv")
 
 # Target focal model identifier
 focal_model_id <- "fbs_M016"
@@ -134,7 +135,6 @@ diagnostic_df <- diagnostic_df %>%
   mutate(across(starts_with("sum_beta"), ~tidyr::replace_na(.x, 0)))
 
 # Save comprehensive table
-output_csv <- file.path(base_dir, "diagnostic_models_df.csv")
 write.csv(diagnostic_df, output_csv, row.names = FALSE)
 message("Saved multi-strategy diagnostic dataset to: ", output_csv)
 
@@ -184,7 +184,7 @@ ui <- fluidPage(
 server <- function(input, output) {
   filtered_data <- reactive({
     if ("prev_clean" %in% colnames(df)) {
-      df %>% filter(prev_clean >= input$prev_filter)
+      df %>% dplyr::filter(prev_clean >= input$prev_filter)
     } else {
       df
     }
@@ -192,7 +192,9 @@ server <- function(input, output) {
   
   output$scatterPlot <- renderPlotly({
     req(input$x_var, input$y_var)
-    p <- ggplot(filtered_data(), aes_string(x = input$x_var, y = input$y_var, text = "species")) +
+    data <- filtered_data()
+    
+    p <- ggplot(data, aes(x = .data[[input$x_var]], y = .data[[input$y_var]], text = species)) +
       geom_point(size = 3, alpha = 0.7) +
       theme_minimal(base_size = 14) +
       labs(
@@ -202,15 +204,17 @@ server <- function(input, output) {
       )
     
     if (input$color_var != "None") {
-      p <- p + aes_string(color = input$color_var) +
+      p <- p + aes(color = .data[[input$color_var]]) +
         scale_color_viridis_d(option = "plasma", na.value = "grey50")
     }
     
-    # 1:1 Reference line for comparing validation holdouts
-    if ((grepl("AUC", input$x_var) && grepl("AUC", input$y_var)) || 
-        (grepl("SR2", input$x_var) && grepl("SR2", input$y_var)) ||
-        (grepl("RMSE", input$x_var) && grepl("RMSE", input$y_var)) ||
-        (grepl("TjurR2", input$x_var) && grepl("TjurR2", input$y_var))) {
+    # 1:1 Reference line for validation holdout comparisons
+    is_same_metric <- (grepl("AUC", input$x_var) && grepl("AUC", input$y_var)) || 
+      (grepl("SR2", input$x_var) && grepl("SR2", input$y_var)) ||
+      (grepl("RMSE", input$x_var) && grepl("RMSE", input$y_var)) ||
+      (grepl("TjurR2", input$x_var) && grepl("TjurR2", input$y_var))
+    
+    if (is_same_metric) {
       p <- p + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
     }
     
@@ -224,7 +228,7 @@ server <- function(input, output) {
     calc_stats <- function(df_in, var_name, group_col = NULL) {
       if (is.null(group_col)) {
         df_in %>%
-          summarise(
+          dplyr::summarise(
             Group    = "All Species (Total)",
             Variable = var_name,
             Mean     = mean(.data[[var_name]], na.rm = TRUE),
@@ -234,8 +238,8 @@ server <- function(input, output) {
           )
       } else {
         df_in %>%
-          group_by(.data[[group_col]]) %>%
-          summarise(
+          dplyr::group_by(.data[[group_col]]) %>%
+          dplyr::summarise(
             Variable = var_name,
             Mean     = mean(.data[[var_name]], na.rm = TRUE),
             SD       = sd(.data[[var_name]], na.rm = TRUE),
@@ -243,27 +247,34 @@ server <- function(input, output) {
             Max      = max(.data[[var_name]], na.rm = TRUE),
             .groups  = "drop"
           ) %>%
-          rename(Group = !!sym(group_col)) %>%
-          mutate(Group = as.character(Group))
+          dplyr::rename(Group = !!sym(group_col)) %>%
+          dplyr::mutate(Group = as.character(Group))
       }
     }
     
     total_x <- calc_stats(data, input$x_var)
     total_y <- calc_stats(data, input$y_var)
-    summary_table <- bind_rows(total_x, total_y)
+    summary_table <- dplyr::bind_rows(total_x, total_y)
     
     if (input$color_var != "None") {
       grouped_x <- calc_stats(data, input$x_var, input$color_var)
       grouped_y <- calc_stats(data, input$y_var, input$color_var)
-      summary_table <- bind_rows(summary_table, grouped_x, grouped_y)
+      summary_table <- dplyr::bind_rows(summary_table, grouped_x, grouped_y)
     }
     
-    summary_table %>% arrange(Variable, Group)
+    summary_table %>% dplyr::arrange(Variable, Group)
   }, digits = 4)
   
   output$dataTable <- renderDataTable({
+    req(input$x_var, input$y_var)
+    
+    cols_to_show <- c("species", input$x_var, input$y_var)
+    if (input$color_var != "None") {
+      cols_to_show <- c(cols_to_show, input$color_var)
+    }
+    
     filtered_data() %>%
-      select(species, input$x_var, input$y_var, any_of(input$color_var))
+      dplyr::select(dplyr::all_of(unique(cols_to_show)))
   }, options = list(pageLength = 10))
 }
 
