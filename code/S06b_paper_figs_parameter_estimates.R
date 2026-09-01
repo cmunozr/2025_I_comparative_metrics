@@ -3,6 +3,12 @@ library(tidyr)
 library(stringr)
 library(ggplot2)
 library(patchwork)
+library(readxl)
+library(scales)
+
+# -------------------------------------------------------------------------
+# 1. Variance Partitioning
+# -------------------------------------------------------------------------
 
 format_vp_csv <- function(file_path, model_type_label) {
   df_raw <- read.csv(file_path, row.names = 1, check.names = FALSE)
@@ -36,8 +42,8 @@ format_vp_csv <- function(file_path, model_type_label) {
 
 create_vp_boxplot_panel <- function(data_subset, 
                                     panel_title, 
-                                    fixed_color = "#E06666", 
-                                    random_color = "#2AA198", 
+                                    fixed_color = "#E69F00", 
+                                    random_color = "#0072B2", 
                                     group_order = NULL) {
   
   if (!is.null(group_order)) {
@@ -111,6 +117,215 @@ ggsave(
   plot = two_panel_vp,
   width = 190,
   height = 95,
+  units = "mm",
+  dpi = 500
+)
+
+# -------------------------------------------------------------------------
+# 2. Beta figure
+# -------------------------------------------------------------------------
+
+pa_file <- "models/fbs_M016PA_thin_150_samples_1000_chains_4/parameter_estimates/parameter_estimates_Beta.xlsx"
+pa_cov_keys <- "models/fbs_M016PA_thin_150_samples_1000_chains_4/parameter_estimates/covariate_key_table.csv"
+
+ab_file <- "models/fbs_M016_thin_250_samples_1000_chains_4/parameter_estimates/parameter_estimates_Beta.xlsx"
+ab_cov_keys <- "models/fbs_M016_thin_250_samples_1000_chains_4/parameter_estimates/covariate_key_table.csv"
+
+spp_data <- "models/diagnostic_models_df.csv"
+
+# Helper function to abbreviate scientific names and resolve colliding binomials
+disambiguate_species <- function(spp_vector) {
+  parts <- str_split(spp_vector, "\\s+", simplify = TRUE)
+  gen <- parts[, 1]
+  spe <- parts[, 2]
+  
+  # Standard 1-letter abbreviation
+  short_standard <- paste0(substr(gen, 1, 1), ". ", spe)
+  
+  # Identify collision cases (e.g., Poecile montanus vs Passer montanus)
+  dup_abbr <- short_standard[duplicated(short_standard)]
+  
+  # Apply 3-letter genus abbreviation specifically to colliding taxa
+  case_when(
+    short_standard %in% dup_abbr ~ paste0(substr(gen, 1, 3), ". ", spe),
+    TRUE ~ short_standard
+  )
+}
+
+# Prepare species lookup table from diagnostic data
+df_spp_traits <- read.csv(spp_data, stringsAsFactors = FALSE) %>%
+  select(species, Specialist) %>%
+  distinct() %>%
+  mutate(
+    species_short = disambiguate_species(species),
+    Specialist_group = factor(Specialist, levels = c("Generalist", "Specialist"))
+  )
+
+# Ordered factor levels: Generalists on top, Specialists below; A-Z top to bottom
+ordered_levels <- df_spp_traits %>%
+  arrange(Specialist_group, desc(species_short)) %>%
+  pull(species_short)
+
+# Data Preparation Function
+prepare_beta_data <- function(beta_path, key_path, part_label, spp_lookup, factor_levels) {
+  df_beta <- readxl::read_excel(beta_path)
+  df_keys <- read.csv(key_path, stringsAsFactors = FALSE)
+  
+  cov_col <- intersect(c("Original_Covariate", "Model_Covariate", "model_cov"), colnames(df_keys))[1]
+  idx_col <- intersect(c("Plot_Index", "index", "Index"), colnames(df_keys))[1]
+  inline_col <- intersect(c("Inline", "inline", "Inline_Label", "label"), colnames(df_keys))[1]
+  
+  if (is.na(cov_col) || is.na(idx_col)) {
+    stop(paste("Required columns not identified in:", key_path))
+  }
+  
+  # If Inline column is present, use it; otherwise fallback to Plot_Index
+  if (!is.na(inline_col)) {
+    df_keys <- df_keys %>%
+      rename(Original_Covariate = all_of(cov_col),
+             Plot_Index = all_of(idx_col),
+             Inline_Label = all_of(inline_col))
+  } else {
+    df_keys <- df_keys %>%
+      rename(Original_Covariate = all_of(cov_col),
+             Plot_Index = all_of(idx_col)) %>%
+      mutate(Inline_Label = Plot_Index)
+  }
+  
+  # Define conceptual covariate categories and ordering
+  cov_group_levels <- c("G1", "G2", "G3", "G4")
+  
+  df_keys <- df_keys %>%
+    filter(Original_Covariate != "(Intercept)") %>%
+    mutate(
+      Covariate_Group = case_when(
+        str_detect(Original_Covariate, "diameter|stand_age") ~ "G1",
+        str_detect(Original_Covariate, "broadleaves|volume_spruce") ~ "G2",
+        str_detect(Original_Covariate, "canopy_cover_whole|height|tree_extent|stand_length") ~ "G3",
+        str_detect(Original_Covariate, "tree_remove") ~ "G4",
+        TRUE ~ "Other"
+      ),
+      Covariate_Group = factor(Covariate_Group, levels = cov_group_levels)
+    )
+  
+  # Determine ordered factor levels for the x-axis
+  ordered_cov_labels <- df_keys %>%
+    arrange(Covariate_Group, as.numeric(str_extract(Plot_Index, "\\d+"))) %>%
+    pull(Inline_Label) %>%
+    unique()
+  
+  df_beta %>%
+    inner_join(df_keys, by = c("model_cov" = "Original_Covariate")) %>%
+    left_join(spp_lookup, by = c("Species" = "species")) %>%
+    filter(type != "Intercept") %>%
+    mutate(
+      model_part = part_label,
+      support_category = case_when(
+        support >= 0.80 ~ "+ Positive",
+        supportNeg >= 0.80 ~ "- Negative",
+        TRUE ~ "No Support"
+      ),
+      support_category = factor(
+        support_category,
+        levels = c("+ Positive", "No Support", "- Negative")
+      ),
+      Inline_Label = factor(Inline_Label, levels = ordered_cov_labels),
+      species_short = factor(species_short, levels = factor_levels)
+    )
+}
+
+# Load and process data
+df_pa <- prepare_beta_data(pa_file, pa_cov_keys, "Presence-Absence", df_spp_traits, ordered_levels)
+df_ab <- prepare_beta_data(ab_file, ab_cov_keys, "Conditional Abundance", df_spp_traits, ordered_levels)
+
+# High-contrast tonal palette matching the sign-support tiers
+support_palette <- c(
+  "+ Positive" = "#E69F00",
+  "No Support" = "#e5e5e5",
+  "- Negative" = "#0072B2"
+)
+
+# Custom Elsevier journal theme
+theme_elsevier_beta <- theme_classic(base_size = 9, base_family = "sans") +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.01),
+    panel.grid.major = element_line(color = "gray92", linewidth = 0.01),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8, color = "black"),
+    axis.text.y = element_text(face = "italic", size = 7, color = "black"),
+    axis.title = element_text(size = 9, face = "plain", color = "black"),
+    axis.ticks = element_line(color = "black", linewidth = 0.4),
+    plot.title = element_text(size = 9.5, face = "bold", hjust = 0, margin = margin(b = 5)),
+    strip.placement = "outside",
+    strip.background = element_rect(fill = "gray96", color = "black", linewidth = 0.04),
+    strip.text.y = element_text(size = 8.5, face = "bold", angle = 90),
+    strip.text.x = element_text(size = 8, face = "bold"),
+    panel.spacing.x = unit(1.5, "pt"),
+    panel.spacing.y = unit(2, "pt"),
+    legend.title = element_text(size = 8.5, face = "bold"),
+    legend.text = element_text(size = 7.5),
+    legend.key.size = unit(3.5, "mm"),
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.margin = margin(t = 0, r = 0, b = 0, l = 2)
+  )
+
+# Construct Biplot Panels
+p_pa <- ggplot(df_pa, aes(x = Inline_Label, y = species_short, fill = support_category)) +
+  geom_tile(color = "gray92", linewidth = 0.15, width = 1, height = 1) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0)) +
+  facet_grid(Specialist_group ~ Covariate_Group, scales = "free", space = "free", switch = "y") +
+  scale_fill_manual(values = support_palette, drop = FALSE, name = "Forest-structure\neffect") +
+  labs(title = "(a) Presence-Absence", x = NULL, y = NULL) +
+  theme_elsevier_beta +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+p_ab <- ggplot(df_ab, aes(x = Inline_Label, y = species_short, fill = support_category)) +
+  geom_tile(color = "gray92", linewidth = 0.15, width = 1, height = 1) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0)) +
+  facet_grid(Specialist_group ~ Covariate_Group, scales = "free", space = "free") +
+  scale_fill_manual(values = support_palette, drop = FALSE, name = "Posterior\nSupport") +
+  labs(title = "(b) Conditional Abundance", x = NULL, y = NULL) +
+  theme_elsevier_beta +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    strip.text.y = element_blank(),
+    strip.background.y = element_blank()
+  )
+
+# Combine panels with shared layout and legend
+biplot_beta_hurdle <- (p_pa + p_ab) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "right")
+
+# Wrapper with unified bottom x-axis title
+final_figure <- wrap_elements(biplot_beta_hurdle) +
+  labs(tag = "Forest-structure covariates") +
+  theme(
+    plot.tag.position = "bottom",
+    plot.tag = element_text(size = 9, face = "plain", hjust = 0.45, margin = margin(t = 2, b = 2))
+  )
+
+# Export
+ggsave(
+  filename = "models/hurdle_summary_figures/figure_beta_estimates_hurdle.pdf",
+  plot = final_figure,
+  width = 190,
+  height = 230,
+  units = "mm",
+  device = cairo_pdf
+)
+
+ggsave(
+  filename = "models/hurdle_summary_figures/figure_beta_estimates_hurdle.png",
+  plot = final_figure,
+  width = 190,
+  height = 230,
   units = "mm",
   dpi = 500
 )
