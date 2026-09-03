@@ -1,8 +1,7 @@
 #' DESCRIPTION:
 #' This script calculates site-level biodiversity metrics (Taxonomic & Functional)
-#' by comparing posterior predictions between matched Metso ( "Treatment") and 
-#' Business as usual -BAU- ("Control") stands.
-#' 
+#' by processing posterior predictions 
+#'  
 #' METHODOLOGY:
 #' 1. **Batching:** Splits the m matches into manageable chunks (default: 500).
 #' 2. **Lazy Loading:** Fetches posterior matrices from Arrow only for the active batch.
@@ -111,13 +110,11 @@ matches <- readRDS(file.path("data", "metso", "matched_pairs_utm.rds")) |>
   mutate(in_pred_control = standid_matched_control %in% pred_id_control, row_id = row_number()) |> 
   filter(in_pred_control == 1) 
 
-#matches <- matches[1:500, ]
-
 cat("Total matches to process:", nrow(matches), "\n")
 
 # 3. Worker function to process a match pair
 
-process_single_match <- function(idx, matches_df, pred_data_chunk, alpha, traits) {
+process_single_match <- function(idx, matches_df, pred_data_chunk, traits) {
   
   # 1. Get IDs for this specific match
   row_data <- matches_df[idx, ]
@@ -149,12 +146,10 @@ process_single_match <- function(idx, matches_df, pred_data_chunk, alpha, traits
   # 5. Run Metrics
   if(nrow(mat_metso) == nrow(mat_bau)) {
     res_df <- tryCatch({
-      # this function works only with expected = T predictions, in case of need expected = F it is needed another version
-      # rest of the code can be used as it is
+      # this function works only with expected = T predictions
       calculate_metrics_vectorized(
         predY_metso_mat = mat_metso, 
         predY_bau_mat = mat_bau, 
-        alpha = alpha,
         Traits = traits
       )
     }, error = function(e) return(NULL))
@@ -191,7 +186,6 @@ for(b_id in seq_along(batches)) {
   needed_stands <- unique(c(batch_matches$standid_treated, batch_matches$standid_matched_control))
   needed_utm    <- unique(c(batch_matches$UTM200_metso, batch_matches$UTM200_control))
   
-  #cat(sprintf("    -> Looking for %d stands (Metso and BAU) in %d UTM zones...\n", length(needed_stands), length(needed_utm)))
   # B. Collect data from Arrow 
   predY_chunk <- predY_ds |> 
     filter(utm_zone %in% needed_utm) |> 
@@ -199,7 +193,6 @@ for(b_id in seq_along(batches)) {
     select(scenario, standid, posterior, all_of(name_spp)) |> 
     collect()
   
-  #cat(sprintf("    -> Data Loaded! Chunk size: %s. Spawning 20 workers now...\n", format(object.size(predY_chunk), units="GB")))
   # C. Parallel Execution
   # mclapply uses forking on Linux, very memory efficient
   results <- mclapply(
@@ -209,7 +202,6 @@ for(b_id in seq_along(batches)) {
         idx = i, 
         matches_df = batch_matches, 
         pred_data_chunk = predY_chunk, 
-        alpha = 0.05, 
         traits = TrData_processed
       )
     },
