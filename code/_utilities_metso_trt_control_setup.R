@@ -56,7 +56,7 @@ eligible_5 <- cohort_years[
     cohort_year + 5 <= last_data_year
 ]
 
-eligible_5[, `:=`(event_horizon = 5L, year_event = cohort_year + 5L)]
+eligible_5[, `:=`(year_event = cohort_year + 5L)]
 
 # Process 6-year post-event horizons
 eligible_6 <- cohort_years[
@@ -64,37 +64,38 @@ eligible_6 <- cohort_years[
     cohort_year + 6 <= last_data_year
 ]
 
-eligible_6[, `:=`(event_horizon = 6L, year_event = cohort_year + 6L)]
+eligible_6[, `:=`(year_event = cohort_year + 6L)]
 
 # Combine both horizons into a unified tracking data table
 eligible_cohorts <- rbind(eligible_5, eligible_6) 
 
-# 2: Filter matched units and join temporal attributes
+# 2: Filter matched units and join attributes
 matched_units <- data.table::as.data.table(matched_units)
 
-# Merge mapping metrics to duplicate stacks qualifying for both targets
 matched_units_filtered <- matched_units |> 
   merge(
-    eligible_cohorts[, .(stack_id, event_horizon, year_event)],
+    eligible_cohorts[, .(stack_id, year_event)],
     by = "stack_id",
     all.y = TRUE
   )|> 
   dplyr::filter(
     stack_id %in% eligible_cohorts$stack_id
-  ) 
-
-# Allocate explicit treatment indicators using data.table infrastructure
-matched_units_filtered[, metso := data.table::fifelse(match_role == "treated", 1L, 0L)]
-
-matched_units_filtered <- matched_units_filtered |> 
-  as.data.frame() |> 
-  dplyr::rename(year = year_event) |>
-  dplyr::mutate(
-    standid = paste0(standid, "_", year, "_", event_horizon)
   ) |> 
+  mutate(metso = dplyr::if_else(match_role == "treated", 1L, 0L)) |> 
+  dplyr::rename(year = year_event) |>
   dplyr::filter(
     year %in% c(2009, 2011, 2013, 2015, 2017, 2019, 2021)
   )
+
+matched_units_filtered <- sp |> 
+  select(year, unit_stack_id, treespecies, ely_en, municip, regional_group, state) |> 
+  right_join(
+    matched_units_filtered,
+    by = c("unit_stack_id", "year") 
+  ) |> 
+  dplyr::mutate(
+    standid = paste0(standid, "_", year)
+    ) 
 
 data.table::fwrite(
   matched_units_filtered, 
