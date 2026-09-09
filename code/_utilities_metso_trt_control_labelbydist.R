@@ -30,7 +30,7 @@ control_stands_filtered <- control_stands[metso_stands_buf, ] |>
   pull(standid)
 
 stands <- stands |> 
-  mutate( in_2km_dist  = ifelse(standid %in% control_stands_filtered, yes = 1, no = 0))
+  mutate( in_2km_dist  = ifelse(standid %in% control_stands_filtered, yes = 1L, no = 0L))
 
 #------- creating spatial object
 
