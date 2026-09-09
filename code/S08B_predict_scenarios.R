@@ -54,13 +54,13 @@ if(sufix == "metso"){
   val = 0
 }
 
-test <- TRUE             # <--- Set to FALSE for full run
+test <- TRUE            # <--- Set to FALSE for full run
 expected_val <- TRUE
 
 if(test){
   batch_size <- 100      
   sampling_size <- 1000      
-  n_cores <- 2
+  n_cores <- 10
 }else{
   batch_size <- 4000
   n_cores <- 20
@@ -236,6 +236,10 @@ for(group in unique_groups) {
   }
 }
 
+if(test){
+  tasks <- tasks[1:10]
+}
+
 stopifnot(length(tasks) > 0)
 
 cat(sprintf("Created %d tasks across %d groups.\n", length(tasks), length(unique_groups)))
@@ -255,17 +259,18 @@ foreach(task = tasks,
                     "spatial_level_name", "pred_dir",
                     "expected_val", "sufix", "expected_string",
                     "alfa_matrix")) %dopar% {
-            
+          
+          # task <- tasks[[3]]  
           # Unpack task info
           idx <- task$indices
           group <- task$group
-          yr <- task$year
-          reg <- task$regional
+          yr <- task$year[1]
+          reg <- task$regional[1]
           #ely <-  task$ely
-          tr <-  task$trees
-          b_num <- task$batch_num
+          tr <-  task$trees[1]
+          b_num <- task$batch_num[1]
             
-          cat(sprintf("[%s] Worker %d: Processing UTM %s | Batch %d/%d (%d sites)...\n", 
+          cat(sprintf("[%s] Worker %d: Processing group %s | Batch %d/%d (%d sites)...\n", 
                         Sys.time(), Sys.getpid(), group, b_num, task$total_batches_group, length(idx)))
               
           # Slice Data
@@ -296,7 +301,7 @@ foreach(task = tasks,
               dimnames = dimnames(predY_PA)
             )
             
-            for (s in seq_len(n_samples)) {
+            for (s in seq_len(n_post)) {
               
               th_s <- alfa_matrix[, s]
               is_present <- sweep(predY_PA[, , s], 2, th_s, ">=")
@@ -309,8 +314,6 @@ foreach(task = tasks,
               
             }
             
-            # predY <- readRDS("results/predY_fbs_M008_batch_1.rds") |> simplify2array()
-              
             batch_ids <- task$sp_df_batch
                 
             # We need to convert the 3D array to a 2D Data Frame.
@@ -329,7 +332,7 @@ foreach(task = tasks,
             predY <- as.data.frame(predY)
               
             # Fix column names (Species names)
-            colnames(predY) <- colnames(hM$Y)
+            colnames(predY) <- colnames(hM_PA$Y)
               
             # E. Add ID Columns
             # Construct the IDs to match the order of the wide matrix
@@ -347,8 +350,7 @@ foreach(task = tasks,
               mutate(
                 standid = site_ids_rep,
                 posterior = post_ids_rep
-              ) |>
-              relocate(standid, posterior, year) 
+              )
               
             # --- MANUAL DATASET CREATION ---
              
