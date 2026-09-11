@@ -1185,3 +1185,97 @@ construct_hmsc_XData <- function(folder_name,
   
   return(invisible(NULL))
 }
+
+#-------------------------------
+#' Construct Model Matrix with Projected Orthogonal Polynomials
+#'
+#' @description
+#' Generates an explicit design matrix for prediction by projecting new data 
+#' onto the orthogonal polynomial bases established during HMSC model training. 
+#' Adds the intercept column and binds non-polynomial predictor variables to 
+#' align with the exact column specifications and order of `hM$X`. Otherwise,
+#' orthogonal transformation will just depend on the group of data associated.
+#'
+#' @param df A `data.frame` containing aligned and imputed stand-level prediction 
+#'   covariates, including raw temperature variables (`mean_temperature_yr_last` 
+#'   and `mean_temperature_yr`).
+#' @param hM A fitted `Hmsc` model object (e.g., `hM_PA` or `hM_aCp`) containing 
+#'   the training data in `hM$XData` and the target design matrix column names in `colnames(hM$X)`.
+#'
+#' @details
+#' Second-degree orthogonal polynomials for `mean_temperature_yr_last` and 
+#' `mean_temperature_yr` are derived from `hM$XData`. The prediction data in `df` 
+#' are then evaluated using `stats::predict.poly()`, ensuring identical center and 
+#' scale parameters are preserved without data leakage or basis distortion.
+#'
+#' @return A `data.frame` representing the design matrix with an `(Intercept)` column, 
+#'   covariate columns, and orthogonal polynomial expansions, named and ordered 
+#'   identically to `colnames(hM$X)`.
+#'
+#' @seealso [prepare_prediction_xdata()], [stats::poly()], [stats::predict.poly()]
+#' @keywords internal
+#' 
+build_manual_poly_matrix <- function(df, hM) {
+  
+  og1 <- poly(hM$XData$mean_temperature_yr_last, degree = 2)
+  og2 <- poly(hM$XData$mean_temperature_yr, degree = 2)
+  
+  
+  trans1 <- predict(og1, df$mean_temperature_yr_last)
+  trans2 <- predict(og2, df$mean_temperature_yr)
+  
+  mat_out <- data.frame(
+    "(Intercept)" = 1,
+    df,
+    trans1[, 1],
+    trans1[, 2],
+    trans2[, 1],
+    trans2[, 2],
+    check.names = FALSE
+  )
+  
+  colnames(mat_out) <- colnames(hM$X)
+  
+  return(mat_out)
+}
+
+#' Prepare and Align Stand-Level Covariates for HMSC Prediction
+#'
+#' @description
+#' Harmonizes prediction stand covariates with an HMSC model's training structure 
+#' by imputing unmeasured survey covariates using reference baseline values (mean), 
+#' enforcing categorical factor levels to match the training template, and 
+#' transforming continuous variables into orthogonal polynomial expansions.
+#'
+#' @param stand_data A `data.frame` of stand-level predictors extracted for prediction stands.
+#' @param ref_vals A named `list` of baseline/reference values (e.g., training means 
+#'   or reference factor levels) for variables present during model fitting but absent 
+#'   in `stand_data`.
+#' @param ref_template A `data.frame` representing the original training covariates 
+#'   (typically `hM$XData`) used to match factor levels and column attributes.
+#' @param hM A fitted `Hmsc` model object (e.g., `hM_PA`) containing the original training 
+#'   state and design matrix configurations.
+#'
+#' @return A `data.frame` formatted as a design matrix ready for HMSC batch prediction, 
+#'   with column structure, factor levels, and orthogonal polynomial bases matching 
+#'   the fitted model `hM`.
+#'
+#' @export
+
+prepare_prediction_xdata <- function(stand_data, ref_vals, ref_template, hM) {
+  df_out <- stand_data
+  
+  for (nm in names(ref_vals)) {
+    df_out[[nm]] <- ref_vals[[nm]]
+  }
+  
+  for (nm in colnames(ref_template)) {
+    if (is.factor(ref_template[[nm]])) {
+      df_out[[nm]] <- factor(df_out[[nm]], levels = levels(ref_template[[nm]]))
+    }
+  }
+  
+  res <- build_manual_poly_matrix(df = df_out, hM = hM)
+  
+  return(res)
+}

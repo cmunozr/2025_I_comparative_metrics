@@ -4,10 +4,11 @@ library(jsonify)
 library(dplyr)
 source("code/config_model.R")
 source("code/_utilities_hmsc_gpu.R")
+source(file.path("code", "_utilities_transform_covariates.R"))
 set.seed(11072024)
 
 # Define all strategies required for diagnosis (matches S04a)
-validation_strategies <- c("metso_holdout", "north_south") # "route_blocked_cv") #, "random_cv")
+validation_strategies <- c("metso_holdout", "north_south", "route_blocked_cv") #, "random_cv")
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")
@@ -35,6 +36,9 @@ for(i in 1:nrow(mcmc_params)){
   hM_full <- readRDS(fitted_model_path)
   
   hM_full <- Hmsc::alignPosterior(hM_full)
+  
+  XData <- hM_full$XData
+  X <- build_manual_poly_matrix(XData, hM_full)
   
   dir_fit <- file.path(models_dir, base_model_name, "model_fit") 
   dir.create(dir_fit, showWarnings = FALSE, recursive = TRUE)
@@ -70,7 +74,7 @@ for(i in 1:nrow(mcmc_params)){
     message("  WAIC and Explanatory Model Fit files already exist. Skipping full model processing.")
   }
   
-  #--- cross validation evaluation
+  #--- evaluation
   for(strategy in validation_strategies) {
     # strategy <- "route_blocked_cv"
     message(paste0("\n  Processing strategy: ", strategy))
@@ -86,7 +90,7 @@ for(i in 1:nrow(mcmc_params)){
       label <- "north_south"
     }
     
-    # Check if cross-validation evaluation output file already exists
+    # Check if evaluation output file already exists
     mf_output_path <- file.path(dir_fit, paste0("mfeval_", base_model_name, "_", label, "_", ".rds"))
     if (file.exists(mf_output_path)) {
       message("    Evaluation file already exists for ", label, ". Skipping strategy execution loop.")
@@ -110,7 +114,7 @@ for(i in 1:nrow(mcmc_params)){
     
     # 4.3 Combined Import and Predict Loop
     for(p in 1:length(parts)){
-      # p <- 2
+      # p <- 1
       if(strategy == "metso_holdout" | strategy == "north_south" ){
         if(p != 1){
           next
@@ -150,7 +154,7 @@ for(i in 1:nrow(mcmc_params)){
       }
       
       
-      XData_val <- hM_full$XData[val_idx, , drop = FALSE]
+      X_val <- X[val_idx, , drop = FALSE]
       dfPi_val <- droplevels(hM_full$dfPi[val_idx, , drop = FALSE])
       
       # Execution routing block for predictive processing
@@ -173,9 +177,10 @@ for(i in 1:nrow(mcmc_params)){
         parallel::clusterEvalQ(cl, library(Hmsc))
         
         pred_fold_chunks <- parallel::parLapply(cl, post_chunks, function(single_chunk) {
+          # single_chunk <- post_chunks[[1]]
           predict(object = m_fold, 
                   post = single_chunk,
-                  XData = XData_val, 
+                  X = X_val, 
                   studyDesign = dfPi_val, 
                   mcmcStep = 1, 
                   expected = TRUE,

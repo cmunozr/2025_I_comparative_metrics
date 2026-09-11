@@ -1,28 +1,38 @@
 #' DESCRIPTION:
-#' This script generates batch-processed spatial predictions for HMSC models.
-#' It splits treated (Metso) and control stands into UTM-based chunks to 
-#' parallelize the heavy posterior sampling and saves the results into a 
-#' partitioned Parquet data lake for easy comparison.
+#' This script generates parallelized, batch-processed spatial hurdle predictions 
+#' for HMSC models across forest stands (Metso/treated or BAU/control).
+#' It segments stands into stratified groups (year, regional_group, treespecies) 
+#' and processes them in manageable site batches across multiple CPU cores. 
+#' The resulting posterior hurdle predictions are saved into a Hive-partitioned 
+#' Parquet dataset.
 #'
 #' METHODOLOGY:
-#' - Parallelism: Uses 'doParallel' and 'foreach' for multi-core acceleration.
-#' - Batching: Spatial data is segmented by UTM zones and sub-divided into 
-#'   manageable row-counts (batch_size) to optimize memory overhead.
-#' - Storage: Implements a Hive-style partitioned directory structure for 
-#'   Parquet exports (modelid / expected_type / year / utm_zone / scenario).
-#' - Geometry: Centroid-based prediction with S2 geometry disabled for 
-#'   planar coordinate consistency.
+#' - Hurdle Construction: Independent predictions are generated for PA (hM_PA) and 
+#'   aCp (hM_aCp). For each posterior sample, species PA probabilities are compared 
+#'   against an alpha threshold matrix (e.g., Minimum Training Presence, MTP); values 
+#'   below threshold are zeroed out, PA probabilities >= alfa are multiplied 
+#'   by conditional abundances to produce the hurdle prediction.
+#' - Stratification & Batching: Stands are grouped by (year, regional_group, treespecies) 
+#'   and chunked by 'batch_size' to optimize memory during posterior sampling.
+#' - Covariate Alignment: Stand-level covariates are expanded to match model training 
+#'   specifications by imputing missing survey covariates with mean baseline values.
+#' - Geometry: Stand polygons are reduced to centroids, projected to WGS 84 (EPSG:4326).
+#' - Storage: Predictions are written as individual batch Parquet files in a Hive-style 
+#'   partition hierarchy: modelid / expected_type / year / reg / trees / scenario.
+#' - Parallelism: Multi-core cluster execution handled via 'doParallel' and 'foreach'.
 #'
 #' INPUTS:
-#' - HMSC Model: Fitted model object (.rds) located via 'config_model.R'.
-#' - Spatial Data: 'treatment_control_stand_v2.gpkg' and UTM zone lookups.
-#' - Covariates: 'XData_hmsc_[sufix]_[model_id].rds'.
-#' - Matched Pairs: 'matched_pairs.rds' for treated/control filtering.
+#' - HMSC Models: Fitted model RDS files for PA ('hM_PA') and aCp ('hM_aCp').
+#' - Model Config: 'code/config_model.R' defining 'model_id'.
+#' - Threshold Matrix: 'results/alfa_matrix.rds' (species x posterior thresholds).
+#' - Spatial Data: Stand polygons from 'data/metso/treatment_control_stand_v4.gpkg'.
+#' - Covariates: Extracted predictor RDS at 'data/covariates/XData_hmsc_[sufix]_[model_id].rds'.
 #'
 #' OUTPUTS:
-#' - Predictions: Hive-partitioned Parquet files (one per batch).
-#' - Geometries: 'sites_geometry_[sufix].parquet'.
-#' - Metadata: 'matched_pairs_utm.rds' and prediction ID trackers.
+#' - Predictions: Hive-partitioned Parquet files ('part_batch[B].parquet').
+#' - Geometries: Centroid point layer saved as 'results/point_geometry_[sufix].parquet'.
+#' - Metadata: 'matched_pairs_groups_[sufix].rds' and sampled IDs at 'pred_ids_[sufix].rds'.
+#' - Logs: 'ERROR_group_[...].txt' files on failed worker tasks..
 
 
 library(Hmsc)
@@ -36,6 +46,7 @@ library(sfarrow)
 library(abind)
 
 source(file.path("code", "config_model.R"))
+source(file.path("code", "_utilities_transform_covariates.R"))
 modelid <- run_config$model_id
 
 if(!(Sys.getenv("RSTUDIO") == "1")){
@@ -54,7 +65,7 @@ if(sufix == "metso"){
   val = 0
 }
 
-test <- TRUE            # <--- Set to FALSE for full run
+test <- FALSE            # <--- Set to FALSE for full run
 expected_val <- TRUE
 
 if(test){
@@ -168,30 +179,17 @@ for (col in missing_cols) {
   }
 }
 
-# Function to expand any stand-level batch (XData_sub) with the constant reference survey covariates
-prepare_prediction_xdata <- function(stand_data, ref_vals, ref_template) {
-  df_out <- stand_data
-  for (nm in names(ref_vals)) {
-    df_out[[nm]] <- ref_vals[[nm]]
-  }
-  # Ensure column order and factor levels match the training set exactly
-  for (nm in colnames(ref_template)) {
-    if (is.factor(ref_template[[nm]])) {
-      df_out[[nm]] <- factor(df_out[[nm]], levels = levels(ref_template[[nm]]))
-    }
-  }
-  return(df_out)
-}
-
 XData <- prepare_prediction_xdata(
   stand_data = XData, 
   ref_vals = ref_values, 
-  ref_template = XData_survey
+  ref_template = XData_survey,
+  hM = hM_PA
 )
+
 
 #-----------------------------
 
-# 2. CREATE TASK LIST (Organized by UTM)
+# 2. CREATE TASK LIST (Organized by group)
 
 cat(sprintf("[%s] Generating Task List organized by groups...\n", Sys.time()))
 
@@ -244,6 +242,8 @@ stopifnot(length(tasks) > 0)
 
 cat(sprintf("Created %d tasks across %d groups.\n", length(tasks), length(unique_groups)))
 
+#--------------------------
+
 # 3. PARALLEL EXECUTION
 
 start_time <- Sys.time()
@@ -260,7 +260,7 @@ foreach(task = tasks,
                     "expected_val", "sufix", "expected_string",
                     "alfa_matrix")) %dopar% {
           
-          # task <- tasks[[3]]  
+          # task <- tasks[[2]]  
           # Unpack task info
           idx <- task$indices
           group <- task$group
@@ -284,7 +284,8 @@ foreach(task = tasks,
           tryCatch({
             # Predict
             Gradient <- prepareGradient(hM_PA, XDataNew = XData_sub, sDataNew = sDataNew_sub)
-            predY_PA <- predict(hM_PA, Gradient = Gradient, expected = expected_val, predictEtaMean = TRUE) |> 
+            predY_PA <- predict(object = hM_PA, X = Gradient$XDataNew, ranLevels = Gradient$rLNew, 
+                                studyDesign = Gradient$studyDesignNew, expected = expected_val, predictEtaMean = TRUE) |> 
               simplify2array()
             
             Gradient <- prepareGradient(hM_aCp, XDataNew = XData_sub, sDataNew = sDataNew_sub)
@@ -385,7 +386,7 @@ foreach(task = tasks,
             }, error = function(e) {
               err_msg <- as.character(e)
               cat(sprintf("ERROR in group %s Batch %d: %s\n", group, b_num, err_msg))
-              writeLines(err_msg, file.path(pred_dir, paste0("ERROR_UTM_", sufix, group, "_batch_", b_num, ".txt")))
+              writeLines(err_msg, file.path(pred_dir, paste0("ERROR_group_", sufix, group, "_batch_", b_num, ".txt")))
             })
           
           NULL
