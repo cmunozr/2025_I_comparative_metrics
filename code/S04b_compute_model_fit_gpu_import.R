@@ -7,6 +7,8 @@ source("code/_utilities_hmsc_gpu.R")
 source(file.path("code", "_utilities_transform_covariates.R"))
 set.seed(11072024)
 
+message("    Start time: ", timestamp())
+
 # Define all strategies required for diagnosis (matches S04a)
 validation_strategies <- c("metso_holdout", "north_south", "route_blocked_cv") #, "random_cv")
 
@@ -154,7 +156,7 @@ for(i in 1:nrow(mcmc_params)){
       }
       
       
-      X_val <- X[val_idx, , drop = FALSE]
+      X_val <- as.matrix(X[val_idx, , drop = FALSE])
       dfPi_val <- droplevels(hM_full$dfPi[val_idx, , drop = FALSE])
       
       # Execution routing block for predictive processing
@@ -171,7 +173,7 @@ for(i in 1:nrow(mcmc_params)){
         
         # Export 
         parallel::clusterExport(cl, 
-                                varlist = c("m_fold", "XData_val", "dfPi_val"), 
+                                varlist = c("m_fold", "X_val", "dfPi_val"), 
                                 envir = environment())
         
         parallel::clusterEvalQ(cl, library(Hmsc))
@@ -203,7 +205,7 @@ for(i in 1:nrow(mcmc_params)){
         
         pred_fold <- predict(m_fold, 
                              post = postList_fold, 
-                             XData = XData_val, 
+                             X = X_val, 
                              studyDesign = dfPi_val, 
                              mcmcStep = 1, 
                              expected = TRUE)
@@ -214,7 +216,7 @@ for(i in 1:nrow(mcmc_params)){
       }
       
       # memory cleanup per fold
-      rm(m_fold, postList_fold, XData_val, dfPi_val)
+      rm(m_fold, postList_fold, X_val, dfPi_val)
       gc()
     }
     

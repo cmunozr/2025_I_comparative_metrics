@@ -49,6 +49,10 @@ source(file.path("code", "config_model.R"))
 source(file.path("code", "_utilities_transform_covariates.R"))
 modelid <- run_config$model_id
 
+start_time <- timestamp()
+
+message("    Start time: ", timestamp())
+
 if(!(Sys.getenv("RSTUDIO") == "1")){
     setwd(here::here()) 
 }
@@ -65,7 +69,7 @@ if(sufix == "metso"){
   val = 0
 }
 
-test <- FALSE            # <--- Set to FALSE for full run
+test <- TRUE            # <--- Set to FALSE for full run
 expected_val <- TRUE
 
 if(test){
@@ -246,8 +250,6 @@ cat(sprintf("Created %d tasks across %d groups.\n", length(tasks), length(unique
 
 # 3. PARALLEL EXECUTION
 
-start_time <- Sys.time()
-
 cat(sprintf("Initializing parallel cluster with %d cores...\n", n_cores))
 cl <- makeCluster(n_cores, outfile = "") # outfile="" prints worker output to console
 registerDoParallel(cl)
@@ -260,7 +262,7 @@ foreach(task = tasks,
                     "expected_val", "sufix", "expected_string",
                     "alfa_matrix")) %dopar% {
           
-          # task <- tasks[[2]]  
+          # task <- tasks[[1]]  
           # Unpack task info
           idx <- task$indices
           group <- task$group
@@ -284,12 +286,13 @@ foreach(task = tasks,
           tryCatch({
             # Predict
             Gradient <- prepareGradient(hM_PA, XDataNew = XData_sub, sDataNew = sDataNew_sub)
-            predY_PA <- predict(object = hM_PA, X = Gradient$XDataNew, ranLevels = Gradient$rLNew, 
+            predY_PA <- predict(object = hM_PA, X = as.matrix(Gradient$XDataNew), ranLevels = Gradient$rLNew, 
                                 studyDesign = Gradient$studyDesignNew, expected = expected_val, predictEtaMean = TRUE) |> 
               simplify2array()
             
             Gradient <- prepareGradient(hM_aCp, XDataNew = XData_sub, sDataNew = sDataNew_sub)
-            predY_aCP <- predict(hM_aCp, Gradient = Gradient, expected = expected_val, predictEtaMean = TRUE) |> 
+            predY_aCP <-  predict(object = hM_aCp, X = as.matrix(Gradient$XDataNew), ranLevels = Gradient$rLNew, 
+                                  studyDesign = Gradient$studyDesignNew, expected = expected_val, predictEtaMean = TRUE) |> 
               simplify2array()
             
             n_sites_batch   <- dim(predY_PA)[1]
@@ -394,9 +397,4 @@ foreach(task = tasks,
 
 stopCluster(cl)
 
-end_time <- Sys.time()
-total_time <- end_time - start_time
-
-cat(sprintf("[%s] Done. Total time: %s\n", 
-            Sys.time(), 
-            format(total_time, digits = 2)))
+message("    End time: ", timestamp())
