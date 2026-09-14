@@ -39,7 +39,7 @@ source(file.path("code", "_utilities_hmsc_gpu.R"))
 set.seed(110724)
 
 # Define vector of strategies to plot
-validation_strategies <- c("route_blocked_cv", "metso_holdout", "random_cv", "north_south")
+validation_strategies <- c("route_blocked_cv", "metso_holdout", "north_south")
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")

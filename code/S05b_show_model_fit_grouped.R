@@ -230,13 +230,12 @@ get_shared_legend <- function(data_subset) {
   return(tmp$grobs[[leg_idx]])
 }
 
-# =========================================================================
-# 6. VISUALIZATIONS: PRESENCE-ABSENCE MODELS
-# =========================================================================
+# 6. Visualizations: presence-absence models
+
 pa_master <- master_df %>% filter(Model_Type == "Presence-Absence")
 
 if (nrow(pa_master) > 0) {
-  message("Generating metric-focused layout for Presence-Absence...")
+
   pdf_pa <- file.path(base_dir, "model_fit_PA_comparison.pdf")
   pa_pages <- list()
   
@@ -265,13 +264,12 @@ if (nrow(pa_master) > 0) {
     ggsave(filename = pdf_pa, width = 14, height = 5.5)
 }
 
-# =========================================================================
-# 7. VISUALIZATIONS: CONTINUOUS ABUNDANCE MODELS
-# =========================================================================
+# 7. Visualizations: continuos abundance models
+
 ca_master <- master_df %>% filter(Model_Type == "Continuous Abundance")
 
 if (nrow(ca_master) > 0) {
-  message("Generating metric-focused layout for Continuous Abundance...")
+
   pdf_ca <- file.path(base_dir, "model_fit_AbuCP_comparison.pdf")
   ca_pages <- list()
   
