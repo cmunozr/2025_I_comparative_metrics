@@ -49,9 +49,7 @@ source(file.path("code", "config_model.R"))
 source(file.path("code", "_utilities_transform_covariates.R"))
 modelid <- run_config$model_id
 
-start_time <- timestamp()
-
-message("    Start time: ", timestamp())
+message("    Start time: ", Sys.time())
 
 if(!(Sys.getenv("RSTUDIO") == "1")){
     setwd(here::here()) 
@@ -69,7 +67,7 @@ if(sufix == "metso"){
   val = 0
 }
 
-test <- TRUE            # <--- Set to FALSE for full run
+test <- TRUE           # <--- Set to FALSE for full run
 expected_val <- TRUE
 
 if(test){
@@ -78,7 +76,7 @@ if(test){
   n_cores <- 10
 }else{
   batch_size <- 4000
-  n_cores <- 20
+  n_cores <- max(1, floor(parallel::detectCores() / 2))
 }
 
 # alfa matrix
@@ -97,9 +95,24 @@ hM_aCp <- readRDS(fitted_full_model_path_aCp)
 
 # 1. SETUP & DATA LOADING
 
-cat(sprintf("[%s] Starting setup \n", Sys.time()))
+os <- Sys.info()['sysname']
 
-pred_dir <- file.path("results", "predictions")
+if (os == "Windows") {
+  wr_dir <- "results"
+} else if (os %in% c("Linux", "Darwin")) {
+  is_lema <- Sys.info()["nodename"] == "lema" || dir.exists("/scratch/lema/tmp/munozcs")
+  
+  if (is_lema) {
+    wr_dir <- "/scratch/lema/tmp/munozcs/results"
+  } else {
+    wr_dir <- here::here("results")
+  }
+}
+
+if(!dir.exists(wr_dir)) dir.create(wr_dir, recursive = TRUE)
+
+pred_dir <- file.path(wr_dir, "predictions")
+
 if(!dir.exists(pred_dir)) dir.create(pred_dir, recursive = TRUE, showWarnings = FALSE)
 
 expected_string <- if(expected_val) "_expected_true" else "_expected_false"
@@ -145,7 +158,7 @@ coords <- st_coordinates(sp_df) |>
   as.data.frame()
 
 # Save matches
-saveRDS(matches, file.path("results", paste0("matched_pairs_groups", "_", sufix, ".rds")))
+saveRDS(matches, file.path(wr_dir, paste0("matched_pairs_groups", "_", sufix, ".rds")))
 
 # Save IDs used for this run
 saveRDS(sp_df$standid, file = pred_id_file)
@@ -153,7 +166,7 @@ saveRDS(sp_df$standid, file = pred_id_file)
 # save geometries
 sp_df |> 
   dplyr::select(standid) |> 
-  st_write_parquet(file.path("results", paste0("point_geometry_", sufix, ".parquet")))
+  st_write_parquet(file.path(wr_dir, paste0("point_geometry_", sufix, ".parquet")))
 
 # test Logic (Test Mode), select just some sites
 if(test ){
@@ -250,8 +263,19 @@ cat(sprintf("Created %d tasks across %d groups.\n", length(tasks), length(unique
 
 # 3. PARALLEL EXECUTION
 
+# Change temporal directory for arrow
+if (is_lema) {
+  Sys.setenv(TMPDIR = "/scratch/lema/tmp/munozcs/Rtmp")
+}
+
+cl <- makeCluster(n_cores, outfile = "")
 cat(sprintf("Initializing parallel cluster with %d cores...\n", n_cores))
-cl <- makeCluster(n_cores, outfile = "") # outfile="" prints worker output to console
+worker_tmp <- if (is_lema) "/scratch/lema/tmp/munozcs/Rtmp" else tempdir()
+clusterExport(cl, "worker_tmp")
+clusterEvalQ(cl, {
+  if (!dir.exists(worker_tmp)) dir.create(worker_tmp, recursive = TRUE, showWarnings = FALSE)
+  Sys.setenv(TMPDIR = worker_tmp)
+})
 registerDoParallel(cl)
 
 
@@ -397,4 +421,4 @@ foreach(task = tasks,
 
 stopCluster(cl)
 
-message("    End time: ", timestamp())
+message("    End time: ", Sys.time())
