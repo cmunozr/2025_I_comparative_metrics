@@ -5,16 +5,16 @@ author:
   - name: "Carlos Muñoz"
     email: carlos_jair.munoz@cec.lu.se
     affiliations: 
-      - ref: CEC
+      - ref: MGEO
 
 affiliations:
-  - id: CEC
-    name: Centre for Environmental and Climate Science, Lund University
-    department: Centre for Environmental and Climate Science 
-    address: Kontaktvägen 10
+  - id: MGEO
+    name: Eart and Environmental Science, Lund University
+    department: Eart and Environmental Science 
+    address: Geocentrum II, Solvegatan 12
     city: Lund
     postal-code: 22362
-    url: https://www.cec.lu.se/home
+    url: https://www.mgeo.lu.se/
    
 format:
   html:
@@ -148,6 +148,7 @@ run_download_mactavish <- F
 run_get_finbif <- F
 run_itis_routes <- F
 run_itis_bakx <- F
+run_export_species_ranges <- T
 filter_rare_spp <- F
 run_polygon_buffers <- F
 run_calculate_XData <- F
@@ -419,6 +420,34 @@ harmonized_species$submittedname_bakx[!harmonized_species$in_routes]
 ```{r}
 occurr_sect_route <- occurr_sect_route |> 
   left_join(harmonized_species, by = "taxonId") 
+```
+
+#### Saving complete data for selected species to create M
+
+```{r}
+if (run_export_species_ranges) {
+  # Exports all-time historical occurrences for spatial range M
+  
+  target_spp_vec <- harmonized_species |> 
+    filter(in_bakx == TRUE, in_routes == TRUE) |> 
+    pull(acceptedName)
+
+  fbs_historic_target_occ <- occurr_sect_route |> 
+    filter(pairCount > 0, acceptedName %in% target_spp_vec) |> 
+    distinct(acceptedName, vakio, year) |> 
+    left_join(
+      coords |> 
+        st_centroid() |> 
+        st_transform(3067) |> 
+        dplyr::select(vakio),
+      by = "vakio"
+    ) |> 
+    filter(!st_is_empty(geometry)) |> 
+    st_as_sf()
+
+  saveRDS(fbs_historic_target_occ, file.path("data", "fbs", "fbs_historic_target_spp_occurrences.rds"))
+
+}
 ```
 
 ### Forest biotope
