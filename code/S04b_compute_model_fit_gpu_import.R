@@ -64,7 +64,7 @@ for(i in 1:nrow(mcmc_params)){
     if (!file.exists(expl_output_path)) {
       predY_full <- predict(hM_full, expected = TRUE)
       predY_full <- simplify2array(predY_full)
-      MF_explanatory <- Hmsc::evaluateModelFit(hM = hM_full, predY = predY_full)
+      MF_explanatory <- evaluateModelFitRobust(hM = hM_full, predY = predY_full)
       saveRDS(MF_explanatory, file = expl_output_path)
       message("    Explanatory Model Fit saved to: ", expl_output_path)
       rm(predY_full, MF_explanatory)
