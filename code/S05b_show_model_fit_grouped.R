@@ -16,22 +16,8 @@ reference_fitted_model <- file.path(
   "fitted_fbs_M016PA_thin_150_samples_1000_chains_4.rds"
 )
 
-if (file.exists(reference_fitted_model)) {
-  hm_ref <- readRDS(reference_fitted_model)
-  species_names <- colnames(hm_ref$Y)
-  message("Extracted ", length(species_names), " species names from reference model.")
-} else {
-  # Fallback: search for any fitted model RDS file in base_dir
-  fitted_files <- list.files(base_dir, pattern = "^fitted_.*\\.rds$", recursive = TRUE, full.names = TRUE)
-  if (length(fitted_files) > 0) {
-    hm_ref <- readRDS(fitted_files[1])
-    species_names <- colnames(hm_ref$Y)
-    message("Extracted ", length(species_names), " species names from: ", basename(fitted_files[1]))
-  } else {
-    species_names <- NULL
-    warning("No fitted Hmsc object found. Defaulting to numeric indices.")
-  }
-}
+hm_ref <- readRDS(reference_fitted_model)
+species_names <- colnames(hm_ref$Y)
 
 # Define cross-validation / hold-out strategies to inspect
 validation_strategies <- c("route_blocked_cv", "metso_holdout", "north_south") 
@@ -175,7 +161,7 @@ if (nrow(master_df) > 0) {
 }
 
 # --- 5. Panel Builder Object ---
-build_metric_panel <- function(data_subset, metric_column, strategy_name, limit_y) {
+build_metric_panel <- function(data_subset = pa_master, metric_column = "AUC", strategy_name = "north_south", limit_y = c(0.45, 1)) {
   if (!metric_column %in% colnames(data_subset)) return(NULL)
   
   strat_data <- data_subset %>% filter(Strategy == strategy_name)
