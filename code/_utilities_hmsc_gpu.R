@@ -464,77 +464,126 @@ import_posterior <- function(mcmc = mcmc_i, config = run_config, run_nm = run_na
 
 c.Hmsc <- getS3method("c","Hmsc")
 
-#' @title Robust Evaluation of Model Fit for Hmsc Models
+#' @title Robust Evaluation of Model Fit for Hmsc Models (Extended Calibration & Precision)
 #'
-#' @description error-tolerant based on \code{Hmsc::evaluateModelFit}. 
-#' This version is specifically optimized for non-random cross-validation schemes (such as the METSO-domain 
-#' hold-out or route-blocked CV) where zero-variance slices trigger computation crashes.
+#' @description Error-tolerant evaluation extending Hmsc::evaluateModelFit.
+#' Optimized for non-random cross-validation schemes (such as METSO-domain hold-out,
+#' route-blocked CV, or north-south splits) where zero-variance slices trigger computation crashes.
+#' Implements the unified 5-dimension diagnostic framework:
+#' - Discrimination: AUC, Tjur R2, Spearman R2
+#' - Accuracy: Brier score, MAE, RMSE
+#' - Calibration of Level: Mean/Prevalence ratio
+#' - Calibration of Dispersion: Calibration slope (binary), IQR ratio (abundance)
+#' - Precision: Mean 90% posterior credible interval width
 #'
-#' Same parameters as in \code{Hmsc::evaluateModelFit}.
-#' @param hM A fitted \code{Hmsc} model object.
-#' @param predY Array of predictions, typically a posterior sample array.
+#' @param hM A fitted Hmsc model object.
+#' @param predY Array of predictions with dimensions [ny, ns, postN].
+#' @param prob_ci Numeric scalar for the credible interval coverage. Default is 0.90.
 #'
-#' @details This function introduces modifications to AUC and TJUR diagnostic functions 
-#' \itemize{
-#'   \item \strong{Asynchronous NA Alignment:} Modifies row filtering inside the AUC loop to intersect 
-#'   \code{!is.na(Y[, i]) & !is.na(predY[, i])} simultaneously. This prevents vector length mismatches 
-#'   caused by missing values.
-#'   \item \strong{Explicit Case-Control Verification:} Assures both presences (1) and absences (0) 
-#'   co-occur within the filtered array slice before initializing the ROC engine. If a species exhibits 
-#'   zero variance within a targeted regional validation block, it receives an \code{NA} instead of 
-#'   throwing a fatal execution error.
-#'   \item \strong{tryCatch Encapsulation:} Encloses the external \code{pROC::auc} calculation 
-#'   inside an error-catching layer.
-#'   \item \strong{Zero-Variance Safety Guards:} Introduces logical checks in the Tjur's $R^2$ logic 
-#'   to intercept empty presence/absence subsets, blocking the calculation of means over zero-length intervals.
-#' }
-#'
-#' @return A list of model fit arrays (including RMSE, AUC, TjurR2, and pseudo-R2 vectors) matching 
-#' the exact element naming and dimensionality conventions of the standard package, preserving compatibility 
-#' with downstream synthesis and plotting scripts.
-#'
-#' @seealso \code{\link[Hmsc]{evaluateModelFit}}
+#' @return A list of model fit metrics per species matching standard Hmsc naming,
+#' enriched with calibration and precision dimensions.
 #'
 #' @export
-evaluateModelFitRobust = function(hM, predY){
+evaluateModelFitRobust = function(hM, predY, prob_ci = 0.90){
   
   require(abind)
+  eps <- 1e-6
   
+  # --- Inner Metric Helpers: Common & Precision ---
   computeRMSE = function(Y, predY){
     ns = dim(Y)[2]
-    RMSE = rep(NA,ns)
+    RMSE = rep(NA, ns)
     for (i in 1:ns){
-      RMSE[i] = sqrt(mean((Y[,i]-predY[,i])^2, na.rm=TRUE))
+      RMSE[i] = sqrt(mean((Y[, i] - predY[, i])^2, na.rm = TRUE))
     }
     return(RMSE)
   }
   
-  computeR2 = function(Y, predY, method="pearson"){
+  computeMAE = function(Y, predY){
     ns = dim(Y)[2]
-    R2 = rep(NA,ns)
+    MAE = rep(NA, ns)
     for (i in 1:ns){
-      co = cor(Y[,i], predY[,i], method=method, use='pairwise')
-      R2[i] = sign(co)*co^2
+      MAE[i] = mean(abs(Y[, i] - predY[, i]), na.rm = TRUE)
+    }
+    return(MAE)
+  }
+  
+  computeCIWidth = function(predY_3D, prob = 0.90){
+    alpha_low = (1 - prob) / 2
+    alpha_high = 1 - alpha_low
+    
+    ci_low = apply(predY_3D, c(1, 2), quantile, probs = alpha_low, na.rm = TRUE)
+    ci_high = apply(predY_3D, c(1, 2), quantile, probs = alpha_high, na.rm = TRUE)
+    ci_width_per_site = ci_high - ci_low
+    
+    return(colMeans(ci_width_per_site, na.rm = TRUE))
+  }
+  
+  # --- Inner Metric Helpers: Abundance Dimension ---
+  computeR2 = function(Y, predY, method = "pearson"){
+    ns = dim(Y)[2]
+    R2 = rep(NA, ns)
+    for (i in 1:ns){
+      sel = !is.na(Y[, i]) & !is.na(predY[, i])
+      if(sum(sel) > 2 && sd(Y[sel, i]) > 0 && sd(predY[sel, i]) > 0){
+        co = cor(Y[sel, i], predY[sel, i], method = method)
+        R2[i] = sign(co) * co^2
+      }
     }
     return(R2)
   }
   
+  computeMeanRatio = function(Y, predY){
+    ns = dim(Y)[2]
+    ratio = rep(NA, ns)
+    for (i in 1:ns){
+      sel = !is.na(Y[, i]) & !is.na(predY[, i])
+      if(sum(sel) > 0){
+        m_obs = mean(Y[sel, i], na.rm = TRUE)
+        m_prd = mean(predY[sel, i], na.rm = TRUE)
+        ratio[i] = (m_prd + eps) / (m_obs + eps)
+      }
+    }
+    return(ratio)
+  }
+  
+  computeIQRRatio = function(Y, predY){
+    ns = dim(Y)[2]
+    ratio = rep(NA, ns)
+    for (i in 1:ns){
+      sel = !is.na(Y[, i]) & !is.na(predY[, i])
+      if(sum(sel) > 1){
+        iqr_obs = IQR(Y[sel, i], na.rm = TRUE)
+        iqr_prd = IQR(predY[sel, i], na.rm = TRUE)
+        ratio[i] = (iqr_prd + eps) / (iqr_obs + eps)
+      }
+    }
+    return(ratio)
+  }
+  
+  # --- Inner Metric Helpers: Binary Dimension ---
+  computeBrierScore = function(Y, predY){
+    ns = dim(Y)[2]
+    brier = rep(NA, ns)
+    for (i in 1:ns){
+      sel = !is.na(Y[, i]) & !is.na(predY[, i])
+      if(sum(sel) > 0){
+        brier[i] = mean((predY[sel, i] - Y[sel, i])^2, na.rm = TRUE)
+      }
+    }
+    return(brier)
+  }
+  
   computeAUC = function(Y, predY){
     ns = dim(Y)[2]
-    AUC = rep(NA,ns)
-    Y <- ifelse(Y > 0, 1, 0)
+    AUC = rep(NA, ns)
+    Y_bin <- ifelse(Y > 0, 1, 0)
     for (i in 1:ns){
-      # align non-missing rows for both Y and predY simultaneously
-      sel = !is.na(Y[,i]) & !is.na(predY[,i])
-      
-      # verify both classes exist after NA removal
-      if(sum(Y[sel,i] == 1) > 0 && sum(Y[sel,i] == 0) > 0){
-        # guarantee loop continuity
+      sel = !is.na(Y_bin[, i]) & !is.na(predY[, i])
+      if(sum(Y_bin[sel, i] == 1) > 0 && sum(Y_bin[sel, i] == 0) > 0){
         AUC[i] = tryCatch({
-          pROC::auc(Y[sel,i], predY[sel,i], levels=c(0,1), direction="<")
-        }, error = function(e) {
-          return(NA) 
-        })
+          pROC::auc(Y_bin[sel, i], predY[sel, i], levels = c(0, 1), direction = "<")
+        }, error = function(e) { return(NA) })
       }
     }
     return(AUC)
@@ -543,92 +592,133 @@ evaluateModelFitRobust = function(hM, predY){
   computeTjurR2 = function(Y, predY) {
     ns = dim(Y)[2]
     R2 = rep(NA, ns)
+    Y_bin <- ifelse(Y > 0, 1, 0)
     for (i in 1:ns) {
-      # Check against zero variance dividing or averaging empty sets
-      has_presence <- any(Y[, i] == 1, na.rm = TRUE)
-      has_absence  <- any(Y[, i] == 0, na.rm = TRUE)
+      sel = !is.na(Y_bin[, i]) & !is.na(predY[, i])
+      has_presence <- any(Y_bin[sel, i] == 1)
+      has_absence  <- any(Y_bin[sel, i] == 0)
       
       if(has_presence && has_absence) {
-        R2[i] = mean(predY[which(Y[, i] == 1), i], na.rm=TRUE) - 
-          mean(predY[which(Y[, i] == 0), i], na.rm=TRUE)
-      } else {
-        R2[i] = NA
+        R2[i] = mean(predY[sel & Y_bin[, i] == 1, i], na.rm = TRUE) - 
+          mean(predY[sel & Y_bin[, i] == 0, i], na.rm = TRUE)
       }
     }
     return(R2)
   }
   
-  median2 = function(x){return (median(x,na.rm=TRUE))}
-  mean2 = function(x){return (mean(x,na.rm=TRUE))}
-  
-  mPredY = matrix(NA, nrow=hM$ny, ncol=hM$ns)
-  sel = hM$distr[,1]==3
-  if (sum(sel)>0){
-    mPredY[,sel] = as.matrix(apply(abind(predY[,sel,,drop=FALSE], along=3),
-                                   c(1,2), median2))
-  }
-  sel = !hM$distr[,1]==3
-  if (sum(sel)>0){
-    mPredY[,sel] = as.matrix(apply(abind(predY[,sel,,drop=FALSE], along=3),
-                                   c(1,2), mean2))
-  }
-  
-  RMSE = computeRMSE(hM$Y, mPredY)
-  R2 = NULL
-  AUC = NULL
-  TjurR2 = NULL
-  SR2 = NULL
-  O.AUC = NULL
-  O.TjurR2 = NULL
-  O.RMSE = NULL
-  C.SR2 = NULL
-  C.RMSE = NULL
-  
-  sel = hM$distr[,1]==1
-  if (sum(sel)>0){
-    R2 = rep(NA,hM$ns)
-    R2[sel] = computeR2(hM$Y[,sel,drop=FALSE],mPredY[,sel,drop=FALSE])
+  computeCalibrationSlope = function(Y, predY){
+    ns = dim(Y)[2]
+    slope = rep(NA, ns)
+    Y_bin <- ifelse(Y > 0, 1, 0)
+    for (i in 1:ns){
+      sel = !is.na(Y_bin[, i]) & !is.na(predY[, i])
+      if(sum(Y_bin[sel, i] == 1) > 2 && sum(Y_bin[sel, i] == 0) > 2){
+        p_clamped = pmin(pmax(predY[sel, i], 1e-4), 1 - 1e-4)
+        logit_p = qlogis(p_clamped)
+        
+        slope[i] = tryCatch({
+          fit_cal = glm(Y_bin[sel, i] ~ logit_p, family = binomial(link = "logit"))
+          coef(fit_cal)["logit_p"]
+        }, error = function(e) { return(NA) })
+      }
+    }
+    return(slope)
   }
   
-  sel = hM$distr[,1]==2
-  if (sum(sel)>0){
-    AUC = rep(NA,hM$ns)
-    TjurR2 = rep(NA,hM$ns)
-    AUC[sel] = computeAUC(hM$Y[,sel,drop=FALSE], mPredY[,sel,drop=FALSE])
-    TjurR2[sel] = computeTjurR2(hM$Y[,sel,drop=FALSE], mPredY[,sel,drop=FALSE])
+  median2 = function(x){ return(median(x, na.rm = TRUE)) }
+  mean2 = function(x){ return(mean(x, na.rm = TRUE)) }
+  
+  # --- Derive Point Predictions Matrix ---
+  mPredY = matrix(NA, nrow = hM$ny, ncol = hM$ns)
+  sel_distr3 = hM$distr[, 1] == 3
+  if (sum(sel_distr3) > 0){
+    mPredY[, sel_distr3] = as.matrix(apply(abind(predY[, sel_distr3, , drop = FALSE], along = 3),
+                                           c(1, 2), median2))
+  }
+  if (sum(!sel_distr3) > 0){
+    mPredY[, !sel_distr3] = as.matrix(apply(abind(predY[, !sel_distr3, , drop = FALSE], along = 3),
+                                            c(1, 2), mean2))
   }
   
-  sel = hM$distr[,1]==3
-  if (sum(sel)>0){
-    SR2 = rep(NA,hM$ns)
-    O.AUC = rep(NA,hM$ns)
-    O.TjurR2 = rep(NA,hM$ns)
-    O.RMSE = rep(NA,hM$ns)
-    C.SR2 = rep(NA,hM$ns)
-    C.RMSE = rep(NA,hM$ns)
-    SR2[sel] = computeR2(hM$Y[,sel,drop=FALSE],mPredY[,sel,drop=FALSE], method="spearman")
-    predO = 1*(predY[,sel,,drop=FALSE]>0)
-    mPredO = as.matrix(apply(abind(predO,along=3),c(1,2),mean2))
-    O.AUC[sel] = computeAUC(1*(hM$Y[,sel,drop=FALSE]>0),mPredO)
-    O.TjurR2[sel] = computeTjurR2(1*(hM$Y[,sel,drop=FALSE]>0), mPredO)
-    O.RMSE[sel] = computeRMSE(1*(hM$Y[,sel,drop=FALSE]>0), mPredO)
-    mPredCY = mPredY[,sel,drop=FALSE]/mPredO
-    CY=hM$Y[,sel,drop=FALSE]
-    CY[CY==0]=NA
-    C.SR2[sel] = computeR2(CY, mPredCY, method="spearman")
-    C.RMSE[sel] = computeRMSE(CY, mPredCY)
+  # Base performance containers
+  MF = list(
+    RMSE          = computeRMSE(hM$Y, mPredY),
+    MAE           = computeMAE(hM$Y, mPredY),
+    Mean_ratio    = computeMeanRatio(hM$Y, mPredY),
+    Mean_CI_width = computeCIWidth(predY, prob = prob_ci)
+  )
+  
+  # --- Continuous / Normal Models (distr == 1) ---
+  sel = hM$distr[, 1] == 1
+  if (sum(sel) > 0){
+    MF$R2 = rep(NA, hM$ns)
+    MF$IQR_ratio = rep(NA, hM$ns)
+    MF$R2[sel] = computeR2(hM$Y[, sel, drop = FALSE], mPredY[, sel, drop = FALSE])
+    MF$IQR_ratio[sel] = computeIQRRatio(hM$Y[, sel, drop = FALSE], mPredY[, sel, drop = FALSE])
   }
   
-  MF = list(RMSE=RMSE)
-  if (!is.null(R2)){MF$R2 = R2}
-  if (!is.null(AUC)){MF$AUC = AUC}
-  if (!is.null(TjurR2)){MF$TjurR2 = TjurR2}
-  if (!is.null(SR2)){MF$SR2 = SR2}
-  if (!is.null(O.AUC)){MF$O.AUC = O.AUC}
-  if (!is.null(O.TjurR2)){MF$O.TjurR2 = O.TjurR2}
-  if (!is.null(O.RMSE)){MF$O.RMSE = O.RMSE}
-  if (!is.null(C.SR2)){MF$C.SR2 = C.SR2}
-  if (!is.null(C.RMSE)){MF$C.RMSE = C.RMSE}
+  # --- Binary / Occurrence Models (distr == 2) ---
+  sel = hM$distr[, 1] == 2
+  if (sum(sel) > 0){
+    MF$AUC = rep(NA, hM$ns)
+    MF$TjurR2 = rep(NA, hM$ns)
+    MF$Brier = rep(NA, hM$ns)
+    MF$Prevalence_ratio = rep(NA, hM$ns)
+    MF$Calib_slope = rep(NA, hM$ns)
+    
+    Y_sub = hM$Y[, sel, drop = FALSE]
+    pred_sub = mPredY[, sel, drop = FALSE]
+    
+    MF$AUC[sel]              = computeAUC(Y_sub, pred_sub)
+    MF$TjurR2[sel]           = computeTjurR2(Y_sub, pred_sub)
+    MF$Brier[sel]            = computeBrierScore(Y_sub, pred_sub)
+    MF$Prevalence_ratio[sel] = computeMeanRatio(Y_sub, pred_sub)
+    MF$Calib_slope[sel]      = computeCalibrationSlope(Y_sub, pred_sub)
+  }
+  
+  # --- Hurdle / Count Models (distr == 3) ---
+  sel = hM$distr[, 1] == 3
+  if (sum(sel) > 0){
+    # Overall abundance metrics
+    MF$SR2 = rep(NA, hM$ns)
+    MF$IQR_ratio = rep(NA, hM$ns)
+    MF$SR2[sel] = computeR2(hM$Y[, sel, drop = FALSE], mPredY[, sel, drop = FALSE], method = "spearman")
+    MF$IQR_ratio[sel] = computeIQRRatio(hM$Y[, sel, drop = FALSE], mPredY[, sel, drop = FALSE])
+    
+    # 1. Occurrence Component (O.*)
+    predO = 1 * (predY[, sel, , drop = FALSE] > 0)
+    mPredO = as.matrix(apply(abind(predO, along = 3), c(1, 2), mean2))
+    Y_bin = 1 * (hM$Y[, sel, drop = FALSE] > 0)
+    
+    MF$O.AUC              = rep(NA, hM$ns)
+    MF$O.TjurR2           = rep(NA, hM$ns)
+    MF$O.Brier            = rep(NA, hM$ns)
+    MF$O.Prevalence_ratio = rep(NA, hM$ns)
+    MF$O.Calib_slope      = rep(NA, hM$ns)
+    MF$O.RMSE             = rep(NA, hM$ns)
+    
+    MF$O.AUC[sel]              = computeAUC(Y_bin, mPredO)
+    MF$O.TjurR2[sel]           = computeTjurR2(Y_bin, mPredO)
+    MF$O.Brier[sel]            = computeBrierScore(Y_bin, mPredO)
+    MF$O.Prevalence_ratio[sel] = computeMeanRatio(Y_bin, mPredO)
+    MF$O.Calib_slope[sel]      = computeCalibrationSlope(Y_bin, mPredO)
+    MF$O.RMSE[sel]             = computeRMSE(Y_bin, mPredO)
+    
+    # 2. Conditional Abundance Component (C.*)
+    mPredCY = mPredY[, sel, drop = FALSE] / (mPredO + eps)
+    CY = hM$Y[, sel, drop = FALSE]
+    CY[CY == 0] = NA
+    
+    MF$C.SR2       = rep(NA, hM$ns)
+    MF$C.RMSE      = rep(NA, hM$ns)
+    MF$C.MAE       = rep(NA, hM$ns)
+    MF$C.IQR_ratio = rep(NA, hM$ns)
+    
+    MF$C.SR2[sel]       = computeR2(CY, mPredCY, method = "spearman")
+    MF$C.RMSE[sel]      = computeRMSE(CY, mPredCY)
+    MF$C.MAE[sel]       = computeMAE(CY, mPredCY)
+    MF$C.IQR_ratio[sel] = computeIQRRatio(CY, mPredCY)
+  }
   
   return(MF)
 }
