@@ -31,4 +31,5 @@ for (j in seq_len(n_sp)) {
   }
 }
 
+dir.create("results", showWarnings = F)
 saveRDS(alfa_matrix, file.path("results", "alfa_matrix.rds"))
