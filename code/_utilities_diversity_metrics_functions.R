@@ -1,3 +1,93 @@
+#' @title Pre-compute Stand-Level Intrinsic Metrics
+#' @description Computes single-stand richness, Rao's Quadratic Entropy, and Functional Richness
+#' across all posterior draws prior to pairwise comparisons.
+precalculate_stand_metrics <- function(pred_mat, traits, divmax) {
+  # pred_mat: [n_posteriors x n_species]
+  num_posteriors <- nrow(pred_mat)
+  
+  mask <- pred_mat > 0
+  prob <- 1 - exp(-pred_mat)
+  
+  # Unforced expected richness per posterior
+  es_unforced <- rowSums(prob * mask)
+  
+  # Rao's Quadratic Entropy per posterior
+  rao_q <- divc_calc(mask, tr = traits, matrix.ver = TRUE, scalar = divmax)
+  
+  # Functional Richness per posterior
+  fric <- numeric(num_posteriors)
+  for (p in seq_len(num_posteriors)) {
+    fric[p] <- fric_process_row(mask[p, ], traits)
+  }
+  
+  list(
+    pred_mat = pred_mat,
+    mask = mask,
+    prob = prob,
+    es_unforced = es_unforced,
+    rao_q = rao_q,
+    fric = fric
+  )
+}
+
+#' @title Pairwise Evaluation
+#' @description Evaluates interaction metrics and combines them with pre-calculated metrics.
+calculate_pairwise_metrics_fast <- function(metso_prep, bau_prep, num_posteriors, xi = 1e-3) {
+  
+  # 1. Scalar differences from pre-computed metrics
+  E_PDF_unforced <- 1 - (bau_prep$es_unforced / metso_prep$es_unforced)
+  E_RaoQ_loss    <- 1 - (bau_prep$rao_q / metso_prep$rao_q) 
+  
+  # Handle FRic loss safely
+  fric_m <- metso_prep$fric
+  fric_b <- bau_prep$fric
+  valid_fric <- !is.na(fric_m) & fric_m > 0
+  E_FRic_loss <- rep(NA_real_, num_posteriors)
+  E_FRic_loss[valid_fric] <- 1 - (fric_b[valid_fric] / fric_m[valid_fric])
+  
+  # 2. Pairwise interaction metrics
+  E_BCD <- bray_curtis(metso_prep$pred_mat, bau_prep$pred_mat)
+  
+  E_PDF_forced <- numeric(num_posteriors)
+  E_MSA_loss   <- numeric(num_posteriors)
+  EG_loss      <- numeric(num_posteriors)
+  
+  for (p in seq_len(num_posteriors)) {
+    m_metso <- metso_prep$mask[p, ]
+    es_m    <- metso_prep$es_unforced[p]
+    
+    if (is.na(es_m) || es_m == 0) {
+      E_PDF_forced[p] <- NA
+      E_MSA_loss[p]   <- NA
+      EG_loss[p]      <- NA
+      next
+    }
+    
+    # Forced expected richness of BAU under METSO's present species
+    es_bau_forced <- sum(bau_prep$prob[p, m_metso])
+    E_PDF_forced[p] <- 1 - (es_bau_forced / es_m)
+    
+    # MSA Loss
+    e_m <- metso_prep$pred_mat[p, m_metso]
+    e_b <- bau_prep$pred_mat[p, m_metso]
+    ep_m <- metso_prep$prob[p, m_metso]
+    
+    ratio_abun <- e_b / e_m
+    E_MSA_loss[p] <- 1 - (sum(ep_m * pmin(ratio_abun, 1)) / es_m)
+    
+    # EG Loss
+    log_ratio <- log((e_b + xi) / (e_m + xi))
+    EG_loss[p] <- 1 - exp(sum(log_ratio) / es_m)
+  }
+  
+  data.frame(
+    posterior = rep(seq_len(num_posteriors), each = 7),
+    metrics = rep(c("E_PDF_forced", "E_PDF_unforced", "E_MSA_loss", "EG_loss", 
+                    "E_FRic_loss", "E_RaoQ_loss", "E_BCD"), times = num_posteriors),
+    val = c(rbind(E_PDF_forced, E_PDF_unforced, E_MSA_loss, EG_loss, 
+                  E_FRic_loss, E_RaoQ_loss, E_BCD))
+  )
+}
 
 #' @title Vectorized Calculation of Expected Biodiversity Metrics
 #' @description Computes an expected suite of taxonomic and functional biodiversity metrics comparing business-as-usual (BAU) versus METSO baseline scenarios.
@@ -844,4 +934,79 @@ dbFD_preprocess_traits <- function (x, a, w, w.abun = TRUE, stand.x = TRUE, ord 
   }
   
   return(res)
+}
+
+#' Get or Create Test Set by Sampling Complete Strata Groups
+#'
+#' @param gpkg_path Character. Path to the full stand GPKG layer.
+#' @param test_group_path Character. Path to RDS where selected stand metadata is cached.
+#' @param n_groups Integer. Number of groups to sample (default = 20).
+#' @param min_stands Integer. Minimum stands per group per scenario (default = 10).
+#' @param max_stands Integer. Maximum stands per group per scenario (default = 20).
+#' @param seed Integer. Random seed for reproducible group sampling.
+#'
+#' @return A data frame containing standid, metso, and group_number for the sampled groups.
+get_or_create_test_groups <- function(gpkg_path,
+                                      test_group_path = file.path("results", "test_group_stands.rds"),
+                                      n_groups = 20,
+                                      min_stands = 10,
+                                      max_stands = 20,
+                                      seed = 11072024) {
+  
+  if (file.exists(test_group_path)) {
+    message("Loading existing test group set from: ", test_group_path)
+    return(readRDS(test_group_path))
+  }
+  
+  message("Generating new balanced test group set with seed ", seed, "...")
+  set.seed(seed)
+  
+  # Read full layer (both METSO and control stands)
+  sp_all <- sf::read_sf(gpkg_path) |>
+    sf::st_drop_geometry()
+  
+  # Build identical group indices used in S08b
+  grouped_stands <- sp_all |>
+    dplyr::group_by(year, regional_group, treespecies) |>
+    dplyr::mutate(group_number = dplyr::cur_group_id()) |>
+    dplyr::ungroup()
+  
+  # Count stands available per group separately for METSO and control
+  group_counts <- grouped_stands |>
+    dplyr::group_by(group_number, metso) |>
+    dplyr::summarise(n = dplyr::n(), .groups = "drop") |>
+    tidyr::pivot_wider(names_from = metso, values_from = n, values_fill = 0, names_prefix = "metso_")
+  
+  # Filter groups meeting criteria in both scenarios
+  # metso_1 = METSO, metso_0 = Control
+  eligible_groups <- group_counts |>
+    dplyr::filter(
+      metso_1 >= min_stands & metso_1 <= max_stands,
+      metso_0 >= min_stands & metso_0 <= max_stands
+    ) |>
+    dplyr::pull(group_number)
+  
+  if (length(eligible_groups) == 0) {
+    stop("No groups found satisfying stand thresholds between ", min_stands, " and ", max_stands, 
+         " for both treatment and control.")
+  }
+  
+  n_sample <- min(n_groups, length(eligible_groups))
+  selected_groups <- sample(eligible_groups, size = n_sample)
+  
+  # Isolate all stands belonging to the selected groups
+  test_selection <- grouped_stands |>
+    dplyr::filter(group_number %in% selected_groups) |>
+    dplyr::select(standid, metso, group_number, year, regional_group, treespecies)
+  
+  # Ensure target directory exists
+  out_dir <- dirname(test_group_path)
+  if (!dir.exists(out_dir)) {
+    dir.create(out_dir, recursive = TRUE)
+  }
+  
+  saveRDS(test_selection, file = test_group_path)
+  message(sprintf("Saved %d stands across %d groups to %s", nrow(test_selection), n_sample, test_group_path))
+  
+  return(test_selection)
 }
