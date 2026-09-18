@@ -44,9 +44,11 @@ library(tidyverse)
 library(arrow)
 library(sfarrow)
 library(abind)
+library(stringr)
 
 source(file.path("code", "config_model.R"))
 source(file.path("code", "_utilities_transform_covariates.R"))
+source(file.path("code", "_utilities_diversity_metrics_functions.R"))
 modelid <- run_config$model_id
 
 message("    Start time: ", Sys.time())
@@ -67,20 +69,50 @@ if(sufix == "metso"){
   val = 0
 }
 
-test <- TRUE           # <--- Set to FALSE for full run
+# Execution mode flag: set to FALSE Set to FALSE for full run
+test <- TRUE 
+
+# Expected abundance predictions vs stochastic realizations (draws from distribution)
 expected_val <- TRUE
 
 if(test){
-  batch_size <- 100      
-  sampling_size <- 1000      
-  n_cores <- 10
+  batch_size <- 50      
+  n_groups <- 20
+  min_stands <- 5
+  max_stands <- 50
 }else{
-  batch_size <- 4000
-  n_cores <- max(1, floor(parallel::detectCores() / 2))
+  batch_size <- 500
 }
 
-# alfa matrix
-alfa_matrix <- readRDS(file.path("results", "alfa_matrix.rds"))
+os <- Sys.info()['sysname']
+
+if (os == "Windows") {
+  
+  wr_dir <- "results"
+  worker_tmp <- tempdir()
+  n_cores <- max(1, floor(parallel::detectCores() / 2))
+  
+} else if (os %in% c("Linux", "Darwin")) {
+  
+  n_cores <- min(32, floor(parallel::detectCores() / 2))
+  
+  node <- Sys.info()["nodename"]
+  
+  if (node == "lema") {
+    wr_dir <- NULL
+    worker_tmp <- NULL
+  } else if(node == "gurnah"){
+    wr_dir <- "/export/scratch/tmp/munozcs/results"
+    worker_tmp <- "/export/scratch/tmp/munozcs/Rtmp"
+  } else {
+    wr_dir <- NULL # here::here("results")
+    worker_tmp <- NULL # tempdir()
+  }
+}
+
+#-----------------------
+
+# 1. DATA LOADING
 
 # Load presence/abscence Model
 fitted_full_model_path_PA <- file.path("models/fbs_M016PA_thin_150_samples_1000_chains_4/fitted_fbs_M016PA_thin_150_samples_1000_chains_4.rds")
@@ -91,26 +123,18 @@ spatial_level_name <- hM_PA$rLNames[1]
 fitted_full_model_path_aCp <- file.path("models/fbs_M016_thin_250_samples_1000_chains_4/fitted_fbs_M016_thin_250_samples_1000_chains_4.rds")
 hM_aCp <- readRDS(fitted_full_model_path_aCp)
 
-#-----------------------
-
-# 1. SETUP & DATA LOADING
-
-os <- Sys.info()['sysname']
-
-if (os == "Windows") {
-  wr_dir <- "results"
-} else if (os %in% c("Linux", "Darwin")) {
-  is_lema <- Sys.info()["nodename"] == "lema" || dir.exists("/scratch/lema/tmp/munozcs")
-  
-  if (is_lema) {
-    wr_dir <- "/scratch/lema/tmp/munozcs/results"
-  } else {
-    wr_dir <- here::here("results")
-  }
+if(is.null(wr_dir)){
+  stop("Warning: Check for routes to the physical disk without NFS mounting")
 }
 
-if(!dir.exists(wr_dir)) dir.create(wr_dir, recursive = TRUE)
+if(!dir.exists(wr_dir)) {
+  stop("First run S08a or copy the outputs elements created there to the expected working directory /results/alfa_matrix.rds")
+}
 
+# alfa matrix
+alfa_matrix <- readRDS(file.path(wr_dir, "alfa_matrix.rds"))
+
+# output folder
 pred_dir <- file.path(wr_dir, "predictions")
 
 if(!dir.exists(pred_dir)) dir.create(pred_dir, recursive = TRUE, showWarnings = FALSE)
@@ -121,7 +145,9 @@ pred_id_file <- file.path(dirname(pred_dir), paste0("pred_ids_", sufix, ".rds"))
 
 # Load Spatial Data
 sp_df <- read_sf(here("data", "metso", "treatment_control_stand_v4.gpkg")) |> 
-  dplyr::filter(metso == val)
+  dplyr::filter(metso == val) |> 
+  dplyr::mutate(ely_en = stringi::stri_trans_general(ely_en, "Latin-ASCII"),
+                ely_en = stringr::str_to_snake(ely_en))
 
 # create group Matches
 matches <- sp_df |> 
@@ -140,6 +166,26 @@ XData_polygon <- XData_list$polygon_id
 valid_ids <- intersect(sp_df$standid, XData_polygon)
 sp_df <- sp_df[sp_df$standid %in% valid_ids, ]
 matches <- matches[matches$standid %in% valid_ids, ]
+
+if (test) {
+  test_meta <- get_or_create_test_groups(
+    gpkg_path = here("data", "metso", "treatment_control_stand_v4.gpkg"),
+    test_group_path = file.path(wr_dir, "test_group_stands.rds"),
+    n_groups = n_groups,
+    min_stands = min_stands,
+    max_stands = max_stands,
+    seed = 11072024
+  )
+  
+  # Extract IDs relevant for current scenario (sufix: metso or control)
+  target_test_ids <- test_meta |>
+    dplyr::filter(metso == val) |>
+    dplyr::pull(standid)
+  
+  valid_test_ids <- intersect(valid_ids, target_test_ids)
+  sp_df   <- sp_df[sp_df$standid %in% valid_test_ids, ]
+  matches <- matches[matches$standid %in% valid_test_ids, ]
+}
 
 match_idx <- match(sp_df$standid, XData_polygon)
 XData <- XData[match_idx, , drop = FALSE]
@@ -167,16 +213,6 @@ saveRDS(sp_df$standid, file = pred_id_file)
 sp_df |> 
   dplyr::select(standid) |> 
   st_write_parquet(file.path(wr_dir, paste0("point_geometry_", sufix, ".parquet")))
-
-# test Logic (Test Mode), select just some sites
-if(test ){
-  samp <- sample(seq_len(nrow(matches)), size = sampling_size)
-  matches <- matches[samp, ]
-  sp_df <- sp_df[samp, ]
-  coords <- coords[samp, ]
-  XData <- XData[samp, ]
-} 
-
 
 # complete XData, Define reference values from the training data hM_PA$XData
 XData_survey <- hM_PA$XData
@@ -251,10 +287,6 @@ for(group in unique_groups) {
   }
 }
 
-if(test){
-  tasks <- tasks[1:10]
-}
-
 stopifnot(length(tasks) > 0)
 
 cat(sprintf("Created %d tasks across %d groups.\n", length(tasks), length(unique_groups)))
@@ -263,21 +295,35 @@ cat(sprintf("Created %d tasks across %d groups.\n", length(tasks), length(unique
 
 # 3. PARALLEL EXECUTION
 
-# Change temporal directory for arrow
-if (is_lema) {
-  Sys.setenv(TMPDIR = "/scratch/lema/tmp/munozcs/Rtmp")
-}
+# Set TMPDIR for the main R session and Arrow
+Sys.setenv(TMPDIR = worker_tmp)
 
 cl <- makeCluster(n_cores, outfile = "")
 cat(sprintf("Initializing parallel cluster with %d cores...\n", n_cores))
-worker_tmp <- if (is_lema) "/scratch/lema/tmp/munozcs/Rtmp" else tempdir()
 clusterExport(cl, "worker_tmp")
 clusterEvalQ(cl, {
   if (!dir.exists(worker_tmp)) dir.create(worker_tmp, recursive = TRUE, showWarnings = FALSE)
   Sys.setenv(TMPDIR = worker_tmp)
 })
-registerDoParallel(cl)
 
+distinct_partitions <- sp_df |>
+  sf::st_drop_geometry() |>
+  distinct(year, regional_group, treespecies) #ely_en
+
+for(i in 1:nrow(distinct_partitions)) {
+  p_path <- file.path(pred_dir,
+                      paste0("modelid=", modelid),
+                      paste0("expected_type=", expected_string),
+                      paste0("year=", distinct_partitions$year[i]),
+                      paste0("reg=", distinct_partitions$regional_group[i]),
+                      #paste0("ely=", distinct_partitions$ely_en[i]),
+                      paste0("trees=", distinct_partitions$treespecies[i]),
+                      paste0("scenario=", sufix)
+  )
+  dir.create(p_path, recursive = TRUE, showWarnings = FALSE)
+}
+
+registerDoParallel(cl)
 
 foreach(task = tasks, 
         .packages = c("Hmsc", "sf", "arrow", "dplyr", "tidyr", "tibble"), 
@@ -292,7 +338,7 @@ foreach(task = tasks,
           group <- task$group
           yr <- task$year[1]
           reg <- task$regional[1]
-          #ely <-  task$ely
+          #ely <-  task$ely[1]
           tr <-  task$trees[1]
           b_num <- task$batch_num[1]
             
@@ -396,9 +442,9 @@ foreach(task = tasks,
               
             # 2. Create the directory safely
             # recursive = TRUE ensures all parent folders are created
-            if(!dir.exists(part_path)) {
-              dir.create(part_path, recursive = TRUE, showWarnings = FALSE)
-            }
+            # if(!dir.exists(part_path)) {
+            # dir.create(part_path, recursive = TRUE, showWarnings = FALSE)
+            # }
               
             # Create unique filename
             file_name <- paste0("part_batch", b_num, ".parquet")
