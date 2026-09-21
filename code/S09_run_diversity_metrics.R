@@ -115,6 +115,7 @@ predY_ds <- open_dataset(
   )
 
 # 3. Worker Function (Processes a slice of METSO stands against ALL pre-calculated controls)
+
 process_metso_slice <- function(metso_sub_ids, metso_precomputed, control_precomputed, g_id, n_post) {
   chunk_results <- list()
   counter <- 1
