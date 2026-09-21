@@ -62,7 +62,7 @@ sf::sf_use_s2(FALSE)
 set.seed(11072024)
 
 # --- CONFIGURATION ---
-sufix <- "metso" # or "control" (it should change to BAU in some point)
+sufix <- "control" # or "control" (it should change to BAU in some point)
 if(sufix == "metso"){
   val = 1
 }else{
@@ -70,7 +70,7 @@ if(sufix == "metso"){
 }
 
 # Execution mode flag: set to FALSE Set to FALSE for full run
-test <- TRUE 
+test <- FALSE 
 
 # Expected abundance predictions vs stochastic realizations (draws from distribution)
 expected_val <- TRUE
@@ -109,6 +109,9 @@ if (os == "Windows") {
     worker_tmp <- NULL # tempdir()
   }
 }
+
+# Set to FALSE for full runs
+retry_failed_only <- TRUE
 
 #-----------------------
 
@@ -196,7 +199,6 @@ stopifnot(all(XData_polygon[match_idx] == sp_df$standid))
 # transform and get geometries
 
 sp_df <- sp_df |>
-  dplyr::distinct(standid, .keep_all = TRUE) |> 
   st_centroid() |>
   st_transform("EPSG:4326")
 
@@ -246,7 +248,7 @@ XData <- prepare_prediction_xdata(
 
 cat(sprintf("[%s] Generating Task List organized by groups...\n", Sys.time()))
 
-unique_groups <- unique(na.omit(matches$group_number))
+unique_groups <- unique(na.omit(matches$group_number)) |> sort()
 tasks <- list()
 counter <- 1
 
@@ -291,6 +293,26 @@ stopifnot(length(tasks) > 0)
 
 cat(sprintf("Created %d tasks across %d groups.\n", length(tasks), length(unique_groups)))
 
+#---------------------------
+# Retry!
+
+if (retry_failed_only) {
+  tasks <- filter_failed_tasks(
+    tasks            = tasks,
+    pred_dir         = pred_dir,
+    modelid          = modelid,
+    expected_string  = expected_string,
+    sufix            = sufix,
+    mode             = "missing_output", 
+    clean_error_logs = TRUE              # Deletes old ERROR_*.txt for retried tasks
+  )
+}
+
+# If all tasks already completed successfully, avoid spinning up the cluster
+if (length(tasks) == 0) {
+  stop("All batches have already been processed successfully. Exiting.")
+}
+
 #--------------------------
 
 # 3. PARALLEL EXECUTION
@@ -332,7 +354,7 @@ foreach(task = tasks,
                     "expected_val", "sufix", "expected_string",
                     "alfa_matrix")) %dopar% {
           
-          # task <- tasks[[1]]  
+          # task <- tasks[[3]]  
           # Unpack task info
           idx <- task$indices
           group <- task$group

@@ -1279,3 +1279,88 @@ prepare_prediction_xdata <- function(stand_data, ref_vals, ref_template, hM) {
   
   return(res)
 }
+
+#' Filter Tasks for Re-execution (Retry Damaged / Incomplete Batches)
+#'
+#' Evaluates a list of batch tasks and selects only those that either threw
+#' an error or failed to produce a valid Parquet artifact.
+#'
+#' @param tasks list. The full list of tasks created prior to foreach.
+#' @param pred_dir character. Base directory where predictions are stored.
+#' @param modelid character. Model identifier string.
+#' @param expected_string character. String identifier for expected value setting.
+#' @param sufix character. Current run scenario suffix (e.g., 'metso' or 'control').
+#' @param mode character. One of:
+#'   - "missing_output": Re-runs if target Parquet is missing or corrupted/empty. (Recommended)
+#'   - "error_log": Re-runs only if an ERROR_*.txt file exists for that task.
+#'   - "both": Re-runs if Parquet is missing OR an error log is detected.
+#' @param clean_error_logs logical. If TRUE, deletes the matching error text files
+#'   for selected retry tasks so workers start clean.
+#'
+#' @return A filtered sub-list of `tasks` requiring re-execution.
+filter_failed_tasks <- function(tasks,
+                                pred_dir,
+                                modelid,
+                                expected_string,
+                                sufix,
+                                mode = c("missing_output", "error_log", "both"),
+                                clean_error_logs = FALSE) {
+  
+  mode <- match.arg(mode)
+  tasks_to_retry <- list()
+  
+  message(sprintf("[%s] Scanning %d total tasks using mode: '%s'...", 
+                  Sys.time(), length(tasks), mode))
+  
+  for (task in tasks) {
+    # Unpack partition metadata from task object
+    yr    <- task$year[1]
+    reg   <- task$regional[1]
+    tr    <- task$trees[1]
+    group <- task$group
+    b_num <- task$batch_num[1]
+    
+    # 1. Reconstruct destination Parquet path
+    part_path <- file.path(
+      pred_dir,
+      paste0("modelid=", modelid),
+      paste0("expected_type=", expected_string),
+      paste0("year=", yr),
+      paste0("reg=", reg),
+      paste0("trees=", tr),
+      paste0("scenario=", sufix)
+    )
+    parquet_target <- file.path(part_path, paste0("part_batch", b_num, ".parquet"))
+    
+    # 2. Reconstruct corresponding error file path
+    error_file_target <- file.path(
+      pred_dir, 
+      paste0("ERROR_group_", sufix, group, "_batch_", b_num, ".txt")
+    )
+    
+    # Evaluate status
+    has_valid_parquet <- file.exists(parquet_target) && (file.info(parquet_target)$size > 0)
+    has_error_log     <- file.exists(error_file_target)
+    
+    needs_retry <- switch(
+      mode,
+      "missing_output" = !has_valid_parquet,
+      "error_log"      = has_error_log,
+      "both"           = (!has_valid_parquet) || has_error_log
+    )
+    
+    if (needs_retry) {
+      tasks_to_retry[[length(tasks_to_retry) + 1]] <- task
+      
+      # Optional: Clean up existing error file before retrying
+      if (clean_error_logs && has_error_log) {
+        unlink(error_file_target)
+      }
+    }
+  }
+  
+  message(sprintf("[%s] Identified %d / %d tasks needing re-execution.", 
+                  Sys.time(), length(tasks_to_retry), length(tasks)))
+  
+  return(tasks_to_retry)
+}
