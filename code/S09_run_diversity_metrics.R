@@ -1,78 +1,77 @@
 #' DESCRIPTION:
-#' This script calculates site-level biodiversity metrics (Taxonomic & Functional)
-#' by processing posterior predictions 
-#'  
+#' S09: Calculates site-level biodiversity metrics and performs fixed-effect
+#' regression (fixest::feols) across METSO stands and matched BAU/control groups.
+#' 
 #' METHODOLOGY:
-#' 1. **Batching:** Splits the m matches into manageable chunks (default: 500).
-#' 2. **Lazy Loading:** Fetches posterior matrices from Arrow only for the active batch.
-#' 3. **Parallelism:** Distributes the calculation of the active batch across N cores.
-#' 4. **Storage:** Writes results to disk (Parquet) immediately after each batch
+#' - Modes: Posterior mean ("mean"), n draws ("draws"), or all draws ("all").
+#' - Aggregation: Averages pairwise comparisons against group controls in-memory.
+#' - Parallelism: Distributes METSO stand chunks per group across CPU cores.
+#' - Statistical Modeling: Evaluates treatment elasticity via fixed-effects OLS.
 #' 
 #' INPUTS:
-#' - HMSC Model Metadata: For species names (`unfitted_...RData`).
-#' - Traits Data: Functional traits for species (`TrData_complete.rds`).
-#' - Predictions: Arrow dataset containing posterior predictions (`results/predictions`).
-#' - Matched Pairs: Table of paired sites to compare (`matched_pairs_utm.rds`).
+#' - Model Metadata: models/unfitted_RData/unfitted_[model_id].RData
+#' - Traits Data: data/traits/TrData_complete.rds
+#' - Group Matches: results/matched_pairs_groups_metso.rds & _control.rds
+#' - Predictions: results/predictions/ (Arrow partition)
 #' 
 #' OUTPUTS:
-#' - Directory: `results/metrics/[expected_type]/`
-#' - Files: `metrics_batch_[N].parquet` (Long-format dataframe with metrics per posterior).
-#' 
-#' SYSTEM REQUIREMENTS:
-#' - OS: Linux/macOS recommended (for efficient forking via `mclapply`).
-#' - RAM: Depends on batch size (Batch 500 ~ requires approx 16-32GB RAM).
+#' - Group Parquet files: results/metrics/[expected_type]/metrics_group_[N].parquet
+#' - Model Estimation: results/metrics/[expected_type]/elasticity_estimates.rds
 
 library(tidyverse)
 library(Hmsc)
 library(parallel)
 library(here)
 library(arrow)
+library(data.table)
 library(FD)
 
 source(file.path("code", "_utilities_diversity_metrics_functions.R"))
 source(file.path("code", "config_model.R"))
 name_model <- generate_run_name(run_config)
 
-message("    Start time: ", Sys.time())
+# --- Configuration ---
+# Modes: "mean", "draws", "all"
+run_mode <- "mean"
+n_draws  <- 10
+seed     <- 11072024
+set.seed(seed)
+
+expected_string <- "_expected_true"
 
 os <- Sys.info()['sysname']
-
 if (os == "Windows") {
+  n_cores <- max(1, floor(parallel::detectCores() / 2))
   wr_dir <- "results"
-
 } else if (os %in% c("Linux", "Darwin")) {
-  is_lema <- Sys.info()["nodename"] == "lema" || dir.exists("/scratch/lema/tmp/munozcs")
   
-  if (is_lema) {
-    wr_dir <- "/scratch/lema/tmp/munozcs/results"
+  n_cores <- min(32, floor(parallel::detectCores() / 2))
+  node <- Sys.info()["nodename"]
+  
+  if (node == "lema") {
+    wr_dir <- NULL
+    worker_tmp <- NULL
+  } else if(node == "gurnah"){
+    wr_dir <- "/export/scratch/tmp/munozcs/results"
   } else {
-    wr_dir <- here::here("results")
+    wr_dir <- NULL # here::here("results")
   }
 }
 
 n_cores <- max(1, floor(parallel::detectCores() / 2))
-expected_string <- "_expected_true"
+output_dir <- file.path("results", "metrics", expected_string)
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
-# 1. Data loading
-
-# Load model metadata (Species names)
+# 1. Load Species and Traits
 load(file.path("models", "unfitted_RData", paste0("unfitted_", run_config$model_id, ".RData")))
 name_spp <- colnames(models$fbs_M016$Y)
 
-output_dir <- file.path("results", "metrics", expected_string)
-if(!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
-
-set.seed(11072024)
-
-# Load Trait Data (Run once logic)
-tr_proc_file <- file.path("results", "metrics", "TrData_processed.rds")
-
+tr_proc_file <- file.path(wr_dir, "metrics", "TrData_processed.rds")
 if (!file.exists(tr_proc_file)) {
-  cat("----- Calculating TrData processing...\n")
-  TrData <- readRDS(file.path("data", "traits", "TrData_complete.rds")) 
+  TrData <- readRDS(file.path("data", "traits", "TrData_complete.rds"))
   rownames(TrData) <- name_spp
   TrData_numeric <- TrData |> 
-    select(where(is.numeric), -c("Total.individuals", "Female", "Male", "Unknown", "Complete.measures"))
+    select(where(is.numeric), -any_of(c("Total.individuals", "Female", "Male", "Unknown", "Complete.measures")))
   
   dummy_a <- matrix(1, nrow = 1, ncol = length(name_spp))
   colnames(dummy_a) <- name_spp
@@ -83,58 +82,67 @@ if (!file.exists(tr_proc_file)) {
   TrData_processed <- readRDS(tr_proc_file)
 }
 
-# Reduce PCoA space
-eigs <- TrData_processed$eigenvalues
-cum_var <- cumsum(eigs) / sum(eigs) * 100
-index_95 <- cum_var <= 95
-TrData_processed$traits.FRic <- TrData_processed$traits.FRic[ , index_95]
-
-# Maximal value of RAO's diversity to scale
+cum_var <- cumsum(TrData_processed$eigenvalues) / sum(TrData_processed$eigenvalues) * 100
+TrData_processed$traits.FRic <- TrData_processed$traits.FRic[, cum_var <= 95]
 divmax <- ade4::divcmax(as.dist(TrData_processed$x.dist))$value
 
-# 2. Prepare match and arrow connection
+# 2. Matches & Arrow Connections
+matches_metso   <- readRDS(file.path(wr_dir, "matched_pairs_groups_metso.rds"))
+matches_control <- readRDS(file.path(wr_dir, "matched_pairs_groups_control.rds"))
+groups_df       <- bind_rows(matches_metso, matches_control)
 
-# Load and bind the group match metadata generated by S08b
-
-matches_metso <- readRDS(file.path("results", "matched_pairs_groups_metso.rds"))
-matches_control <- readRDS(file.path("results", "matched_pairs_groups_control.rds"))
-groups_df <- bind_rows(matches_metso, matches_control)
-
-unique_groups <- unique(na.omit(groups_df$group_number))
-cat("Total distinct groups to process:", length(unique_groups), "\n")
-
-# Lazy connection to Arrow (Does not load data yet)
+# Ensure common group numbers between treated and control
+common_groups <- intersect(
+  unique(groups_df$group_number[groups_df$metso == 1]),
+  unique(groups_df$group_number[groups_df$metso == 0])
+)
+cat("Common strata groups available:", length(common_groups), "\n")
 
 predY_ds <- open_dataset(
-  file.path("results", "predictions"), 
+  file.path(wr_dir, "predictions"), 
   hive_style = TRUE, 
-  unify_schemas = TRUE) |> 
+  unify_schemas = TRUE
+) |> 
   filter(
     modelid == run_config$model_id, 
     expected_type == expected_string
   )
 
-# 3. Worker Function (Processes a slice of METSO stands against ALL pre-calculated controls)
+# 3. Helper Functions
+prepare_stand_matrix <- function(sub_df, mode, n_target, cols_drop, selected_draws = NULL) {
+  sub_df <- sub_df[order(sub_df$posterior), ]
+  mat <- as.matrix(sub_df[, !(names(sub_df) %in% cols_drop)])
+  
+  if (mode == "mean") {
+    mat_eval <- matrix(colMeans(mat, na.rm = TRUE), nrow = 1)
+    colnames(mat_eval) <- colnames(mat)
+    return(list(mat = mat_eval, draws = "mean"))
+  } else if (mode == "draws") {
+    if (is.null(selected_draws)) {
+      avail <- unique(sub_df$posterior)
+      selected_draws <- sort(sample(avail, min(n_target, length(avail))))
+    }
+    mat_eval <- mat[sub_df$posterior %in% selected_draws, , drop = FALSE]
+    return(list(mat = mat_eval, draws = selected_draws))
+  } else {
+    return(list(mat = mat, draws = sub_df$posterior))
+  }
+}
 
-process_metso_slice <- function(metso_sub_ids, metso_precomputed, control_precomputed, g_id, n_post) {
-  chunk_results <- list()
+process_metso_slice_averaged <- function(metso_sub_ids, metso_precomputed, control_precomputed, g_id, n_post, draw_names) {
+  metso_results <- list()
   counter <- 1
   
   for (m_id in metso_sub_ids) {
-    # m_id <- "38846556_2015"
     prep_m <- metso_precomputed[[as.character(m_id)]]
-    if (is.null(prep_m)) {
-      message("no prepared data at metso")
-      next 
-    }
+    if (is.null(prep_m)) next
+    
+    pair_collector <- list()
+    p_counter <- 1
     
     for (c_id in names(control_precomputed)) {
-      # c_id <- "38721374_2015"
       prep_c <- control_precomputed[[c_id]]
-      if (is.null(prep_c)){
-        message("no prepared data at control")
-        next 
-      }
+      if (is.null(prep_c)) next
       
       res_df <- tryCatch({
         calculate_pairwise_metrics_fast(
@@ -145,149 +153,101 @@ process_metso_slice <- function(metso_sub_ids, metso_precomputed, control_precom
       }, error = function(e) return(NULL))
       
       if (!is.null(res_df)) {
-        res_df$standid_treated <- m_id
-        res_df$standid_control <- c_id
-        res_df$group_number <- g_id
-        
-        chunk_results[[counter]] <- res_df[, c("group_number", "standid_treated", "standid_control", 
-                                               "posterior", "metrics", "val")]
-        counter <- counter + 1
+        pair_collector[[p_counter]] <- res_df
+        p_counter <- p_counter + 1
       }
+    }
+    
+    if (length(pair_collector) > 0) {
+      combined_dt <- data.table::rbindlist(pair_collector)
+      
+      if (length(draw_names) == n_post && !identical(draw_names, "mean")) {
+        draw_map <- data.table(posterior = seq_len(n_post), actual_draw = draw_names)
+        combined_dt <- merge(combined_dt, draw_map, by = "posterior")
+        combined_dt[, posterior := actual_draw][, actual_draw := NULL]
+      }
+      
+      avg_dt <- combined_dt[, .(val = mean(val, na.rm = TRUE)), by = .(posterior, metrics)]
+      avg_dt[, standid_treated := m_id]
+      avg_dt[, group_number := g_id]
+      
+      metso_results[[counter]] <- avg_dt
+      counter <- counter + 1
     }
   }
   
-  if (length(chunk_results) > 0) return(data.table::rbindlist(chunk_results))
+  if (length(metso_results) > 0) return(data.table::rbindlist(metso_results))
   return(NULL)
 }
 
-# 4. Main Processing Loop (Sequential Groups, Parallel METSO Slices)
+# 4. Processing Loop
 cols_drop <- c("scenario", "standid", "posterior", "year", "reg", "trees")
 
-start_time <- Sys.time()
-
-if (os == "Windows") {
-  cl <- parallel::makeCluster(n_cores)
-  # Export common utility functions and dependencies to socket nodes
-  parallel::clusterEvalQ(cl, {
-    library(data.table)
-    source(file.path("code", "_utilities_diversity_metrics_functions.R"))
-  })
-} else {
-  cl <- NULL
-}
-
-for (g_id in unique_groups) {
+for (g_id in common_groups) {
+  # g_id <- common_groups[1]
+  out_file <- file.path(output_dir, paste0("metrics_group_", g_id, ".parquet"))
+  if (file.exists(out_file)) next
   
   group_stands <- groups_df[groups_df$group_number == g_id, ]
   metso_ids <- group_stands$standid[group_stands$metso == 1]
   control_ids <- group_stands$standid[group_stands$metso == 0]
-  
   if (length(metso_ids) == 0 || length(control_ids) == 0) next
-  
-  out_file <- file.path(output_dir, paste0("metrics_group_", g_id, ".parquet"))
-  if (file.exists(out_file)) {
-    cat(sprintf("[%s] Group %d already computed. Skipping.\n", Sys.time(), g_id))
-    next
-  }
-  
-  cat(sprintf("[%s] Group %d: Loading %d METSO and %d Control stands...\n", 
-              Sys.time(), g_id, length(metso_ids), length(control_ids)))
   
   group_preds <- predY_ds |> 
     filter(standid %in% group_stands$standid) |> 
     select(scenario, standid, posterior, all_of(name_spp)) |> 
     collect()
   
-  # Stand level pre calculation
-
-  cat(sprintf("[%s] Group %d: Pre-calculating stand metrics...\n", Sys.time(), g_id))
-  
-  # Pre-calculate METSO stands
-  metso_precomputed <- list()
-  for (m_id in metso_ids) {
-    # m_id <- "38846556_2015"
-    p_sub <- group_preds[group_preds$standid == m_id & group_preds$scenario == "metso", ]
-    if (nrow(p_sub) == 0) next
-    p_sub <- p_sub[order(p_sub$posterior), ]
-    mat <- as.matrix(p_sub[, !(names(p_sub) %in% cols_drop)])
-    metso_precomputed[[as.character(m_id)]] <- precalculate_stand_metrics(pred_mat = mat, traits = TrData_processed, divmax = divmax)
+  selected_draws <- NULL
+  if (run_mode == "draws") {
+    avail_draws <- unique(group_preds$posterior)
+    selected_draws <- sort(sample(avail_draws, min(n_draws, length(avail_draws))))
   }
   
-  # Pre-calculate Control stands
+  metso_precomputed <- list()
+  for (m_id in metso_ids) {
+    p_sub <- group_preds[group_preds$standid == m_id & group_preds$scenario == "metso", ]
+    if (nrow(p_sub) == 0) next
+    prep <- prepare_stand_matrix(p_sub, run_mode, n_draws, cols_drop, selected_draws)
+    metso_precomputed[[as.character(m_id)]] <- precalculate_stand_metrics(prep$mat, TrData_processed, divmax)
+  }
+  
   control_precomputed <- list()
   for (c_id in control_ids) {
     p_sub <- group_preds[group_preds$standid == c_id & group_preds$scenario == "control", ]
     if (nrow(p_sub) == 0) next
-    p_sub <- p_sub[order(p_sub$posterior), ]
-    mat <- as.matrix(p_sub[, !(names(p_sub) %in% cols_drop)])
-    control_precomputed[[as.character(c_id)]] <- precalculate_stand_metrics(mat, TrData_processed, divmax)
+    prep <- prepare_stand_matrix(p_sub, run_mode, n_draws, cols_drop, selected_draws)
+    control_precomputed[[as.character(c_id)]] <- precalculate_stand_metrics(prep$mat, TrData_processed, divmax)
   }
   
-  if (length(metso_precomputed) == 0 || length(control_precomputed) == 0) next
+  valid_metso_ids <- names(metso_precomputed)
+  if (length(valid_metso_ids) == 0 || length(control_precomputed) == 0) next
   
   n_post <- nrow(metso_precomputed[[1]]$pred_mat)
-  valid_metso_ids <- names(metso_precomputed)
+  draw_names <- if (run_mode == "mean") "mean" else if (run_mode == "draws") selected_draws else seq_len(n_post)
   
-
-  # Parallel cross-comparison over cores
-
-  cat(sprintf("[%s] Group %d: Evaluating %d x %d pairs across %d cores...\n", 
-            Sys.time(), g_id, length(valid_metso_ids), length(control_precomputed), n_cores))
-  
-  # Fork work across CPU cores
-  # Split METSO stands into N chunks (one chunk per core)
   chunk_size <- ceiling(length(valid_metso_ids) / n_cores)
   metso_slices <- split(valid_metso_ids, ceiling(seq_along(valid_metso_ids) / chunk_size))
   
-  if (os == "Windows") {
-    # Socket nodes need objects exported explicitly per group iteration
-    parallel::clusterExport(
-      cl = cl,
-      varlist = c("metso_precomputed", "control_precomputed", "g_id", "n_post", "process_metso_slice"),
-      envir = environment()
-    )
-    
-    results <- parallel::parLapply(
-      cl = cl,
-      X = metso_slices,
-      fun = function(slice) {
-        process_metso_slice(
-          metso_sub_ids = slice,
-          metso_precomputed = metso_precomputed,
-          control_precomputed = control_precomputed,
-          g_id = g_id,
-          n_post = n_post
-        )
-      }
-    )
-  } else {
-    # Forking inherits memory automatically on Unix/Linux
-    results <- parallel::mclapply(
-      X = metso_slices,
-      FUN = function(slice) {
-        process_metso_slice(
-          metso_sub_ids = slice,
-          metso_precomputed = metso_precomputed,
-          control_precomputed = control_precomputed,
-          g_id = g_id,
-          n_post = n_post
-        )
-      },
-      mc.cores = n_cores
-    )
-  }
+  results <- parallel::mclapply(
+    X = metso_slices,
+    FUN = function(slice) {
+      process_metso_slice_averaged(
+        metso_sub_ids     = slice,
+        metso_precomputed = metso_precomputed,
+        control_precomputed = control_precomputed,
+        g_id              = g_id,
+        n_post            = n_post,
+        draw_names        = draw_names
+      )
+    },
+    mc.cores = n_cores
+  )
   
   results_dt <- data.table::rbindlist(results)
   if (nrow(results_dt) > 0) {
-    write_parquet(results_dt, out_file)
+    arrow::write_parquet(results_dt, out_file)
   }
-  
   rm(group_preds, metso_precomputed, control_precomputed, results, results_dt)
   gc()
 }
-
-if (os == "Windows" && !is.null(cl)) {
-  parallel::stopCluster(cl)
-}
-
-end_time <- Sys.time()
