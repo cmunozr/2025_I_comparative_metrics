@@ -61,7 +61,7 @@ if(!(Sys.getenv("RSTUDIO") == "1")){
 sf::sf_use_s2(FALSE)
 set.seed(11072024)
 
-# --- CONFIGURATION ---
+# 0. Setup
 sufix <- "control" # or "control" (it should change to BAU in some point)
 if(sufix == "metso"){
   val = 1
@@ -70,7 +70,7 @@ if(sufix == "metso"){
 }
 
 # Execution mode flag: set to FALSE Set to FALSE for full run
-test <- FALSE 
+test <- FALSE
 
 # Expected abundance predictions vs stochastic realizations (draws from distribution)
 expected_val <- TRUE
@@ -113,9 +113,7 @@ if (os == "Windows") {
 # Set to FALSE for full runs
 retry_failed_only <- TRUE
 
-#-----------------------
-
-# 1. DATA LOADING
+# 1. Data loading
 
 # Load presence/abscence Model
 fitted_full_model_path_PA <- file.path("models/fbs_M016PA_thin_150_samples_1000_chains_4/fitted_fbs_M016PA_thin_150_samples_1000_chains_4.rds")
@@ -148,16 +146,36 @@ pred_id_file <- file.path(dirname(pred_dir), paste0("pred_ids_", sufix, ".rds"))
 
 # Load Spatial Data
 sp_df <- read_sf(here("data", "metso", "treatment_control_stand_v4.gpkg")) |> 
+  dplyr::mutate(
+    ely_en = stringi::stri_trans_general(ely_en, "Latin-ASCII"),
+    ely_en = stringr::str_to_snake(ely_en),
+    # Deterministic grouping across both METSO and Control
+    group_stratum = paste(year, regional_group, treespecies, sep = "_")
+  )
+
+# dictionary of group IDs
+strata_lookup <- sp_df |> 
+  sf::st_drop_geometry() |> 
+  distinct(group_stratum, year, regional_group, treespecies) |> 
+  mutate(group_number = row_number())
+
+# Filter down to current scenario (metso or control)
+sp_df <- sp_df |> 
   dplyr::filter(metso == val) |> 
-  dplyr::mutate(ely_en = stringi::stri_trans_general(ely_en, "Latin-ASCII"),
-                ely_en = stringr::str_to_snake(ely_en))
+  left_join(strata_lookup, by = c("group_stratum", "year", "regional_group", "treespecies"))
 
 # create group Matches
 matches <- sp_df |> 
-  group_by(year, regional_group, treespecies) |> #ely_en
-  mutate(group_number = cur_group_id()) |> 
-  ungroup() |> 
-  select(standid, metso, group_number)
+  sf::st_drop_geometry() |> 
+  transmute(
+    standid,
+    metso,
+    group_number,
+    group_stratum,
+    year,
+    reg = regional_group,
+    trees = treespecies
+  )
 
 # Load XData
 data_path <- file.path("data", "covariates", paste0("XData_hmsc_", sufix, "_", run_config$model_id, ".rds"))
@@ -242,9 +260,7 @@ XData <- prepare_prediction_xdata(
 )
 
 
-#-----------------------------
-
-# 2. CREATE TASK LIST (Organized by group)
+# 2. Create task list (Organized by group)
 
 cat(sprintf("[%s] Generating Task List organized by groups...\n", Sys.time()))
 
@@ -293,7 +309,6 @@ stopifnot(length(tasks) > 0)
 
 cat(sprintf("Created %d tasks across %d groups.\n", length(tasks), length(unique_groups)))
 
-#---------------------------
 # Retry!
 
 if (retry_failed_only) {
@@ -313,9 +328,7 @@ if (length(tasks) == 0) {
   stop("All batches have already been processed successfully. Exiting.")
 }
 
-#--------------------------
-
-# 3. PARALLEL EXECUTION
+# 3. Parallel execution
 
 # Set TMPDIR for the main R session and Arrow
 Sys.setenv(TMPDIR = worker_tmp)
