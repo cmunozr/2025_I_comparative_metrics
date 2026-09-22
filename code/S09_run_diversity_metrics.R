@@ -36,6 +36,10 @@ n_draws  <- 10
 seed     <- 11072024
 set.seed(seed)
 
+# Execution mode flag: set to FALSE Set to FALSE for full run
+test <- TRUE
+
+# Expected abundance predictions vs stochastic realizations (draws from distribution)
 expected_string <- "_expected_true"
 
 os <- Sys.info()['sysname']
@@ -57,9 +61,13 @@ if (os == "Windows") {
   }
 }
 
-n_cores <- max(1, floor(parallel::detectCores() / 2))
-output_dir <- file.path("results", "metrics", expected_string)
+output_dir <- if (test) {
+  file.path(wr_dir, "metrics", "test", expected_string)
+} else {
+  file.path(wr_dir, "metrics", expected_string)
+}
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
 
 # 1. Load Species and Traits
 load(file.path("models", "unfitted_RData", paste0("unfitted_", run_config$model_id, ".RData")))
@@ -97,7 +105,36 @@ common_groups <- intersect(
   unique(groups_df$group_number[groups_df$metso == 1]),
   unique(groups_df$group_number[groups_df$metso == 0])
 )
-cat("Common strata groups available:", length(common_groups), "\n")
+
+if (test) {
+  test_group_file <- file.path(wr_dir, "test_group_stands.rds")
+  
+  if (file.exists(test_group_file)) {
+    cat("Loading pre-defined test strata from test_group_stands.rds...\n")
+    test_meta <- readRDS(test_group_file)
+    
+    # Filter common groups to those present in the test group cache
+    common_groups <- intersect(common_groups, unique(test_meta$group_number))
+  } else {
+    cat("Selecting small strata groups directly from groups_df...\n")
+    # Identify groups with at least 5 but at most 50 stands in both METSO and control
+    max_stands_per_scenario <- 50
+    small_groups <- groups_df |>
+      filter(group_number %in% common_groups) |>
+      group_by(group_number, metso) |>
+      summarise(n_stands = n(), .groups = "drop") |>
+      pivot_wider(names_from = metso, values_from = n_stands, names_prefix = "m_") |>
+      filter(
+        m_1 >= 5 & m_1 <= max_stands_per_scenario,
+        m_0 >= 5 & m_0 <= max_stands_per_scenario
+      ) |>
+      pull(group_number)
+    
+    common_groups <- head(small_groups, 10) # Take 5 lightweight groups
+  }
+  
+  cat(sprintf("Test: processing %d lightweight groups.\n", length(common_groups)))
+}
 
 predY_ds <- open_dataset(
   file.path(wr_dir, "predictions"), 
