@@ -173,6 +173,9 @@ matches <- sp_df |>
     group_number,
     group_stratum,
     year,
+    municip, 
+    state, 
+    ely_en,
     reg = regional_group,
     trees = treespecies
   )
