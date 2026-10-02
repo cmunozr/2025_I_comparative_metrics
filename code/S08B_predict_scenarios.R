@@ -271,7 +271,7 @@ unique_groups <- unique(na.omit(matches$group_number)) |> sort()
 tasks <- list()
 counter <- 1
 
-for(group in unique_groups) {
+for(group in sort(unique_groups)) {
   # Get row indices for this specific group
   # Note: These indices correspond to the rows in XData/coords/sp_df
   group_indices <- which(matches$group_number == group)
@@ -370,7 +370,7 @@ foreach(task = tasks,
                     "expected_val", "sufix", "expected_string",
                     "alfa_matrix")) %dopar% {
           
-          # task <- tasks[[3]]  
+          # task <- tasks[[2]]  
           # Unpack task info
           idx <- task$indices
           group <- task$group
@@ -478,8 +478,7 @@ foreach(task = tasks,
               paste0("scenario=", sufix)
             )
               
-            # 2. Create the directory safely
-            # recursive = TRUE ensures all parent folders are created
+            # 2. Create the directory
             # if(!dir.exists(part_path)) {
             # dir.create(part_path, recursive = TRUE, showWarnings = FALSE)
             # }
