@@ -74,7 +74,7 @@ for (i in 1:nrow(run_config$mcmc)) {
     } else if (strategy == "random_cv") {
       label <- "cv_random"
     } else if (strategy == "north_south") {
-      label <- "cv_random"
+      label <- "north_south"
     }
     
     mf_output_path <- file.path(dir_fit, paste0("mfeval_", base_model_name, "_", label, "_", ".rds"))
