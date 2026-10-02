@@ -29,6 +29,8 @@ source(file.path("code", "_utilities_diversity_metrics_functions.R"))
 source(file.path("code", "config_model.R"))
 name_model <- generate_run_name(run_config)
 
+message("    Start time: ", Sys.time())
+
 # --- Configuration ---
 # Modes: "mean", "draws", "all"
 run_mode <- "mean"
@@ -37,7 +39,7 @@ seed     <- 11072024
 set.seed(seed)
 
 # Execution mode flag: set to FALSE Set to FALSE for full run
-test <- TRUE
+test <- FALSE
 
 # Expected abundance predictions vs stochastic realizations (draws from distribution)
 expected_string <- "_expected_true"
@@ -62,9 +64,9 @@ if (os == "Windows") {
 }
 
 output_dir <- if (test) {
-  file.path(wr_dir, "metrics", "test", expected_string)
+  file.path(wr_dir, "metrics", "test", expected_string, run_mode)
 } else {
-  file.path(wr_dir, "metrics", expected_string)
+  file.path(wr_dir, "metrics", expected_string, run_mode)
 }
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
@@ -205,11 +207,16 @@ process_metso_slice_averaged <- function(metso_sub_ids, metso_precomputed, contr
         combined_dt[, posterior := actual_draw][, actual_draw := NULL]
       }
       
-      avg_dt <- combined_dt[, .(val = mean(val, na.rm = TRUE)), by = .(posterior, metrics)]
-      avg_dt[, standid_treated := m_id]
-      avg_dt[, group_number := g_id]
+      summary_dt <- combined_dt[, .(
+        val_mean = mean(val, na.rm = TRUE),
+        val_sd   = if (.N > 1) sd(val, na.rm = TRUE) else 0.0,
+        n_controls = .N
+      ), by = .(posterior, metrics)]
       
-      metso_results[[counter]] <- avg_dt
+      summary_dt[, standid_treated := m_id]
+      summary_dt[, group_number := g_id]
+      
+      metso_results[[counter]] <- summary_dt
       counter <- counter + 1
     }
   }
@@ -224,15 +231,27 @@ cols_drop <- c("scenario", "standid", "posterior", "year", "reg", "trees")
 for (g_id in common_groups) {
   # g_id <- common_groups[1]
   out_file <- file.path(output_dir, paste0("metrics_group_", g_id, ".parquet"))
-  if (file.exists(out_file)) next
+  if (file.exists(out_file)) {
+    cat(sprintf("Group %s already processed. Skipping.\n", g_id))
+    next
+  }
   
   group_stands <- groups_df[groups_df$group_number == g_id, ]
   metso_ids <- group_stands$standid[group_stands$metso == 1]
   control_ids <- group_stands$standid[group_stands$metso == 0]
   if (length(metso_ids) == 0 || length(control_ids) == 0) next
   
+  g_year  <- group_stands$year[1]
+  g_reg   <- group_stands$reg[1]
+  g_trees <- group_stands$trees[1]
+  
   group_preds <- predY_ds |> 
-    filter(standid %in% group_stands$standid) |> 
+    filter(
+      year == g_year,
+      reg == g_reg,
+      trees == g_trees,
+      standid %in% group_stands$standid
+    ) |> 
     select(scenario, standid, posterior, all_of(name_spp)) |> 
     collect()
   
@@ -242,24 +261,57 @@ for (g_id in common_groups) {
     selected_draws <- sort(sample(avail_draws, min(n_draws, length(avail_draws))))
   }
   
-  metso_precomputed <- list()
-  for (m_id in metso_ids) {
-    p_sub <- group_preds[group_preds$standid == m_id & group_preds$scenario == "metso", ]
-    if (nrow(p_sub) == 0) next
-    prep <- prepare_stand_matrix(p_sub, run_mode, n_draws, cols_drop, selected_draws)
-    metso_precomputed[[as.character(m_id)]] <- precalculate_stand_metrics(prep$mat, TrData_processed, divmax)
-  }
+  group_preds_dt <- data.table::as.data.table(group_preds)
+  data.table::setkeyv(group_preds_dt, c("scenario", "standid"))
   
+  stands_manifest <- rbind(
+    data.table::data.table(standid = metso_ids, scenario = "metso"),
+    data.table::data.table(standid = control_ids, scenario = "control")
+  )
+  
+  stand_items <- split(stands_manifest, seq_len(nrow(stands_manifest)))
+  
+  precomputed_results <- parallel::mclapply(
+    X = stand_items,
+    FUN = function(item) {
+      st_id <- item$standid
+      scen  <- item$scenario
+      
+      # Fast keyed lookup using data.table
+      p_sub <- group_preds_dt[.(scen, st_id), nomatch = NULL]
+      if (nrow(p_sub) == 0) return(NULL)
+      
+      prep <- prepare_stand_matrix(as.data.frame(p_sub), run_mode, n_draws, cols_drop, selected_draws)
+      metrics <- precalculate_stand_metrics(prep$mat, TrData_processed, divmax)
+      
+      list(
+        standid = as.character(st_id),
+        scenario = scen,
+        metrics = metrics
+      )
+    },
+    mc.cores = n_cores
+  )
+  
+  metso_precomputed <- list()
   control_precomputed <- list()
-  for (c_id in control_ids) {
-    p_sub <- group_preds[group_preds$standid == c_id & group_preds$scenario == "control", ]
-    if (nrow(p_sub) == 0) next
-    prep <- prepare_stand_matrix(p_sub, run_mode, n_draws, cols_drop, selected_draws)
-    control_precomputed[[as.character(c_id)]] <- precalculate_stand_metrics(prep$mat, TrData_processed, divmax)
+  
+  for (res in precomputed_results) {
+    if (is.null(res)) next
+    if (res$scenario == "metso") {
+      metso_precomputed[[res$standid]] <- res$metrics
+    } else {
+      control_precomputed[[res$standid]] <- res$metrics
+    }
   }
   
   valid_metso_ids <- names(metso_precomputed)
-  if (length(valid_metso_ids) == 0 || length(control_precomputed) == 0) next
+  valid_control_ids <- names(control_precomputed)
+  
+  if (length(valid_metso_ids) == 0 || length(valid_control_ids) == 0) {
+    cat(sprintf("Group %s missing valid prediction records across scenarios. Skipping.\n", g_id))
+    next
+  }
   
   n_post <- nrow(metso_precomputed[[1]]$pred_mat)
   draw_names <- if (run_mode == "mean") "mean" else if (run_mode == "draws") selected_draws else seq_len(n_post)
@@ -285,7 +337,14 @@ for (g_id in common_groups) {
   results_dt <- data.table::rbindlist(results)
   if (nrow(results_dt) > 0) {
     arrow::write_parquet(results_dt, out_file)
+    cat(sprintf("[%s] Group %s written: %d treated stands evaluated against %d controls.\n", 
+                format(Sys.time(), "%H:%M:%S"), g_id, length(valid_metso_ids), length(valid_control_ids)))
   }
-  rm(group_preds, metso_precomputed, control_precomputed, results, results_dt)
+  
+  # Immediate memory cleaning
+  rm(group_preds, group_preds_dt, stands_manifest, stand_items, precomputed_results, 
+     metso_precomputed, control_precomputed, results, results_dt)
   gc()
 }
+
+message("    Start time: ", Sys.time())
