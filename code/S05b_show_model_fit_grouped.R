@@ -144,7 +144,7 @@ if (nrow(master_df) > 0) {
     summarise(
       WAIC = mean(WAIC, na.rm = TRUE),
       across(
-        any_of(c("AUC", "TjurR2", "SR2", "RMSE")),
+        any_of(c("Mean_ratio", "Mean_CI_width", "RMSE", "MAE", "AUC", "TjurR2", "Brier", "Prevalence_ratio", "Calib_slope", "SR2", "IQR_ratio")),
         list(
           mean   = ~mean(.x, na.rm = TRUE),
           median = ~median(.x, na.rm = TRUE),
@@ -221,61 +221,196 @@ get_shared_legend <- function(data_subset) {
 pa_master <- master_df %>% filter(Model_Type == "Presence-Absence")
 
 if (nrow(pa_master) > 0) {
-
+  
   pdf_pa <- file.path(base_dir, "model_fit_PA_comparison.pdf")
   pa_pages <- list()
   
   all_strategies <- c("Full_Model", "route_blocked_cv", "metso_holdout", "north_south")
   shared_legend  <- get_shared_legend(pa_master)
   
-  # Page 1: Tjur R2
-  p_tjur <- purrr::map(all_strategies, ~build_metric_panel(pa_master, "TjurR2", .x, c(-0.05, 1)))
-  pa_pages[[1]] <- grid.arrange(grobs = p_tjur, ncol = 4, bottom = shared_legend,
-                                top = "Presence-Absence Models: Cross-Strategy Comparison of Tjur R2")
+  # Helper to generate a standardized 4-panel cross-strategy page
+  build_pa_page <- function(df, metric_col, title_text, y_limits) {
+    panels <- purrr::map(all_strategies, ~build_metric_panel(df, metric_col, .x, y_limits))
+    gridExtra::grid.arrange(
+      grobs = panels, 
+      ncol = 4, 
+      bottom = shared_legend,
+      top = title_text
+    )
+  }
   
-  # Page 2: AUC
-  p_auc <- purrr::map(all_strategies, ~build_metric_panel(pa_master, "AUC", .x, c(0.45, 1)))
-  pa_pages[[2]] <- grid.arrange(grobs = p_auc, ncol = 4, bottom = shared_legend,
-                                top = "Presence-Absence Models: Cross-Strategy Comparison of AUC (Discrimination)")
+  # Page 1: Tjur R2 (Discrimination)
+  pa_pages[[1]] <- build_pa_page(
+    pa_master, "TjurR2", 
+    "Presence-Absence Models: Cross-Strategy Comparison of Tjur R2 (Discrimination)", 
+    c(-0.05, 1.0)
+  )
   
-  # Page 3: RMSE
+  # Page 2: AUC (Discrimination)
+  pa_pages[[2]] <- build_pa_page(
+    pa_master, "AUC", 
+    "Presence-Absence Models: Cross-Strategy Comparison of AUC (Discrimination)", 
+    c(0.45, 1.0)
+  )
+  
+  # Page 3: RMSE (Accuracy)
   max_rmse_pa <- max(pa_master$RMSE, na.rm = TRUE)
-  limit_y_rmse_pa <- c(0, max_rmse_pa * 1.1)
+  limit_y_rmse_pa <- c(0, if (is.finite(max_rmse_pa) && max_rmse_pa > 0) max_rmse_pa * 1.1 else 1.0)
+  pa_pages[[3]] <- build_pa_page(
+    pa_master, "RMSE", 
+    "Presence-Absence Models: Cross-Strategy Comparison of RMSE (Accuracy)", 
+    limit_y_rmse_pa
+  )
   
-  p_rmse <- purrr::map(all_strategies, ~build_metric_panel(pa_master, "RMSE", .x, limit_y_rmse_pa))
-  pa_pages[[3]] <- grid.arrange(grobs = p_rmse, ncol = 4, bottom = shared_legend,
-                                top = "Presence-Absence Models: Cross-Strategy Comparison of Absolute RMSE")
+  # Page 4: MAE (Accuracy)
+  max_mae_pa <- max(pa_master$MAE, na.rm = TRUE)
+  limit_y_mae_pa <- c(0, if (is.finite(max_mae_pa) && max_mae_pa > 0) max_mae_pa * 1.1 else 1.0)
+  pa_pages[[4]] <- build_pa_page(
+    pa_master, "MAE", 
+    "Presence-Absence Models: Cross-Strategy Comparison of MAE (Accuracy)", 
+    limit_y_mae_pa
+  )
   
-  marrangeGrob(grobs = pa_pages, ncol = 1, nrow = 1, top = NULL) %>%
-    ggsave(filename = pdf_pa, width = 14, height = 5.5)
+  # Page 5: Brier Score (Accuracy - Proper Scoring Rule)
+  max_brier_pa <- max(pa_master$Brier, na.rm = TRUE)
+  limit_y_brier_pa <- c(0, if (is.finite(max_brier_pa) && max_brier_pa > 0) min(1.0, max_brier_pa * 1.1) else 0.5)
+  pa_pages[[5]] <- build_pa_page(
+    pa_master, "Brier", 
+    "Presence-Absence Models: Cross-Strategy Comparison of Brier Score (Accuracy)", 
+    limit_y_brier_pa
+  )
+  
+  # Page 6: Prevalence Ratio 
+
+  prev_col <- "Prevalence_ratio"
+  max_prev_pa <- max(pa_master[[prev_col]], na.rm = TRUE)
+  limit_y_prev_pa <- c(0, if (is.finite(max_prev_pa) && max_prev_pa > 0) min(5.0, max_prev_pa * 1.1) else 2.0)
+  pa_pages[[6]] <- build_pa_page(
+    pa_master, prev_col, 
+    "Presence-Absence Models: Cross-Strategy Comparison of Prevalence Ratio (Calibration of Level)", 
+    limit_y_prev_pa
+  )
+  
+  # Page 7: Calibration Slope (Calibration of Dispersion)
+  max_slope_pa <- max(pa_master$Calib_slope, na.rm = TRUE)
+  min_slope_pa <- min(pa_master$Calib_slope, na.rm = TRUE)
+  limit_y_slope_pa <- c(
+    if (is.finite(min_slope_pa) && min_slope_pa < 0) min_slope_pa * 1.1 else 0,
+    if (is.finite(max_slope_pa) && max_slope_pa > 0) min(4.0, max_slope_pa * 1.1) else 2.5
+  )
+  pa_pages[[7]] <- build_pa_page(
+    pa_master, "Calib_slope", 
+    "Presence-Absence Models: Cross-Strategy Comparison of Calibration Slope (Calibration of Dispersion)", 
+    limit_y_slope_pa
+  )
+  
+  # Page 8: Mean 90% CI Width (Predictive Precision)
+  max_ci_pa <- max(pa_master$Mean_CI_width, na.rm = TRUE)
+  limit_y_ci_pa <- c(0, if (is.finite(max_ci_pa) && max_ci_pa > 0) min(1.0, max_ci_pa * 1.1) else 1.0)
+  pa_pages[[8]] <- build_pa_page(
+    pa_master, "Mean_CI_width", 
+    "Presence-Absence Models: Cross-Strategy Comparison of Posterior CI Width (Precision)", 
+    limit_y_ci_pa
+  )
+  
+  # Save multi-page PDF output
+  gridExtra::marrangeGrob(grobs = pa_pages, ncol = 1, nrow = 1, top = NULL) %>%
+    ggplot2::ggsave(filename = pdf_pa, width = 14, height = 5.5)
+  
+  message("Saved multi-page PA diagnostics to: ", pdf_pa)
 }
 
-# 7. Visualizations: continuos abundance models
+# 7. Visualizations: Continuous / Conditional Abundance models
 
-ca_master <- master_df %>% filter(Model_Type == "Continuous Abundance")
+ca_master <- master_df %>% filter(Model_Type %in% c("Continuous Abundance", "Conditional Abundance"))
 
 if (nrow(ca_master) > 0) {
-
+  
   pdf_ca <- file.path(base_dir, "model_fit_AbuCP_comparison.pdf")
   ca_pages <- list()
   
   all_strategies <- c("Full_Model", "route_blocked_cv", "metso_holdout", "north_south")
   shared_legend  <- get_shared_legend(ca_master)
   
-  # Page 1: SR2
-  p_sr2 <- purrr::map(all_strategies, ~build_metric_panel(ca_master, "SR2", .x, c(-0.2, 1)))
-  ca_pages[[1]] <- grid.arrange(grobs = p_sr2, ncol = 4, bottom = shared_legend,
-                                top = "Continuous Abundance Models: Cross-Strategy Comparison of Spearman's R2 (SR2)")
+  # Standardized 4-panel cross-strategy helper
+  build_ca_page <- function(df, metric_col, title_text, y_limits) {
+    # Account for potential 'C.' prefix from hurdle conditional outputs
+    actual_col <- if (metric_col %in% names(df)) {
+      metric_col
+    } else if (paste0("C.", metric_col) %in% names(df)) {
+      paste0("C.", metric_col)
+    } else {
+      metric_col
+    }
+    
+    panels <- purrr::map(all_strategies, ~build_metric_panel(df, actual_col, .x, y_limits))
+    gridExtra::grid.arrange(
+      grobs = panels, 
+      ncol = 4, 
+      bottom = shared_legend,
+      top = title_text
+    )
+  }
   
-  # Page 2: RMSE
+  # Page 1: Spearman's R2 (Discrimination)
+  ca_pages[[1]] <- build_ca_page(
+    ca_master, "SR2", 
+    "Continuous Abundance Models: Cross-Strategy Comparison of Spearman's R2 (Discrimination)", 
+    c(-0.2, 1.0)
+  )
+  
+  # Page 2: Absolute RMSE (Accuracy)
   max_rmse_ca <- max(ca_master$RMSE, na.rm = TRUE)
-  limit_y_rmse_ca <- c(0, max_rmse_ca * 1.1)
+  limit_y_rmse_ca <- c(0, if (is.finite(max_rmse_ca) && max_rmse_ca > 0) max_rmse_ca * 1.1 else 1.0)
+  ca_pages[[2]] <- build_ca_page(
+    ca_master, "RMSE", 
+    "Continuous Abundance Models: Cross-Strategy Comparison of Absolute RMSE (Accuracy)", 
+    limit_y_rmse_ca
+  )
   
-  p_rmse_ca <- purrr::map(all_strategies, ~build_metric_panel(ca_master, "RMSE", .x, limit_y_rmse_ca))
-  pa_pages_ca <- list()
-  ca_pages[[2]] <- grid.arrange(grobs = p_rmse_ca, ncol = 4, bottom = shared_legend,
-                                top = "Continuous Abundance Models: Cross-Strategy Comparison of Absolute RMSE")
+  # Page 3: Mean Absolute Error - MAE (Accuracy)
+  mae_col <- if ("MAE" %in% names(ca_master)) "MAE" else "C.MAE"
+  max_mae_ca <- max(ca_master[[mae_col]], na.rm = TRUE)
+  limit_y_mae_ca <- c(0, if (is.finite(max_mae_ca) && max_mae_ca > 0) max_mae_ca * 1.1 else 1.0)
+  ca_pages[[3]] <- build_ca_page(
+    ca_master, "MAE", 
+    "Continuous Abundance Models: Cross-Strategy Comparison of Mean Absolute Error (Accuracy)", 
+    limit_y_mae_ca
+  )
   
-  marrangeGrob(grobs = ca_pages, ncol = 1, nrow = 1, top = NULL) %>%
-    ggsave(filename = pdf_ca, width = 14, height = 5.5)
+  # Page 4: Mean Ratio (Calibration of Level)
+  mean_rat_col <- if ("Mean_ratio" %in% names(ca_master)) "Mean_ratio" else "C.Mean_ratio"
+  max_mean_rat <- max(ca_master[[mean_rat_col]], na.rm = TRUE)
+  limit_y_mean_rat <- c(0, if (is.finite(max_mean_rat) && max_mean_rat > 0) min(5.0, max_mean_rat * 1.1) else 2.5)
+  ca_pages[[4]] <- build_ca_page(
+    ca_master, "Mean_ratio", 
+    "Continuous Abundance Models: Cross-Strategy Comparison of Mean Ratio (Calibration of Level)", 
+    limit_y_mean_rat
+  )
+  
+  # Page 5: IQR Ratio (Calibration of Dispersion)
+  iqr_col <- if ("IQR_ratio" %in% names(ca_master)) "IQR_ratio" else "C.IQR_ratio"
+  max_iqr_rat <- max(ca_master[[iqr_col]], na.rm = TRUE)
+  limit_y_iqr_rat <- c(0, if (is.finite(max_iqr_rat) && max_iqr_rat > 0) min(5.0, max_iqr_rat * 1.1) else 2.5)
+  ca_pages[[5]] <- build_ca_page(
+    ca_master, "IQR_ratio", 
+    "Continuous Abundance Models: Cross-Strategy Comparison of IQR Ratio (Calibration of Dispersion)", 
+    limit_y_iqr_rat
+  )
+  
+  # Page 6: Mean 90% Posterior CI Width (Precision)
+  ci_col <- if ("Mean_CI_width" %in% names(ca_master)) "Mean_CI_width" else "C.Mean_CI_width"
+  max_ci_ca <- max(ca_master[[ci_col]], na.rm = TRUE)
+  limit_y_ci_ca <- c(0, if (is.finite(max_ci_ca) && max_ci_ca > 0) max_ci_ca * 1.1 else 2.0)
+  ca_pages[[6]] <- build_ca_page(
+    ca_master, "Mean_CI_width", 
+    "Continuous Abundance Models: Cross-Strategy Comparison of Mean 90% Posterior CI Width (Precision)", 
+    limit_y_ci_ca
+  )
+  
+  # Render multi-page PDF output
+  gridExtra::marrangeGrob(grobs = ca_pages, ncol = 1, nrow = 1, top = NULL) %>%
+    ggplot2::ggsave(filename = pdf_ca, width = 14, height = 5.5)
+  
+  message("Successfully generated multi-page continuous abundance diagnostic PDF: ", pdf_ca)
 }

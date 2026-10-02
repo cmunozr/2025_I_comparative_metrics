@@ -49,10 +49,10 @@ master_fit_clean <- master_fit %>%
 # A. Presence-Absence (PA) across all strategies
 df_PA_all_strat <- master_fit_clean %>%
   filter(Model_Type == "Presence-Absence") %>%
-  select(Species, Strat_Code, any_of(c("AUC", "TjurR2", "RMSE"))) %>%
+  select(Species, Strat_Code, any_of(c("AUC", "Brier", "Prevalence_ratio", "Calib_slope", "Mean_CI_width"))) %>%
   pivot_wider(
     names_from = Strat_Code,
-    values_from = any_of(c("AUC", "TjurR2", "RMSE")),
+    values_from = any_of(c("AUC", "Brier", "Prevalence_ratio", "Calib_slope", "Mean_CI_width")),
     names_glue = "PA_{.value}_{Strat_Code}"
   ) %>%
   rename(species = Species)
@@ -60,10 +60,10 @@ df_PA_all_strat <- master_fit_clean %>%
 # B. Conditional Abundance (aCp) across all strategies
 df_aCp_all_strat <- master_fit_clean %>%
   filter(Model_Type == "Continuous Abundance") %>%
-  select(Species, Strat_Code, any_of(c("SR2", "RMSE"))) %>%
+  select(Species, Strat_Code, any_of(c("SR2", "MAE", "Mean_ratio", "Mean_CI_width", "IQR_ratio"))) %>%
   pivot_wider(
     names_from = Strat_Code,
-    values_from = any_of(c("SR2", "RMSE")),
+    values_from = any_of(c("SR2", "MAE", "Mean_ratio", "Mean_CI_width", "IQR_ratio")),
     names_glue = "aCp_{.value}_{Strat_Code}"
   ) %>%
   rename(species = Species)
