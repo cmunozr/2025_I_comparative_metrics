@@ -38,6 +38,11 @@ n_draws  <- 10
 seed     <- 11072024
 set.seed(seed)
 
+selected_draws <- NULL
+if (run_mode == "draws") {
+  selected_draws <- sort(sample.int(4000, n_draws))
+}
+
 # Execution mode flag: set to FALSE Set to FALSE for full run
 test <- FALSE
 
@@ -255,10 +260,8 @@ for (g_id in common_groups) {
     select(scenario, standid, posterior, all_of(name_spp)) |> 
     collect()
   
-  selected_draws <- NULL
   if (run_mode == "draws") {
-    avail_draws <- unique(group_preds$posterior)
-    selected_draws <- sort(sample(avail_draws, min(n_draws, length(avail_draws))))
+    group_preds <- group_preds |> filter(posterior %in% selected_draws)
   }
   
   group_preds_dt <- data.table::as.data.table(group_preds)
