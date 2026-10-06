@@ -1,18 +1,20 @@
 #' @title Pre-compute Stand-Level Intrinsic Metrics
 #' @description Computes single-stand richness, Rao's Quadratic Entropy, and Functional Richness
 #' across all posterior draws prior to pairwise comparisons.
-precalculate_stand_metrics <- function(pred_mat, traits, divmax) {
-  # pred_mat: [n_posteriors x n_species]
+precalculate_stand_metrics <- function(pred_mat, prob_mat, traits, divmax) {
+  # pred_mat: [n_posteriors x n_species] hurdle expected abundance
+  # prob_mat: [n_posteriors x n_species] raw PA probability
   num_posteriors <- nrow(pred_mat)
   
+  # prob = raw PA probability; mask = MTP-filtered presence encoded by hurdle > 0
   mask <- pred_mat > 0
-  prob <- 1 - exp(-pred_mat)
+  prob <- prob_mat
   
-  # Unforced expected richness per posterior
+  # Unforced expected richness per posterior: sum_i p_i * I_i
   es_unforced <- rowSums(prob * mask)
   
-  # Rao's Quadratic Entropy per posterior
-  rao_q <- divc_calc(mask, tr = traits, matrix.ver = TRUE, scalar = divmax)
+  # Rao's Quadratic Entropy per posterior evaluated on hurdle abundance (lambda)
+  rao_q <- divc_calc(pred_mat, tr = traits, matrix.ver = TRUE, scalar = divmax)
   
   # Functional Richness per posterior
   fric <- numeric(num_posteriors)
@@ -38,7 +40,7 @@ calculate_pairwise_metrics_fast <- function(metso_prep, bau_prep, num_posteriors
   E_PDF_unforced <- 1 - (bau_prep$es_unforced / metso_prep$es_unforced)
   E_RaoQ_loss    <- 1 - (bau_prep$rao_q / metso_prep$rao_q) 
   
-  # Handle FRic loss safely
+  # FRic loss
   fric_m <- metso_prep$fric
   fric_b <- bau_prep$fric
   valid_fric <- !is.na(fric_m) & fric_m > 0
