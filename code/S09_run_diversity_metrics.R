@@ -12,7 +12,7 @@
 #' - Model Metadata: models/unfitted_RData/unfitted_[model_id].RData
 #' - Traits Data: data/traits/TrData_complete.rds
 #' - Group Matches: results/matched_pairs_groups_metso.rds & _control.rds
-#' - Predictions: results/predictions/ (Arrow partition)
+#' - Predictions: results/predictions/ & results/predictions_PA/ (Arrow partition)
 #' 
 #' OUTPUTS:
 #' - Group Parquet files: results/metrics/[expected_type]/metrics_group_[N].parquet
@@ -32,11 +32,16 @@ name_model <- generate_run_name(run_config)
 message("    Start time: ", Sys.time())
 
 # --- Configuration ---
-# Modes: "mean", "draws", "all"
-run_mode <- "mean"
-n_draws  <- 10
+# Modes: "draws" (testing/dev), "all" (final analysis). Legacy "mean" disabled.
+run_mode <- "draws"
+n_draws  <- 100
 seed     <- 11072024
 set.seed(seed)
+
+# Prevent running legacy 'mean' mode for production
+# if (run_mode == "mean") {
+#  stop("Legacy 'mean' mode is disabled for production to avoid metric bias (e.g. FRic). Use 'draws' or 'all'.")
+#}
 
 selected_draws <- NULL
 if (run_mode == "draws") {
@@ -143,8 +148,20 @@ if (test) {
   cat(sprintf("Test: processing %d lightweight groups.\n", length(common_groups)))
 }
 
+# Hurdle predictions
 predY_ds <- open_dataset(
   file.path(wr_dir, "predictions"), 
+  hive_style = TRUE, 
+  unify_schemas = TRUE
+) |> 
+  filter(
+    modelid == run_config$model_id, 
+    expected_type == expected_string
+  )
+
+# Parallel PA probability predictions
+predPA_ds <- open_dataset(
+  file.path(wr_dir, "predictions_PA"), 
   hive_style = TRUE, 
   unify_schemas = TRUE
 ) |> 
@@ -158,9 +175,11 @@ prepare_stand_matrix <- function(sub_df, mode, n_target, cols_drop, selected_dra
   sub_df <- sub_df[order(sub_df$posterior), ]
   mat <- as.matrix(sub_df[, !(names(sub_df) %in% cols_drop)])
   
+  # Legacy branch retained for history; production should use 'draws' or 'all'
   if (mode == "mean") {
-    mat_eval <- matrix(colMeans(mat, na.rm = TRUE), nrow = 1)
+    mat_eval  <- matrix(colMeans(mat, na.rm = TRUE), nrow = 1)
     colnames(mat_eval) <- colnames(mat)
+    
     return(list(mat = mat_eval, draws = "mean"))
   } else if (mode == "draws") {
     if (is.null(selected_draws)) {
@@ -179,6 +198,7 @@ process_metso_slice_averaged <- function(metso_sub_ids, metso_precomputed, contr
   counter <- 1
   
   for (m_id in metso_sub_ids) {
+    # m_id <- "38418827_2019"
     prep_m <- metso_precomputed[[as.character(m_id)]]
     if (is.null(prep_m)) next
     
@@ -186,6 +206,7 @@ process_metso_slice_averaged <- function(metso_sub_ids, metso_precomputed, contr
     p_counter <- 1
     
     for (c_id in names(control_precomputed)) {
+      # c_id <- "6773141_2019"
       prep_c <- control_precomputed[[c_id]]
       if (is.null(prep_c)) next
       
@@ -234,7 +255,7 @@ process_metso_slice_averaged <- function(metso_sub_ids, metso_precomputed, contr
 cols_drop <- c("scenario", "standid", "posterior", "year", "reg", "trees")
 
 for (g_id in common_groups) {
-  # g_id <- common_groups[1]
+  # g_id <- common_groups[9]
   out_file <- file.path(output_dir, paste0("metrics_group_", g_id, ".parquet"))
   if (file.exists(out_file)) {
     cat(sprintf("Group %s already processed. Skipping.\n", g_id))
@@ -242,6 +263,8 @@ for (g_id in common_groups) {
   }
   
   group_stands <- groups_df[groups_df$group_number == g_id, ]
+  # zeros on fric
+  # group_stands <- group_stands |>  dplyr::filter(standid %in% c("38418827_2019", "38553528_2019", "38713591_2019") | metso == 0)
   metso_ids <- group_stands$standid[group_stands$metso == 1]
   control_ids <- group_stands$standid[group_stands$metso == 0]
   if (length(metso_ids) == 0 || length(control_ids) == 0) next
@@ -260,12 +283,26 @@ for (g_id in common_groups) {
     select(scenario, standid, posterior, all_of(name_spp)) |> 
     collect()
   
+  group_pa <- predPA_ds |> 
+    filter(
+      year == g_year,
+      reg == g_reg,
+      trees == g_trees,
+      standid %in% group_stands$standid
+    ) |> 
+    select(scenario, standid, posterior, all_of(name_spp)) |> 
+    collect()
+  
   if (run_mode == "draws") {
     group_preds <- group_preds |> filter(posterior %in% selected_draws)
+    group_pa    <- group_pa |> filter(posterior %in% selected_draws)
   }
   
   group_preds_dt <- data.table::as.data.table(group_preds)
-  data.table::setkeyv(group_preds_dt, c("scenario", "standid"))
+  data.table::setkeyv(group_preds_dt, c("scenario", "standid", "posterior"))
+  
+  group_pa_dt <- data.table::as.data.table(group_pa)
+  data.table::setkeyv(group_pa_dt, c("scenario", "standid", "posterior"))
   
   stands_manifest <- rbind(
     data.table::data.table(standid = metso_ids, scenario = "metso"),
@@ -277,15 +314,18 @@ for (g_id in common_groups) {
   precomputed_results <- parallel::mclapply(
     X = stand_items,
     FUN = function(item) {
+      # item <- stand_items[[1]]
       st_id <- item$standid
       scen  <- item$scenario
       
       # Fast keyed lookup using data.table
-      p_sub <- group_preds_dt[.(scen, st_id), nomatch = NULL]
-      if (nrow(p_sub) == 0) return(NULL)
+      p_sub  <- group_preds_dt[.(scen, st_id), nomatch = NULL]
+      pa_sub <- group_pa_dt[.(scen, st_id), nomatch = NULL]
+      if (nrow(p_sub) == 0 || nrow(pa_sub) == 0) return(NULL)
       
-      prep <- prepare_stand_matrix(as.data.frame(p_sub), run_mode, n_draws, cols_drop, selected_draws)
-      metrics <- precalculate_stand_metrics(prep$mat, TrData_processed, divmax)
+      prep_hurdle <- prepare_stand_matrix(as.data.frame(p_sub), run_mode, n_draws, cols_drop, selected_draws)
+      prep_pa     <- prepare_stand_matrix(as.data.frame(pa_sub), run_mode, n_draws, cols_drop, selected_draws)
+      metrics     <- precalculate_stand_metrics(prep_hurdle$mat, prep_pa$mat, TrData_processed, divmax)
       
       list(
         standid = as.character(st_id),
@@ -325,6 +365,7 @@ for (g_id in common_groups) {
   results <- parallel::mclapply(
     X = metso_slices,
     FUN = function(slice) {
+      # slice <- metso_slices[[1]]
       process_metso_slice_averaged(
         metso_sub_ids     = slice,
         metso_precomputed = metso_precomputed,
@@ -344,10 +385,10 @@ for (g_id in common_groups) {
                 format(Sys.time(), "%H:%M:%S"), g_id, length(valid_metso_ids), length(valid_control_ids)))
   }
   
-  # Immediate memory cleaning
-  rm(group_preds, group_preds_dt, stands_manifest, stand_items, precomputed_results, 
+  # Memory cleaning
+  rm(group_preds, group_pa, group_preds_dt, group_pa_dt, stands_manifest, stand_items, precomputed_results, 
      metso_precomputed, control_precomputed, results, results_dt)
   gc()
 }
 
-message("    Start time: ", Sys.time())
+message("    End time: ", Sys.time())
