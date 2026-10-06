@@ -137,8 +137,10 @@ alfa_matrix <- readRDS(file.path(wr_dir, "alfa_matrix.rds"))
 
 # output folder
 pred_dir <- file.path(wr_dir, "predictions")
+pred_pa_dir <- file.path(wr_dir, "predictions_PA")
 
 if(!dir.exists(pred_dir)) dir.create(pred_dir, recursive = TRUE, showWarnings = FALSE)
+if(!dir.exists(pred_pa_dir)) dir.create(pred_pa_dir, recursive = TRUE, showWarnings = FALSE)
 
 expected_string <- if(expected_val) "_expected_true" else "_expected_false"
 
@@ -359,6 +361,17 @@ for(i in 1:nrow(distinct_partitions)) {
                       paste0("scenario=", sufix)
   )
   dir.create(p_path, recursive = TRUE, showWarnings = FALSE)
+
+  p_pa_path <- file.path(pred_pa_dir,
+                         paste0("modelid=", modelid),
+                         paste0("expected_type=", expected_string),
+                         paste0("year=", distinct_partitions$year[i]),
+                         paste0("reg=", distinct_partitions$regional_group[i]),
+                         #paste0("ely=", distinct_partitions$ely_en[i]),
+                         paste0("trees=", distinct_partitions$treespecies[i]),
+                         paste0("scenario=", sufix)
+  )
+  dir.create(p_pa_path, recursive = TRUE, showWarnings = FALSE)
 }
 
 registerDoParallel(cl)
@@ -366,7 +379,7 @@ registerDoParallel(cl)
 foreach(task = tasks, 
         .packages = c("Hmsc", "sf", "arrow", "dplyr", "tidyr", "tibble"), 
         .export = c("hM_PA", "hM_aCp", "run_config", "modelid",
-                    "spatial_level_name", "pred_dir",
+                    "spatial_level_name", "pred_dir", "pred_pa_dir",
                     "expected_val", "sufix", "expected_string",
                     "alfa_matrix")) %dopar% {
           
@@ -486,12 +499,44 @@ foreach(task = tasks,
             # Create unique filename
             file_name <- paste0("part_batch", b_num, ".parquet")
             full_file_path <- file.path(part_path, file_name)
+            
+            # to float 32
+            predY <- predY |>
+              mutate(across(-c(standid, posterior), as.single))
               
             # Write the Parquet file
-            arrow::write_parquet(predY, sink = full_file_path)
+            arrow::write_parquet(predY, sink = full_file_path, compression = "zstd", compression_level = 5)
+            
+            # --- PA DATASET CREATION ---
+            predY_raw_pa <- aperm(predY_PA, c(1, 3, 2))
+            dim(predY_raw_pa) <- c(n_sites_batch * n_post, n_spp)
+            predY_raw_pa <- as.data.frame(predY_raw_pa)
+            colnames(predY_raw_pa) <- colnames(hM_PA$Y)
+            predY_raw_pa <- predY_raw_pa |>
+              mutate(
+                standid = site_ids_rep,
+                posterior = post_ids_rep
+              )
+
+            part_pa_path <- file.path(
+              pred_pa_dir,
+              paste0("modelid=", modelid),
+              paste0("expected_type=", expected_string),
+              paste0("year=", yr),
+              paste0("reg=", reg),
+              #paste0("ely=", ely),
+              paste0("trees=", tr),
+              paste0("scenario=", sufix)
+            )
+            full_file_pa_path <- file.path(part_pa_path, file_name)
+            
+            predY_raw_pa <- predY_raw_pa |>
+              mutate(across(-c(standid, posterior), as.single))
+            
+            arrow::write_parquet(predY_raw_pa, sink = full_file_pa_path, compression = "zstd", compression_level = 5)
             
             # Cleanup 
-            rm(site_ids_rep, post_ids_rep)
+            rm(site_ids_rep, post_ids_rep, predY_raw_pa)
                 
             }, error = function(e) {
               err_msg <- as.character(e)
