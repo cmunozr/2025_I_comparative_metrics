@@ -91,6 +91,7 @@ calculate_pairwise_metrics_fast <- function(metso_prep, bau_prep, num_posteriors
   )
 }
 
+#' # LEGACY / NOT USED BY S09, need update if want
 #' @title Vectorized Calculation of Expected Biodiversity Metrics
 #' @description Computes an expected suite of taxonomic and functional biodiversity metrics comparing business-as-usual (BAU) versus METSO baseline scenarios.
 #' Metric formulations are mapped to the methodological equations in the manuscript.
