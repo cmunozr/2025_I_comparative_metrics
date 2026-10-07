@@ -39,9 +39,9 @@ seed     <- 11072024
 set.seed(seed)
 
 # Prevent running legacy 'mean' mode for production
-# if (run_mode == "mean") {
-#  stop("Legacy 'mean' mode is disabled for production to avoid metric bias (e.g. FRic). Use 'draws' or 'all'.")
-#}
+if (run_mode == "mean") {
+  stop("Legacy 'mean' mode is disabled for production to avoid metric bias (e.g. FRic). Use 'draws' or 'all'.")
+}
 
 selected_draws <- NULL
 if (run_mode == "draws") {
