@@ -47,11 +47,18 @@ if (os == "Windows") {
   }
 }
 
-mean_dir <- if (test) {
-  file.path(wr_dir, "metrics", "test", expected_string, "mean")
-} else {
-  file.path(wr_dir, "metrics", expected_string, "mean")
+run_mode <- "draws" # flag to remind
+
+if (run_mode == "mean") {
+  stop("Legacy 'mean' mode is disabled for production to avoid metric bias (e.g. FRic). Use 'draws' or 'all'.")
+  
+  mean_dir <- if (test) {
+    file.path(wr_dir, "metrics", "test", expected_string, "mean")
+  } else {
+    file.path(wr_dir, "metrics", expected_string, "mean")
+  }
 }
+
 
 draws_dir <- if (test) {
   file.path(wr_dir, "metrics", "test", expected_string, "draws")
@@ -81,52 +88,54 @@ groups_meta[, `:=`(
 # --- 3. Analysis Part 1: Posterior Mean (Reference Evaluation) ---
 cat("\n--- Evaluating Posterior Mean Metrics ---\n")
 
-ds_mean <- arrow::open_dataset(mean_dir)
-
-# Collect data
-dt_mean <- ds_mean |>
-  select(standid_treated, group_number, posterior, metrics, val_mean, val_sd, n_controls) |>
-  mutate(weigth_sd = (1/val_sd)^2) |> 
-  collect()
-setDT(dt_mean)
-
-dt_mean <- merge(dt_mean, groups_meta, by = "group_number", all.x = TRUE)
-
-metrics_list <- sort(unique(dt_mean$metrics))
-
-results_q1 <- list()
-q1_mean_fitted_models <- list()
-
-for (m in metrics_list) {
+if(mode == "mean"){
+  
+  ds_mean <- arrow::open_dataset(mean_dir)
+  
+  # Collect data
+  dt_mean <- ds_mean |>
+    select(standid_treated, group_number, posterior, metrics, val_mean, val_sd, n_controls) |>
+    mutate(weigth_sd = (1/val_sd)^2) |> 
+    collect()
+  setDT(dt_mean)
+  
+  dt_mean <- merge(dt_mean, groups_meta, by = "group_number", all.x = TRUE)
+  
+  metrics_list <- sort(unique(dt_mean$metrics))
+  
+  results_q1 <- list()
+  q1_mean_fitted_models <- list()
+  
+  for (m in metrics_list) {
     # m <- metrics_list[1]  # For testing/debugging
     sub_df <- dt_mean[metrics == m]
-  
+    
     if (nrow(sub_df) == 0) next
-  
+    
     # Linear model with environmental strata fixed factors and clustered SEs
     fit <- tryCatch({
-        feols(
+      feols(
         val_mean ~ 1 + i(reg) + i(trees) + i(year),
         data    = sub_df,
-        cluster = ~group_number, 
-        weights = ~weigth_sd 
-        )
+        cluster = ~group_number#, 
+        #weights = ~weigth_sd 
+      )
     }, error = function(e) {
-        message("Model failed for metric ", m, ": ", e$message)
-        return(NULL)
+      message("Model failed for metric ", m, ": ", e$message)
+      return(NULL)
     })
-
+    
     q1_mean_fitted_models[[m]] <- fit
-  
+    
     if (!is.null(fit)) {
-    
-    int_coef <- as.numeric(coef(fit)["(Intercept)"])
-    int_se   <- as.numeric(se(fit)["(Intercept)"])
-    int_pval <- as.numeric(pvalue(fit)["(Intercept)"])
-    ci_vals  <- as.numeric(confint(fit)["(Intercept)", ])
-    r2_val   <- as.numeric(r2(fit, "ar2"))
-    
-    row_dt <- data.table(
+      
+      int_coef <- as.numeric(coef(fit)["(Intercept)"])
+      int_se   <- as.numeric(se(fit)["(Intercept)"])
+      int_pval <- as.numeric(pvalue(fit)["(Intercept)"])
+      ci_vals  <- as.numeric(confint(fit)["(Intercept)", ])
+      r2_val   <- as.numeric(r2(fit, "ar2"))
+      
+      row_dt <- data.table(
         metric       = as.character(m),
         n_stands     = as.integer(nrow(sub_df)),
         n_groups     = as.integer(uniqueN(sub_df$group_number)),
@@ -137,16 +146,17 @@ for (m in metrics_list) {
         ci_2.5       = ci_vals[1],
         ci_97.5      = ci_vals[2],
         r2_adjusted  = r2_val
-    )
-    
-    results_q1[[m]] <- row_dt
+      )
+      
+      results_q1[[m]] <- row_dt
+    }
   }
+  
+  q1_mean_summary <- rbindlist(results_q1)
+  
+  saveRDS(q1_mean_summary, file.path(out_causal_dir, "q1_causal_effects_summary.rds"))
+  saveRDS(q1_mean_fitted_models, file.path(out_causal_dir, "q1_fitted_models.rds"))
 }
-
-q1_mean_summary <- rbindlist(results_q1)
-
-saveRDS(q1_mean_summary, file.path(out_causal_dir, "q1_causal_effects_summary.rds"))
-saveRDS(q1_mean_fitted_models, file.path(out_causal_dir, "q1_fitted_models.rds"))
 
 # --- 4. Analysis Part 2: Posterior Draws (Robustness Check) ---
 cat("\n--- Evaluating Posterior Draws Uncertainty ---\n")
@@ -183,8 +193,8 @@ for (m in metrics_list) {
       feols(
         val_mean ~ 1 + i(reg) + i(trees) + i(year),
         data    = sub_md,
-        cluster = ~group_number, 
-        weights = ~weigth_sd
+        cluster = ~group_number#, 
+        #weights = ~weigth_sd
       )
     }, error = function(e) {
       message(sprintf("Model failed for metric %s (draw %s): %s", m, d, e$message))
