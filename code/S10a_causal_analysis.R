@@ -193,8 +193,8 @@ for (m in metrics_list) {
       feols(
         val_mean ~ 1 + i(reg) + i(trees) + i(year),
         data    = sub_md,
-        cluster = ~group_number#, 
-        #weights = ~weigth_sd
+        cluster = ~group_number, 
+        weights = ~weigth_sd
       )
     }, error = function(e) {
       message(sprintf("Model failed for metric %s (draw %s): %s", m, d, e$message))
