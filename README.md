@@ -110,7 +110,7 @@ Fitting is performed using Python/TensorFlow for speed.
 * **S05 Series**: Generates plots summarizing model explanatory power.
 
 ### 4. Ecological Inference
-* **S06a_show_parameter_estimates.R**: Visualizes Beta parameters (environmental responses) and Gamma parameters (traits).
+* **S06_show_parameter_estimates.R**: Visualizes Beta parameters (environmental responses) and Gamma parameters (traits).
 * **S07_visualize_responses.R**: Plots gradient responses for specific species or community traits.
 
 ### 5. Scenario Analysis & Metric Comparison
@@ -209,6 +209,10 @@ These scripts are useful for testing the prediction engine before committing to 
 * `_utilities_predict_scenarios_replicates.R`
   * *Purpose:* Ensure the replication and consistency of the prediction generation process.
 
+#### Phase D: Paper figures (Run after S10)
+Scripts to create the publishing ready figures for the manuscript
+
+* `_utilities_paper_figs.R`
 
 ## Authors and contact
 

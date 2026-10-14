@@ -1,10 +1,10 @@
-library(dplyr)
 library(tidyr)
 library(stringr)
 library(ggplot2)
 library(patchwork)
 library(readxl)
 library(scales)
+library(dplyr)
 
 # -------------------------------------------------------------------------
 # 1. Variance Partitioning
@@ -328,4 +328,152 @@ ggsave(
   height = 230,
   units = "mm",
   dpi = 500
+)
+
+# -------------------------------------------------------------------------
+# 3. consistency heatmaps
+# -------------------------------------------------------------------------
+
+footprints <- c("E_MSA_loss", "E_PDF_unforced", "E_PDF_forced")
+ecological <- c("EG_loss", "E_FRic_loss", "E_RaoQ_loss", "E_BCD")
+metrics    <- c(footprints, ecological)
+
+overall_rank_summary <- read.csv(file.path("results","consistency","q2_rank_summary.csv"))
+stand_summary <- read.csv(file.path("results","consistency","q2_stand_discordance_summary.csv"))
+
+output_dir <- file.path("results", "consistency")
+
+
+# --- 5. Visualization Heatmaps (Elsevier / Ecological Indicators Style) ---
+cat("\n--- Generating Heatmap Figures ---\n")
+
+# Publication-grade label dictionaries matching the mock-up
+footprint_labels <- c(
+  "E_MSA_loss"     = "MSA",
+  "E_PDF_unforced" = "PDF-U",
+  "E_PDF_forced"   = "PDF-F"
+)
+
+ecological_labels <- c(
+  "EG_loss"     = "EG",
+  "E_FRic_loss" = "FRic",
+  "E_RaoQ_loss" = "RaoQ",
+  "E_BCD"       = "BCD"
+)
+
+# Standardized theme matching S06b / Elsevier specifications
+theme_elsevier_heatmap <- theme_classic(base_size = 8, base_family = "sans") +
+  theme(
+    panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.4),
+    axis.text.x        = element_text(size = 8, face = "plain", color = "black"),
+    axis.text.y        = element_text(size = 8, face = "plain", color = "black"),
+    axis.title         = element_blank(),
+    axis.ticks         = element_blank(),
+    plot.title         = element_text(size = 8.5, face = "bold", hjust = 0, margin = margin(b = 4)),
+    plot.subtitle      = element_text(size = 7, color = "gray25", hjust = 0, margin = margin(b = 4)),
+    legend.title       = element_text(size = 7.5, face = "bold"),
+    legend.text        = element_text(size = 7),
+    legend.key.width   = unit(3, "mm"),
+    legend.key.height  = unit(7, "mm"),
+    plot.margin        = margin(t = 6, r = 4, b = 6, l = 4)
+  )
+
+# Base datasets filtered and formatted with ordered factor levels
+df_rank_fig <- overall_rank_summary |>
+  filter(metric_a %in% footprints, metric_b %in% ecological) |>
+  mutate(
+    metric_a = factor(metric_a, levels = footprints, labels = footprint_labels),
+    metric_b = factor(metric_b, levels = rev(ecological), labels = rev(ecological_labels))
+  )
+
+df_sign_fig <- stand_summary |>
+  filter(metric_a %in% footprints, metric_b %in% ecological) |>
+  mutate(
+    metric_a = factor(metric_a, levels = footprints, labels = footprint_labels),
+    metric_b = factor(metric_b, levels = rev(ecological), labels = rev(ecological_labels))
+  ) |>
+  tidyr::complete(
+    metric_a = factor(footprint_labels, levels = footprint_labels),
+    metric_b = factor(rev(ecological_labels), levels = rev(ecological_labels))
+  )
+
+# --- Panel (a): Median Spearman Rank Correlation ---
+p_a <- ggplot(df_rank_fig, aes(x = metric_a, y = metric_b, fill = median_rho)) +
+  geom_tile(color = "white", linewidth = 0.6) +
+  geom_text(aes(label = sprintf("%.2f", median_rho)), size = 2.7, family = "sans") +
+  scale_fill_gradient2(
+    limits = c(-1, 1), midpoint = 0,
+    low = "#b2182b", mid = "#eef0f6", high = "#386cb0",
+    na.value = "grey90"
+  ) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0), drop = FALSE) +
+  labs(
+    title = "(a) Rank concordance",
+    subtitle = expression(Median~Spearman~rho),
+    fill = expression(rho)
+  ) +
+  theme_elsevier_heatmap
+
+# --- Panel (b): Median Top-10% Overlap Lift ---
+p_b <- ggplot(df_rank_fig, aes(x = metric_a, y = metric_b, fill = median_top_lift)) +
+  geom_tile(color = "white", linewidth = 0.6) +
+  geom_text(aes(label = sprintf("%.1f", median_top_lift)), size = 2.7, family = "sans") +
+  scale_fill_gradient2(
+    midpoint = 1.0,
+    low = "#b2182b", mid = "#f5f5f5", high = "#438473",
+    na.value = "grey90"
+  ) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0), drop = FALSE) +
+  labs(
+    title = "(b) Top-10% overlap",
+    subtitle = "Overlap lift vs. chance",
+    fill = "Lift"
+  ) +
+  theme_elsevier_heatmap +
+  theme(axis.text.y = element_blank())
+
+# --- Panel (c): Proportion of Stands with Strong Directional Discordance ---
+p_c <- ggplot(df_sign_fig, aes(x = metric_a, y = metric_b, fill = proportion_strong_discordance)) +
+  geom_tile(color = "white", linewidth = 0.6) +
+  geom_text(
+    aes(label = ifelse(is.na(proportion_strong_discordance), "—", sprintf("%.0f%%", 100 * proportion_strong_discordance))),
+    size = 2.7, family = "sans", color = "black"
+  ) +
+  scale_fill_gradient(
+    low = "#f7f7f7", high = "#a64b4b",
+    limits = c(0, 1), na.value = "grey92",
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0), drop = FALSE) +
+  labs(
+    title = "(c) Sign discordance",
+    subtitle = "Strong discordance rate",
+    fill = "Rate"
+  ) +
+  theme_elsevier_heatmap +
+  theme(axis.text.y = element_blank())
+
+# --- Composite Figure
+fig_consistency_3panel <- p_a + p_b + p_c +
+  plot_layout(ncol = 3, widths = c(1.15, 1, 1))
+
+ggsave(
+  filename = file.path(output_dir, "figure_q2_metric_consistency_3panel.pdf"),
+  plot     = fig_consistency_3panel,
+  width    = 190,
+  height   = 75,
+  units    = "mm",
+  device   = cairo_pdf
+)
+
+ggsave(
+  filename = file.path(output_dir, "figure_q2_metric_consistency_3panel.png"),
+  plot     = fig_consistency_3panel,
+  width    = 190,
+  height   = 75,
+  units    = "mm",
+  dpi      = 500
 )
