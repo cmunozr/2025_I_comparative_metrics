@@ -66,7 +66,7 @@ calculate_pairwise_metrics_fast <- function(metso_prep, bau_prep, num_posteriors
     }
     
     # Forced expected richness of BAU under METSO's present species
-    es_bau_forced <- sum(bau_prep$prob[p, m_metso])
+    es_bau_forced <- sum(pmin(metso_prep$prob[p, m_metso], bau_prep$prob[p, m_metso]))
     E_PDF_forced[p] <- 1 - (es_bau_forced / es_m)
     
     # MSA Loss
@@ -141,7 +141,7 @@ calculate_metrics_vectorized <- function(predY_metso_mat, predY_bau_mat, Traits 
     # Expected Richness Extraction
     ES_metso <- sum(prob_metso[p, m_metso])
     ES_bau_unforced <- sum(prob_bau[p, m_bau])
-    ES_bau_forced <- sum(prob_bau[p, m_metso])
+    ES_bau_forced <- sum(pmin(prob_metso[p, m_metso], prob_bau[p, m_metso]))
     
     # Mathematical safeguard: Skip iteration if baseline richness is zero
     if (ES_metso == 0) {

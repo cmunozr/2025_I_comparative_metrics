@@ -32,7 +32,7 @@ name_model <- generate_run_name(run_config)
 message("    Start time: ", Sys.time())
 
 # --- Configuration ---
-# Modes: "draws" (testing/dev), "all" (final analysis). Legacy "mean" disabled.
+# Modes: "draws", "all". Legacy "mean" disabled.
 run_mode <- "draws"
 n_draws  <- 100
 seed     <- 11072024
