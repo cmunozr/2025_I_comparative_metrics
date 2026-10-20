@@ -8,6 +8,7 @@
 #' - Specification: val_mean ~ 1 + i(reg) + i(trees) + i(year), cluster = ~group_number
 #' - Reference Test: Evaluates intercept on posterior mean metrics.
 #' - Robustness: Propagates parameter and prediction uncertainty across posterior draws.
+#' - Draw-level national and region-standardized marginal means from the same weighted OLS.
 #' 
 #' INPUTS:
 #' - Group Parquet files: results/metrics/[expected_type]/[run_mode]/metrics_group_*.parquet
@@ -18,6 +19,7 @@
 #' OUTPUTS:
 #' - Summary Table: results/causal_analysis/rq1_causal_effects_summary.rds
 #' - Posterior Draws: results/causal_analysis/rq1_draws_robustness.rds
+#' - Regional Draws / Summary: results/causal_analysis/rq1_draws_regional_*.rds
 
 library(tidyverse)
 library(arrow)
@@ -85,10 +87,10 @@ groups_meta[, `:=`(
   year  = as.factor(year)
 )]
 
-# --- 3. Analysis Part 1: Posterior Mean (Reference Evaluation) ---
+# --- 3. Mode Mean ---
 cat("\n--- Evaluating Posterior Mean Metrics ---\n")
 
-if(mode == "mean"){
+if(run_mode == "mean"){
   
   ds_mean <- arrow::open_dataset(mean_dir)
   
@@ -158,11 +160,11 @@ if(mode == "mean"){
   saveRDS(q1_mean_fitted_models, file.path(out_causal_dir, "q1_fitted_models.rds"))
 }
 
-# --- 4. Analysis Part 2: Posterior Draws (Robustness Check) ---
+# --- 4. Mode Draws ---
 cat("\n--- Evaluating Posterior Draws Uncertainty ---\n")
 
 ds_draws <- arrow::open_dataset(draws_dir)
-  
+
 dt_draws <- ds_draws |>
   select(standid_treated, group_number, posterior, metrics, val_mean, val_sd) |>
   mutate(weigth_sd = (1/val_sd)^2) |>
@@ -172,23 +174,108 @@ setDT(dt_draws)
 metrics_list <- sort(unique(dt_draws$metrics))
 
 dt_draws <- merge(dt_draws, groups_meta, by = "group_number", all.x = TRUE)
-  
+
 draw_ids <- sort(unique(dt_draws$posterior))
+
+# Target population: unique matched METSO stands. Marginal averaging uses equal
+# stand weights, independently of the inverse-variance weights used to fit OLS.
+stand_pop <- unique(dt_draws[, .(standid_treated, group_number, reg, trees, year)])
+
+national_grid <- stand_pop[, .(n_target = .N), by = .(reg, trees, year)]
+national_grid[, share := n_target / sum(n_target)]
+
+tree_year_mix <- stand_pop[, .(n_target = .N), by = .(trees, year)]
+tree_year_mix[, share := n_target / sum(n_target)]
+
+regional_grid <- as.data.table(merge(
+  data.frame(reg = unique(stand_pop$reg)),
+  as.data.frame(tree_year_mix), by = NULL
+))
+regional_counts <- stand_pop[, .(
+  n_region_stands = .N,
+  n_region_groups = uniqueN(group_number)
+), by = reg]
+
+# A marginal mean is a linear combination of the fitted OLS coefficients.
+# Its SE uses the full matched-group clustered covariance, not mean(prediction SEs).
+
+marginal_estimate <- function(fit, grid, weight_col = "share") {
   
-# Pre-allocate collector list using total combinations
+  w <- grid[[weight_col]]
+  w <- w / sum(w)
+  
+  pred <- predict(fit, newdata = as.data.frame(grid))
+  estimate <- sum(w * pred)
+  
+  b <- coef(fit)
+  V <- vcov(fit)
+  
+  x <- matrix(
+    0,
+    nrow = nrow(grid),
+    ncol = length(b),
+    dimnames = list(NULL, names(b))
+  )
+  
+  x[, "(Intercept)"] <- 1
+  
+  for (nm in names(b)) {
+    
+    if (startsWith(nm, "reg::")) {
+      level <- sub("reg::", "", nm, fixed = TRUE)
+      x[, nm] <- as.character(grid$reg) == level
+    }
+    
+    if (startsWith(nm, "trees::")) {
+      level <- sub("trees::", "", nm, fixed = TRUE)
+      x[, nm] <- as.character(grid$trees) == level
+    }
+    
+    if (startsWith(nm, "year::")) {
+      level <- sub("year::", "", nm, fixed = TRUE)
+      x[, nm] <- as.character(grid$year) == level
+    }
+  }
+  
+  # Average design vector for the requested target population.
+  l <- colSums(x * w)
+  
+  # Safety check: our coefficient mapping must reproduce fixest predictions.
+  estimate_from_coef <- sum(l * b)
+  
+  if (!isTRUE(all.equal(
+    estimate,
+    estimate_from_coef,
+    tolerance = 1e-10
+  ))) {
+    stop("Marginal coefficient mapping does not reproduce fixest predictions.")
+  }
+  
+  se <- sqrt(drop(t(l) %*% V %*% l))
+  
+  tibble(
+    estimate = estimate,
+    se = se,
+    ci_2.5 = estimate - 1.96 * se,
+    ci_97.5 = estimate + 1.96 * se
+  )
+}
+
+# Pre-allocate
 total_iterations <- length(metrics_list) * length(draw_ids)
 draws_results <- vector("list", total_iterations)
+regional_results <- vector("list", total_iterations)
 counter <- 1
-  
+
 for (m in metrics_list) {
-  # m <- "E_FRic_loss"
+  # m <- "E_BCD"
   sub_m <- dt_draws[metrics == m]
   
   for (d in draw_ids) {
-    # d <- 922
+    # d <- 11
     sub_md <- sub_m[posterior == d]
     if (nrow(sub_md) == 0) next
-      
+    
     fit_d <- tryCatch({
       feols(
         val_mean ~ 1 + i(reg) + i(trees) + i(year),
@@ -200,47 +287,76 @@ for (m in metrics_list) {
       message(sprintf("Model failed for metric %s (draw %s): %s", m, d, e$message))
       return(NULL)
     })
-      
+    
     if (!is.null(fit_d)) {
-      int_c <- as.numeric(coef(fit_d)["(Intercept)"])
-      int_s <- as.numeric(se(fit_d)["(Intercept)"])
-      int_p <- as.numeric(pvalue(fit_d)["(Intercept)"])
-      ci_d  <- as.numeric(confint(fit_d)["(Intercept)", ])
-      
-      row_draw <- data.table(
+      # National: average fitted contrasts over the observed METSO stand mix.
+      national_margin <- marginal_estimate(fit_d, national_grid)
+      row_draw <- cbind(data.table(
         metric    = as.character(m),
         posterior = as.integer(d),
-        n_stands  = as.integer(nrow(sub_md)),
-        intercept = int_c,
-        se        = int_s,
-        t_stat    = int_c / int_s,
-        p_value   = int_p,
-        ci_2.5    = ci_d[1],
-        ci_97.5   = ci_d[2]
-      )
+        n_stands  = nrow(stand_pop),
+        n_groups  = uniqueN(stand_pop$group_number),
+        n_fitted  = nobs(fit_d)
+      ), national_margin)
+      
+      # Regional: set region, then average over the SAME national joint
+      # tree-type/year mix in every region (not each region's own composition).
+      # Unobserved region x tree/year cells rely on the additive OLS assumption.
+      region_margin <- rbindlist(lapply(split(regional_grid, regional_grid$reg, drop = TRUE), function(g) {
+        cbind(data.table(reg = g$reg[1]), marginal_estimate(fit = fit_d, grid = g))
+      }))
+      region_margin <- merge(region_margin, regional_counts, by = "reg")
+      
+      region_margin <- region_margin |> 
+        rename(marginal_mean = estimate) |>
+        mutate(
+          metric = as.character(m),
+          posterior = as.integer(d),
+          t_stat = marginal_mean / se,
+          p_value = 2 * pnorm(abs(t_stat), lower.tail = FALSE)
+        )
+      setcolorder(region_margin, c(
+        "metric", "posterior", "reg", "n_region_stands", "n_region_groups",
+        "marginal_mean", "se", "t_stat", "p_value", "ci_2.5", "ci_97.5"
+      ))
       
       draws_results[[counter]] <- row_draw
+      regional_results[[counter]] <- region_margin
       
       counter <- counter + 1
     }
   }
 }
-  
+
 # Remove unused pre-allocated slots and bind
 draws_dt_all <- rbindlist(draws_results[seq_len(counter - 1)])
-  
-# Posterior Credible Summaries across draws (evaluating Q1 robustness)
+regional_dt_all <- rbindlist(regional_results[seq_len(counter - 1)])
+
+# Across-draw intervals below describe JSDM posterior uncertainty in marginal
+# point estimates. Per-draw ci_2.5/ci_97.5 separately use clustered OLS SEs.
 q1_robustness <- draws_dt_all[, .(
-  n_draws_evaluated = .N,
-  mean_intercept    = mean(intercept, na.rm = TRUE),
-  median_intercept  = median(intercept, na.rm = TRUE),
-  sd_intercept      = sd(intercept, na.rm = TRUE),
-  ci_2.5            = quantile(intercept, 0.025, na.rm = TRUE),
-  ci_97.5           = quantile(intercept, 0.975, na.rm = TRUE),
-  prob_positive     = mean(intercept > 0, na.rm = TRUE),
-  sign_stable       = (all(intercept > 0) || all(intercept < 0))
+  n_draws_evaluated    = .N,
+  estimate_mean   = mean(estimate, na.rm = TRUE),
+  estimate_median = median(estimate, na.rm = TRUE),
+  sd_estimate     = sd(estimate, na.rm = TRUE),
+  ci_2.5               = quantile(estimate, 0.025, na.rm = TRUE),
+  ci_97.5              = quantile(estimate, 0.975, na.rm = TRUE),
+  prob_positive        = mean(estimate > 0, na.rm = TRUE),
+  sign_stable          = (all(estimate > 0) || all(estimate < 0))
 ), by = .(metric)]
-  
+
+regional_summary <- regional_dt_all[, .(
+  n_draws_evaluated    = .N,
+  mean_marginal_mean   = mean(marginal_mean, na.rm = TRUE),
+  median_marginal_mean = median(marginal_mean, na.rm = TRUE),
+  sd_marginal_mean     = sd(marginal_mean, na.rm = TRUE),
+  ci_2.5               = quantile(marginal_mean, 0.025, na.rm = TRUE),
+  ci_97.5              = quantile(marginal_mean, 0.975, na.rm = TRUE),
+  prob_positive        = mean(marginal_mean > 0, na.rm = TRUE),
+  sign_stable          = (all(marginal_mean > 0) || all(marginal_mean < 0))
+), by = .(metric, reg)]
 
 saveRDS(draws_dt_all, file.path(out_causal_dir, "q1_draws_all_estimates.rds"))
 saveRDS(q1_robustness, file.path(out_causal_dir, "q1_draws_robustness.rds"))
+saveRDS(regional_dt_all, file.path(out_causal_dir, "q1_draws_regional_estimates.rds"))
+saveRDS(regional_summary, file.path(out_causal_dir, "q1_draws_regional_summary.rds"))
