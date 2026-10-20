@@ -57,7 +57,7 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 priority_fraction    <- 0.10
 support_threshold    <- 0.90
 min_draw_fraction    <- 0.80
-min_stands_per_group <- 10L
+min_stands_per_group <- 100L
 
 footprints <- c("E_MSA_loss", "E_PDF_unforced", "E_PDF_forced")
 ecological <- c("EG_loss", "E_FRic_loss", "E_RaoQ_loss", "E_BCD")
@@ -187,70 +187,3 @@ overall_rank_summary <- group_summary |>
   )
 
 readr::write_csv(overall_rank_summary, file.path(output_dir, "q2_rank_summary.csv"))
-
-# --- 4. Analysis Part 2: Stand-Level Discordance ---
-cat("\n--- Evaluating Stand-Level Discordance Probability ---\n")
-
-stand_results <- purrr::pmap_dfr(signed_pairs, function(metric_a, metric_b) {
-  wide |>
-    group_by(standid_treated, group_number) |>
-    summarise({
-      val_a      <- .data[[metric_a]]
-      val_b      <- .data[[metric_b]]
-      eps_a      <- epsilon[[metric_a]]
-      eps_b      <- epsilon[[metric_b]]
-      
-      valid      <- is.finite(val_a) & is.finite(val_b)
-      decisive   <- valid & abs(val_a) > eps_a & abs(val_b) > eps_b
-      n_opposite <- sum(decisive & (val_a * val_b < 0), na.rm = TRUE)
-      
-      n_valid    <- sum(valid)
-      n_decisive <- sum(decisive)
-      
-      tibble(
-        n_draws_valid             = n_valid,
-        n_draws_decisive          = n_decisive,
-        n_zero_either             = n_valid - n_decisive,
-        fraction_zero_either      = safe_prop(n_valid - n_decisive, n_valid),
-        n_opposite                = n_opposite,
-        prob_discordance          = safe_prop(n_opposite, n_valid),
-        prob_discordance_decisive = safe_prop(n_opposite, n_decisive),
-        prob_a_loss               = safe_prop(sum(valid & val_a > eps_a), n_valid),
-        prob_b_loss               = safe_prop(sum(valid & val_b > eps_b), n_valid)
-      )
-    }, .groups = "drop") |>
-    mutate(metric_a = metric_a, metric_b = metric_b)
-}) |>
-  mutate(
-    strong_discordance = coalesce(
-      n_draws_valid >= required_draws & prob_discordance >= support_threshold,
-      FALSE
-    ),
-    strong_discordance_decisive = coalesce(
-      n_draws_decisive >= required_draws & prob_discordance_decisive >= support_threshold,
-      FALSE
-    )
-  ) |>
-  relocate(
-    standid_treated, group_number, metric_a, metric_b,
-    n_draws_valid, n_draws_decisive, n_zero_either, fraction_zero_either,
-    n_opposite, prob_discordance, prob_discordance_decisive,
-    prob_a_loss, prob_b_loss, strong_discordance, strong_discordance_decisive
-  )
-
-stand_summary <- stand_results |>
-  group_by(metric_a, metric_b) |>
-  summarise(
-    n_stands                               = n(),
-    n_strong_discordance                   = sum(strong_discordance, na.rm = TRUE),
-    proportion_strong_discordance          = mean(strong_discordance, na.rm = TRUE),
-    n_strong_discordance_decisive          = sum(strong_discordance_decisive, na.rm = TRUE),
-    proportion_strong_discordance_decisive = mean(strong_discordance_decisive, na.rm = TRUE),
-    median_prob_discordance                = safe_q(prob_discordance, 0.5),
-    median_prob_discordance_decisive       = safe_q(prob_discordance_decisive, 0.5),
-    median_fraction_zero_either            = safe_q(fraction_zero_either, 0.5),
-    .groups                                = "drop"
-  )
-
-readr::write_csv(stand_results, file.path(output_dir, "q2_stand_discordance.csv"))
-readr::write_csv(stand_summary, file.path(output_dir, "q2_stand_discordance_summary.csv"))

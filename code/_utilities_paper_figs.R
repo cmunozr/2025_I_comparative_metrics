@@ -349,16 +349,16 @@ cat("\n--- Generating Heatmap Figures ---\n")
 
 # Publication-grade label dictionaries matching the mock-up
 footprint_labels <- c(
-  "E_MSA_loss"     = "MSA",
-  "E_PDF_unforced" = "PDF-U",
-  "E_PDF_forced"   = "PDF-F"
+  "E_MSA_loss"     = "EMSA",
+  "E_PDF_unforced" = "EPDF-U",
+  "E_PDF_forced"   = "EPDF-F"
 )
 
 ecological_labels <- c(
   "EG_loss"     = "EG",
-  "E_FRic_loss" = "FRic",
-  "E_RaoQ_loss" = "RaoQ",
-  "E_BCD"       = "BCD"
+  "E_FRic_loss" = "EFRic",
+  "E_RaoQ_loss" = "ERaoQ",
+  "E_BCD"       = "EBCD"
 )
 
 # Standardized theme matching S06b / Elsevier specifications
@@ -434,31 +434,9 @@ p_b <- ggplot(df_rank_fig, aes(x = metric_a, y = metric_b, fill = median_top_lif
   theme_elsevier_heatmap +
   theme(axis.text.y = element_blank())
 
-# --- Panel (c): Proportion of Stands with Strong Directional Discordance ---
-p_c <- ggplot(df_sign_fig, aes(x = metric_a, y = metric_b, fill = proportion_strong_discordance)) +
-  geom_tile(color = "white", linewidth = 0.6) +
-  geom_text(
-    aes(label = ifelse(is.na(proportion_strong_discordance), "—", sprintf("%.0f%%", 100 * proportion_strong_discordance))),
-    size = 2.7, family = "sans", color = "black"
-  ) +
-  scale_fill_gradient(
-    low = "#f7f7f7", high = "#a64b4b",
-    limits = c(0, 1), na.value = "grey92",
-    labels = scales::percent_format(accuracy = 1)
-  ) +
-  scale_x_discrete(expand = c(0, 0)) +
-  scale_y_discrete(expand = c(0, 0), drop = FALSE) +
-  labs(
-    title = "(c) Sign discordance",
-    subtitle = "Strong discordance rate",
-    fill = "Rate"
-  ) +
-  theme_elsevier_heatmap +
-  theme(axis.text.y = element_blank())
-
 # --- Composite Figure
-fig_consistency_3panel <- p_a + p_b + p_c +
-  plot_layout(ncol = 3, widths = c(1.15, 1, 1))
+fig_consistency_3panel <- p_a + p_b +
+  plot_layout(ncol = 2, widths = c(1.15, 1, 1))
 
 ggsave(
   filename = file.path(output_dir, "figure_q2_metric_consistency_3panel.pdf"),
