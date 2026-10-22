@@ -349,15 +349,15 @@ cat("\n--- Generating Heatmap Figures ---\n")
 
 # Publication-grade label dictionaries matching the mock-up
 footprint_labels <- c(
-  "E_MSA_loss"     = "EMSA",
-  "E_PDF_unforced" = "EPDF-U",
-  "E_PDF_forced"   = "EPDF-F"
+  "E_MSA_loss"     = "EMSA-loss",
+  "E_PDF_unforced" = "EPDF-Unforced",
+  "E_PDF_forced"   = "EPDF-Forced"
 )
 
 ecological_labels <- c(
-  "EG_loss"     = "EG",
-  "E_FRic_loss" = "EFRic",
-  "E_RaoQ_loss" = "ERaoQ",
+  "EG_loss"     = "EG-loss",
+  "E_FRic_loss" = "EFRic-loss",
+  "E_RaoQ_loss" = "ERaoQ-loss",
   "E_BCD"       = "EBCD"
 )
 
