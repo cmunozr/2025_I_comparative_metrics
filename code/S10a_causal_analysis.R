@@ -130,8 +130,8 @@ mop_combined <- metso_group_mop |>
     by = "group_number"
   )
 
-d0 <- 3.0556
-d95 <- 5.1517
+d0 <- median(mop_dt$mop_distance)
+d95 <- quantile(mop_dt$mop_distance, 0.95)
 
 mop_combined <- mop_combined |>
   mutate(
@@ -152,12 +152,11 @@ dt_draws <- ds_draws |>
   select(standid_treated, group_number, posterior, metrics, val_mean, val_sd) |>
   collect()
 
-# Floor val_sd == 0 at the 0.1st percentile of positive values to avoid Inf weights
+# Calculate inverse variance weights
 dt_draws <- dt_draws |>
   group_by(metrics) |>
   mutate(
-    val_sd_safe = ifelse(val_sd == 0 | is.na(val_sd), quantile(val_sd[val_sd > 0], 0.001, na.rm = TRUE), val_sd),
-    weigth_sd = (1 / val_sd_safe)^2
+    weigth_sd = (1 / val_sd)^2
   ) |>
   ungroup()
 
@@ -514,7 +513,7 @@ weight_distribution_summary <- dt_draws |>
     max_weight_domain = max(weight_domain, na.rm = TRUE)
   )
 
-# Verify zero counts of non-finite or infinite weights post-flooring
+# Verify zero counts of weights
 weight_integrity_check <- dt_draws |>
   summarise(
     n_total = n(),
