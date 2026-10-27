@@ -1,34 +1,26 @@
-#' @title Model Fit Diagnostics
+#' DESCRIPTION
+#' S05a_show_model_fit.R: Iterates through the MCMC configuration grid,
+#' compares full-model explanatory power metrics against cross-validation and
+#' holdout predictive metrics, and generates scatter plots.
 #'
-#' @description
-#' Iterates through the compiled MCMC configuration grid and extracts both 
-#' full-model explanatory power metrics and cross-validation/hold-out predictive 
-#' metrics. For each model version and validation strategy, it generates 
-#' performance diagnostic scatter plots mapping explanatory power against predictive 
-#' power across all modeled species.
+#' METHODOLOGY
+#' - Loads model configuration settings and utility routines.
+#' - Reads explanatory model fit (mf_*.rds) and evaluation fit (mfeval_*.rds) files.
+#' - Dynamically detects model types and evaluates performance metrics:
+#'   - Presence-Absence: Tjur R2 and AUC.
+#'   - Continuous / Count Abundance: Spearman's R2 (SR2).
+#'   - Both types: Root Mean Squared Error (RMSE).
+#' - Evaluates validation strategies (route-blocked CV, METSO holdout, North-South holdout).
+#' - Plots explanatory vs. predictive scatter plots with 1:1 reference lines.
 #'
-#' @details
-#' The script reads baseline explanatory metrics (\code{mf_*.rds}) and cross-validation 
-#' evaluation metrics (\code{mfeval_*.rds}) from the designated model fit directory. 
-#' It dynamically adjusts the plotting metrics based on the data structure detected in 
-#' the saved objects:
-#' \itemize{
-#'   \item \strong{Presence-Absence Models (PA):} Quantified via Tjur $R^2$ and AUC.
-#'   \item \strong{Continuous Abundance Models:} Quantified via Spearman's $R^2$ (SR2).
-#'   \item RMSE is calculated for both kind of model (presence-abscence or continuous)
-#' }
-#' 
-#' @section Validation Strategies Covered:
-#' \itemize{
-#'   \item \code{route_blocked_cv}: Spatial cross-validation blocking at the route level to handle spatial autocorrelation.
-#'   \item \code{metso_holdout}: Non-random domain hold-out evaluating extrapolation to conservation-selected contexts.
-#'   \item \code{random_cv}: Completely randomized sample-unit cross-validation.
-#' }
+#' INPUTS
+#' - code/config_model.R: Central configuration parameters (run_config, mcmc grid, model_id).
+#' - code/_utilities_hmsc_gpu.R: GPU helper functions (generate_run_name).
+#' - models/{run_name}/model_fit/mf_{run_name}.rds: Baseline full-model explanatory metrics.
+#' - models/{run_name}/model_fit/mfeval_{run_name}_{label}_.rds: Cross-validation / holdout predictive metrics.
 #'
-#'
-#' @return The script writes a compiled PDF file named \code{model_fit_[model_id].pdf} 
-#' into the primary \code{models} directory.
-#'
+#' OUTPUTS
+#' - models/model_fit_{model_id}_validation_comparison.pdf: Multi-page scatter plot PDF comparing explanatory vs. predictive fit.
 
 library(Hmsc)
 library(jsonify)

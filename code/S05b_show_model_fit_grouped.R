@@ -1,3 +1,32 @@
+#' DESCRIPTION
+#' S05b_show_model_fit_grouped.R: Aggregates model fit and cross-validation diagnostics
+#' across all fbs_M models, generates multi-strategy metric summary tables, and creates
+#' standardized 4-panel comparison PDFs for Presence-Absence and Continuous models.
+#'
+#' METHODOLOGY
+#' - Extracts species names and metadata from fitted HMSC reference models.
+#' - Matches model directories and extracts explanatory metrics (mf_*.rds), predictive
+#'   metrics (mfeval_*.rds), and information criteria (waic_*.rds).
+#' - Standardizes discrimination, accuracy, calibration, and precision metrics across validation schemes.
+#' - Exports master datasets and statistical summaries (mean, median, SD, IQR) to CSV files.
+#' - Renders multi-page PDF diagnostics displaying boxplots across validation schemes ordered by WAIC:
+#'   - PA Models: Tjur R2, AUC, RMSE, MAE, Brier Score, Prevalence Ratio, Calibration Slope, CI Width.
+#'   - Continuous Models: Spearman R2, RMSE, MAE, Mean Ratio, IQR Ratio, CI Width.
+#'
+#' INPUTS
+#' - models/fbs_M*/model_fit/waic_*.rds: Model information criteria files.
+#' - models/fbs_M*/model_fit/mf_*.rds: Full-model explanatory fit evaluations.
+#' - models/fbs_M*/model_fit/mfeval_*_*.rds: Strategy-specific predictive fit evaluations.
+#' - models/{reference_model}/fitted_*.rds: Fitted Hmsc reference object for species names.
+#'
+#' OUTPUTS
+#' - models/model_fit_PA_comparison.csv: Presence-Absence metric data table.
+#' - models/model_fit_AbuCP_comparison.csv: Continuous/conditional abundance metric data table.
+#' - models/model_fit_master_all_metrics.csv: Unified master dataset across all models and strategies.
+#' - models/model_fit_summary_table.csv: Summary statistics table per model, type, and strategy.
+#' - models/model_fit_PA_comparison.pdf: Multi-page 4-panel comparison plots for PA models.
+#' - models/model_fit_AbuCP_comparison.pdf: Multi-page 4-panel comparison plots for Continuous models.
+
 # --- 1. Load Libraries ---
 library(colorspace)
 library(tidyverse) 

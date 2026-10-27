@@ -1,3 +1,28 @@
+#' DESCRIPTION
+#' S05c_show_model_fit_dashboard.R: Assembles a diagnostic table combining species
+#' attributes, multi-strategy validation metrics, variance partitioning, and supported
+#' beta parameters, and launches an interactive Shiny dashboard for model comparison.
+#'
+#' METHODOLOGY
+#' - Loads species metadata and master evaluation metrics generated across validation strategies.
+#' - Reshapes presence-absence (PA) and continuous abundance (aCp) evaluation metrics into wide format.
+#' - Extracts variance partitioning (VP) and credible Beta coefficients (85% and 95% support) from focal model subdirectories.
+#' - Joins species taxonomy/traits, validation performance, and parameter estimates into a unified diagnostic CSV.
+#' - Launches an interactive Shiny/plotly application featuring dynamic scatter plots with 1:1 reference lines,
+#'   trait-based groupings, prevalence filtering, and group-level summary statistics.
+#'
+#' INPUTS
+#' - data/species_info_table.csv: Species taxonomy, traits, and baseline prevalence table.
+#' - models/model_fit_master_all_metrics.csv: Master fit metrics output by S05b.
+#' - models/{pa_model_dir}/parameter_estimates/parameter_estimates_VP.csv: Variance partitioning for PA model.
+#' - models/{pa_model_dir}/parameter_estimates/parameter_estimates_Beta.xlsx: Beta parameter estimates for PA model.
+#' - models/{acp_model_dir}/parameter_estimates/parameter_estimates_VP.csv: Variance partitioning for aCp model.
+#' - models/{acp_model_dir}/parameter_estimates/parameter_estimates_Beta.xlsx: Beta parameter estimates for aCp model.
+#'
+#' OUTPUTS
+#' - models/diagnostic_models_df.csv: Integrated species-level diagnostic and validation table.
+#' - Interactive Shiny application interface.
+
 # J-SDM Model Diagnostic Builder & Interactive Dashboard
 
 library(Hmsc)
