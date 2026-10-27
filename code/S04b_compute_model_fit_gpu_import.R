@@ -1,3 +1,30 @@
+#' DESCRIPTION
+#' S04b_compute_model_fit_gpu_import.R: Computes explanatory power (WAIC, explanatory
+#' model fit) for full models and imports fold posterior samples to calculate
+#' cross-validated predictive performance metrics across validation strategies.
+#'
+#' METHODOLOGY
+#' - Iterates through fitted Hmsc model configurations.
+#' - Aligns full model posteriors and constructs standardized polynomial design matrices.
+#' - Computes full model information criteria (WAIC) and explanatory fit metrics (RMSE, AUC, etc.).
+#' - Loops over validation strategies (METSO holdout, North-South, route-blocked CV, random CV).
+#' - Imports GPU-fitted fold posteriors and computes predictions over validation subsets.
+#' - Supports multi-core socket cluster parallelization for fold predictions to avoid GPU/fork conflicts.
+#' - Evaluates cross-validated predictive fit using evaluateModelFitRobust and saves RDS outputs.
+#'
+#' INPUTS
+#' - code/config_model.R: Central configuration parameters, MCMC parameters, and validation specs.
+#' - code/_utilities_hmsc_gpu.R: GPU/HPC helper routines (generate_run_name, import_posterior).
+#' - code/_utilities_transform_covariates.R: Covariate transformation helpers (build_manual_poly_matrix).
+#' - models/{run_name}/fitted_{run_name}.rds: Fitted full Hmsc model objects.
+#' - models/{run_name}/{label}/partition.rds: Partition assignments generated in S04a.
+#' - GPU posterior output files imported via import_posterior for each fold.
+#'
+#' OUTPUTS
+#' - models/{run_name}/model_fit/waic_{run_name}.rds: WAIC results for the full model.
+#' - models/{run_name}/model_fit/mf_{run_name}.rds: Explanatory model fit metrics for the full model.
+#' - models/{run_name}/model_fit/mfeval_{run_name}_{label}_.rds: Cross-validated predictive fit evaluations.
+
 # --- 1. Load Libraries and Utils ---
 library(Hmsc)
 library(jsonify)

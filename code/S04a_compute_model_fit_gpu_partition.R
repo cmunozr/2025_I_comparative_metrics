@@ -1,3 +1,30 @@
+#' DESCRIPTION
+#' S04a_compute_model_fit_gpu_partition.R: Generates spatial, holdout, or blocked
+#' cross-validation partitions for fitted Hmsc models and builds GPU execution
+#' scripts for fitting partitioned training models.
+#'
+#' METHODOLOGY
+#' - Loads model run configurations and GPU computing utilities.
+#' - Reads full fitted Hmsc models across MCMC grid configurations.
+#' - Constructs partition based on configured validation strategies
+#'   (e.g., METSO holdout, regional North-South split, route-blocked CV, or random CV).
+#' - Creates training model subsets using set_training_model and serializes partition RDS files.
+#' - Prepares models for HPC/GPU execution via JSON-RDS and generates dispatch shell scripts.
+#'
+#' INPUTS
+#' - code/config_model.R: Model configuration parameters, MCMC grid, CV settings, and server directories.
+#' - code/_utilities_hmsc_gpu.R: GPU helper functions (prepare_hpc_model, save_prepared_model, generate_commands, write_commands_scripts).
+#' - models/{run_name}/fitted_{run_name}.rds: Fitted Hmsc model objects.
+#' - {run_config$test$test_dir}: CSV containing holdout route flags (vakio, is_metso) for METSO holdout.
+#' - data/fbs/vakiolinja/Vakiolinjat_routes_2393.gpkg: Spatial vector routes for geographic partitioning.
+#' - data/ELY/ELY_Regions.shp: Administrative/regional boundaries for North-South partitioning.
+#'
+#' OUTPUTS
+#' - models/{run_name}/{label}/partition.rds: Partition vectors indicating fold/holdout assignments.
+#' - models/{run_name}/{label}/unfitted_{run_name}_{label}_{part}.rds: Unfitted Hmsc training models.
+#' - models/{run_name}/{label}/{run_name}_{label}_{part}.rds: Prepared JSON-RDS models for HPC execution.
+#' - models/{model_id}_diagnosis*.sh: Shell scripts for GPU job dispatch across partition folds.
+
 # --- 1. Load Libraries and Utils ---
 library(Hmsc)
 library(jsonify)
