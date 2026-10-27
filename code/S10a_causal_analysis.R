@@ -4,7 +4,7 @@
 #' 
 #' METHODOLOGY:
 #' - Evaluates whether the conditional mean difference (val_mean) between METSO 
-#'   and matched BAU controls significantly differs from zero across strata.
+#'   and matched BAU controls significantly differs from zero across groups.
 #' - Specification: val_mean ~ 1 + i(reg) + i(trees) + i(year), cluster = ~group_number
 #' - Weighting Schemes:
 #'   - W0 (unweight): unweighted OLS across all eligible METSO stands.
@@ -83,7 +83,7 @@ out_causal_base <- file.path(wr_dir, "causal_analysis")
 dir.create(out_causal_base, recursive = TRUE, showWarnings = FALSE)
 
 
-# --- 2. Load Stratum Metadata & MOP Continuous Diagnostics ---
+# --- 2. Load groups Metadata & MOP Continuous Diagnostics ---
 matches_metso <- readRDS(file.path(wr_dir, "matched_pairs_groups_metso.rds"))
 matches_control <- readRDS(file.path(wr_dir, "matched_pairs_groups_control.rds"))
 
@@ -234,7 +234,6 @@ exclusions_indomain <- dt_indomain |>
 
 exclusion_log <- bind_rows(exclusions_full, exclusions_indomain)
 write_csv(exclusion_log, file.path(out_causal_base, "weight_exclusion_log.csv"))
-message("Stand exclusions logged: ", nrow(exclusion_log), " total records.")
 
 # Retain strictly finite, valid records for estimation
 dt_full_clean <- dt_full |>
@@ -297,7 +296,7 @@ regional_counts_indomain <- stand_pop_indomain |>
   )
 
 
-# --- 5. Helper Function for Post-Estimation Standardization ---
+# --- 5. Helper Function ---
 marginal_estimate <- function(fit, grid, weight_col = "share") {
   w <- grid[[weight_col]]
   w <- w / sum(w)
@@ -352,7 +351,7 @@ draw_ids <- sort(unique(dt_full$posterior))
 
 for (ws in weight_schemes) {
   message("Evaluating Weighting Scheme: ", ws)
-  
+  # ws <- "variance"
   out_causal_dir <- file.path(out_causal_base, ws)
   dir.create(out_causal_dir, recursive = TRUE, showWarnings = FALSE)
   
@@ -380,9 +379,11 @@ for (ws in weight_schemes) {
   counter <- 1
   
   for (m in metrics_list) {
+    # m <- "E_MSA_loss"
     sub_m <- dt_active |> filter(metrics == m)
     
     for (d in draw_ids) {
+      # d <- 164
       sub_md <- sub_m |> filter(posterior == d)
       if (nrow(sub_md) == 0) next
       
@@ -414,7 +415,7 @@ for (ws in weight_schemes) {
       })
       
       if (!is.null(fit_d)) {
-        national_margin <- marginal_estimate(fit_d, national_grid_current)
+        national_margin <- marginal_estimate(fit = fit_d, grid = national_grid_current)
         
         row_draw <- bind_cols(
           tibble(
@@ -527,15 +528,32 @@ write_csv(
   file.path(out_causal_base, "weight_sensitivity_diagnostics.csv")
 )
 
-# --- 8. Consolidate Summary Tables Across Weighting Schemes ---
-message("Consolidating national robustness and regional summaries across schemes...")
+# --- 8. Consolidate Outputs Across Weighting Schemes ---
+message("Consolidating draw-level and summary tables across schemes...")
 
 scheme_mapping <- tibble(
   weighting_scheme = weight_schemes,
   scheme_code = c("W0", "W1", "W2", "W3")
 )
 
-# 1. Consolidate national robustness tables (q1_draws_robustness.csv)
+# 1. Consolidate draw-level national estimates (q1_draws_all_estimates.csv)
+all_draws_national <- map2_dfr(
+  scheme_mapping$weighting_scheme,
+  scheme_mapping$scheme_code,
+  function(ws, code) {
+    file_path <- file.path(out_causal_base, ws, "q1_draws_all_estimates.csv")
+    read_csv(file_path, show_col_types = FALSE) |>
+      mutate(
+        weighting_scheme = ws,
+        scheme_code = code,
+        .before = 1
+      )
+  }
+)
+draws_national_out <- file.path(out_causal_base, "all_schemes_national_draws.csv")
+write_csv(all_draws_national, draws_national_out)
+
+# 2. Consolidate national robustness summaries (q1_draws_robustness.csv)
 all_robustness <- map2_dfr(
   scheme_mapping$weighting_scheme,
   scheme_mapping$scheme_code,
@@ -549,11 +567,27 @@ all_robustness <- map2_dfr(
       )
   }
 )
+robustness_out <- file.path(out_causal_base, "all_schemes_national_robustness_summary.csv")
+write_csv(all_robustness, robustness_out)
 
-robustness_out_file <- file.path(out_causal_base, "all_schemes_national_robustness_summary.csv")
-write_csv(all_robustness, robustness_out_file)
+# 3. Consolidate draw-level regional estimates (q1_draws_regional_estimates.csv)
+all_draws_regional <- map2_dfr(
+  scheme_mapping$weighting_scheme,
+  scheme_mapping$scheme_code,
+  function(ws, code) {
+    file_path <- file.path(out_causal_base, ws, "q1_draws_regional_estimates.csv")
+    read_csv(file_path, show_col_types = FALSE) |>
+      mutate(
+        weighting_scheme = ws,
+        scheme_code = code,
+        .before = 1
+      )
+  }
+)
+draws_regional_out <- file.path(out_causal_base, "all_schemes_regional_draws.csv")
+write_csv(all_draws_regional, draws_regional_out)
 
-# 2. Consolidate regional summary tables (q1_draws_regional_summary.csv)
+# 4. Consolidate regional summaries (q1_draws_regional_summary.csv)
 all_regional <- map2_dfr(
   scheme_mapping$weighting_scheme,
   scheme_mapping$scheme_code,
@@ -567,6 +601,5 @@ all_regional <- map2_dfr(
       )
   }
 )
-
-regional_out_file <- file.path(out_causal_base, "all_schemes_regional_summary.csv")
-write_csv(all_regional, regional_out_file)
+regional_out <- file.path(out_causal_base, "all_schemes_regional_summary.csv")
+write_csv(all_regional, regional_out)
