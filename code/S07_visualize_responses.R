@@ -1,27 +1,35 @@
-# This script extracts, summarizes, and visualizes predictions over
-# environmental gradients from the fitted Joint Species Distribution Models (J-SDMs).
 
-# INPUT:
-# 1. Configuration file: "code/config_model.R" (defines MCMC parameters and runs).
-# 2. Fitted Hmsc model objects (".rds" format) located in "models/[run_name]/".
-# 3. Covariate dictionary: "data/covariates/mapping_covariate_functions.xlsx"
 
-# OUTPUT:
-# Outputs are generated dynamically for each model run and stored in the 
-# respective directory: "models/[run_name]/gradient_simulations/".
-#
-# Generated files include:
-# - forest_structure_simulations_[run_name].pdf: A multi-page PDF containing a multi-panel grid 
-#   (rows = covariates, columns = total vs. marginal effects) for summed responses, 
-#   example species, and community-weighted mean traits.
-
-# PLOT ORGANIZATION:
-# Visualizations are structured into 2-column multi-row grids where each row represents 
-# a single forest structure covariate. The left column displays the Total Effect 
-# (empirical covariation, type = 2), while the right column displays the Marginal Effect 
-# (holding non-focal variables constant, non.focalVariables = 1). Each major response type 
-# (Summed Responses, Example Species, and CWM Traits) is assigned to its own dedicated PDF page 
-# with an outer main title.
+#' Visualize Environmental Gradient Responses from Hmsc Models
+#'
+#' DESCRIPTION
+#' This script extracts, summarizes, and visualizes predictions over
+#' environmental gradients from the fitted Joint Species Distribution Models (J-SDMs).
+#' Models (Hmsc) across configured MCMC runs.
+#'
+#' METHODOLOGY:
+#' - Loads model run configurations and iterates across specified MCMC runs.
+#' - Reconstructs orthogonal polynomial bases from training data (`mean_temperature_yr`, `mean_temperature_yr_last`).
+#' - Filters covariates matching `forest_structure` using the covariate mapping dictionary.
+#' - Constructs environmental gradients for both Total Effects (empirical covariation) and Marginal Effects (holding non-focal variables constant).
+#' - Re-injects polynomial basis projections into the prediction gradient design matrices.
+#' - Evaluates expected predictions and renders multi-panel PDF grids for summed community responses, example species (optional), and community-weighted mean traits (optional).
+#'
+#' INPUTS:
+#' - `code/config_model.R`: Configuration script defining MCMC runs and run name generation.
+#' - `models/[run_name]/fitted_[run_name].rds`: Fitted `Hmsc` model objects.
+#' - `data/covariates/mapping_covariate_functions.xlsx`: Covariate dictionary mapping variable roles and types.
+#'
+#' OUTPUTS:
+#' - `models/[run_name]/gradient_simulations/forest_structure_simulations_[run_name].pdf`: Multi-page, 2-column multi-row grid plots showing total and marginal effects across covariates.
+#' 
+#' PLOT ORGANIZATION:
+#' Visualizations are structured into 2-column multi-row grids where each row represents 
+#' a single forest structure covariate. The left column displays the Total Effect 
+#' (empirical covariation, type = 2), while the right column displays the Marginal Effect 
+#' (holding non-focal variables constant, non.focalVariables = 1). Each major response type 
+#' (Summed Responses, Example Species, and CWM Traits) is assigned to its own dedicated PDF page 
+#' with an outer main title.
 
 # Source configuration
 source("code/config_model.R")
