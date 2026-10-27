@@ -152,19 +152,19 @@ sp_df <- read_sf(here("data", "metso", "treatment_control_stand_v4.gpkg")) |>
     ely_en = stringi::stri_trans_general(ely_en, "Latin-ASCII"),
     ely_en = stringr::str_to_snake(ely_en),
     # Deterministic grouping across both METSO and Control
-    group_stratum = paste(year, regional_group, treespecies, sep = "_")
+    group_ = paste(year, regional_group, treespecies, sep = "_")
   )
 
 # dictionary of group IDs
-strata_lookup <- sp_df |> 
+groups_lookup <- sp_df |> 
   sf::st_drop_geometry() |> 
-  distinct(group_stratum, year, regional_group, treespecies) |> 
+  distinct(group_, year, regional_group, treespecies) |> 
   mutate(group_number = row_number())
 
 # Filter down to current scenario (metso or control)
 sp_df <- sp_df |> 
   dplyr::filter(metso == val) |> 
-  left_join(strata_lookup, by = c("group_stratum", "year", "regional_group", "treespecies"))
+  left_join(groups_lookup, by = c("group_", "year", "regional_group", "treespecies"))
 
 # create group Matches
 matches <- sp_df |> 
@@ -173,7 +173,7 @@ matches <- sp_df |>
     standid,
     metso,
     group_number,
-    group_stratum,
+    group_,
     year,
     municip, 
     state, 
