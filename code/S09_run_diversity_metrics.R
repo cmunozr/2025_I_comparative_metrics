@@ -147,7 +147,7 @@ if (comparison_mode == "indomain_both") {
   groups_df <- groups_df |>
     filter(as.character(standid) %in% indomain_stands)
   
-  # Require at least one METSO stand and at least two BAU controls to retain stratum
+  # Require at least one METSO stand and at least two BAU controls to retain group
   group_counts <- groups_df |>
     group_by(group_number, metso) |>
     summarise(n = n(), .groups = "drop") |>
@@ -170,11 +170,11 @@ if (test) {
   test_group_file <- file.path(wr_dir, "test_group_stands.rds")
   
   if (file.exists(test_group_file)) {
-    cat("Loading pre-defined test strata from test_group_stands.rds...\n")
+    cat("Loading pre-defined test groups from test_group_stands.rds...\n")
     test_meta <- readRDS(test_group_file)
     common_groups <- intersect(common_groups, unique(test_meta$group_number))
   } else {
-    cat("Selecting small strata groups directly from groups_df...\n")
+    cat("Selecting small groups directly from groups_df...\n")
     max_stands_per_scenario <- 50
     small_groups <- groups_df |>
       filter(group_number %in% common_groups) |>
