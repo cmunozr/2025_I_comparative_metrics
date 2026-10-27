@@ -5,7 +5,7 @@
 #' METHODOLOGY:
 #' - Aggregates posterior draws across stand-level metric predictions within groups.
 #' - Spearman rank correlation and top 10% overlap evaluated within matched groups.
-#' - Evaluates bidirectional footprint-to-footprint and footprint-to-ecological comparisons.
+#' - Evaluates metrics comparisons.
 #' - Omits self-comparisons (metric_a != metric_b) prior to draw aggregation.
 #' - Posterior probability of opposite directional signals (discordance) per stand.
 #' - Group-level summaries and meta-aggregation across groups.
