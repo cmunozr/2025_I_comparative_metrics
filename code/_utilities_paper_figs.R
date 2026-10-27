@@ -331,37 +331,42 @@ ggsave(
 )
 
 # -------------------------------------------------------------------------
-# 3. consistency heatmaps
+# 3. Consistency Heatmaps (Expanded Footprint & Ecological Comparisons)
 # -------------------------------------------------------------------------
 
 footprints <- c("E_MSA_loss", "E_PDF_unforced", "E_PDF_forced")
 ecological <- c("EG_loss", "E_FRic_loss", "E_RaoQ_loss", "E_BCD")
 metrics    <- c(footprints, ecological)
 
-overall_rank_summary <- read.csv(file.path("results","consistency","q2_rank_summary.csv"))
-stand_summary <- read.csv(file.path("results","consistency","q2_stand_discordance_summary.csv"))
+overall_rank_summary <- read.csv(file.path("results", "consistency", "q2_rank_summary.csv"))
+stand_summary        <- read.csv(file.path("results", "consistency", "q2_stand_discordance_summary.csv"))
 
 output_dir <- file.path("results", "consistency")
-
 
 # --- 5. Visualization Heatmaps (Elsevier / Ecological Indicators Style) ---
 cat("\n--- Generating Heatmap Figures ---\n")
 
-# Publication-grade label dictionaries matching the mock-up
-footprint_labels <- c(
+# Publication-grade label dictionaries
+metric_labels <- c(
   "E_MSA_loss"     = "EMSA-loss",
   "E_PDF_unforced" = "EPDF-Unforced",
-  "E_PDF_forced"   = "EPDF-Forced"
+  "E_PDF_forced"   = "EPDF-Forced",
+  "EG_loss"        = "EG-loss",
+  "E_FRic_loss"    = "EFRic-loss",
+  "E_RaoQ_loss"    = "ERaoQ-loss",
+  "E_BCD"          = "EBCD"
 )
 
-ecological_labels <- c(
-  "EG_loss"     = "EG-loss",
-  "E_FRic_loss" = "EFRic-loss",
-  "E_RaoQ_loss" = "ERaoQ-loss",
-  "E_BCD"       = "EBCD"
-)
+# Define axis factor orders
+# x-axis: Footprint metrics
+x_levels <- footprints
+x_labels <- metric_labels[x_levels]
 
-# Standardized theme matching S06b / Elsevier specifications
+# y-axis: Ecological metrics followed by alternative footprint metrics (excluding EMSA self-row)
+y_levels <- c(rev(ecological), "E_PDF_unforced", "E_PDF_forced")
+y_labels <- metric_labels[y_levels]
+
+# Standardized theme matching Elsevier specifications (8 pt base size)
 theme_elsevier_heatmap <- theme_classic(base_size = 8, base_family = "sans") +
   theme(
     panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.4),
@@ -378,29 +383,30 @@ theme_elsevier_heatmap <- theme_classic(base_size = 8, base_family = "sans") +
     plot.margin        = margin(t = 6, r = 4, b = 6, l = 4)
   )
 
-# Base datasets filtered and formatted with ordered factor levels
+# Filter out self-comparisons and restrict to target grid
 df_rank_fig <- overall_rank_summary |>
-  filter(metric_a %in% footprints, metric_b %in% ecological) |>
+  filter(
+    metric_a != metric_b,
+    metric_a %in% x_levels,
+    metric_b %in% y_levels
+  ) |>
   mutate(
-    metric_a = factor(metric_a, levels = footprints, labels = footprint_labels),
-    metric_b = factor(metric_b, levels = rev(ecological), labels = rev(ecological_labels))
-  )
-
-df_sign_fig <- stand_summary |>
-  filter(metric_a %in% footprints, metric_b %in% ecological) |>
-  mutate(
-    metric_a = factor(metric_a, levels = footprints, labels = footprint_labels),
-    metric_b = factor(metric_b, levels = rev(ecological), labels = rev(ecological_labels))
+    metric_a = factor(metric_a, levels = x_levels, labels = x_labels),
+    metric_b = factor(metric_b, levels = y_levels, labels = y_labels)
   ) |>
   tidyr::complete(
-    metric_a = factor(footprint_labels, levels = footprint_labels),
-    metric_b = factor(rev(ecological_labels), levels = rev(ecological_labels))
+    metric_a = factor(x_labels, levels = x_labels),
+    metric_b = factor(y_labels, levels = y_labels)
   )
 
 # --- Panel (a): Median Spearman Rank Correlation ---
 p_a <- ggplot(df_rank_fig, aes(x = metric_a, y = metric_b, fill = median_rho)) +
   geom_tile(color = "white", linewidth = 0.6) +
-  geom_text(aes(label = sprintf("%.2f", median_rho)), size = 2.7, family = "sans") +
+  geom_text(
+    aes(label = ifelse(is.na(median_rho), "", sprintf("%.2f", median_rho))),
+    size = 2.7,
+    family = "sans"
+  ) +
   scale_fill_gradient2(
     limits = c(-1, 1), midpoint = 0,
     low = "#b2182b", mid = "#eef0f6", high = "#386cb0",
@@ -418,7 +424,11 @@ p_a <- ggplot(df_rank_fig, aes(x = metric_a, y = metric_b, fill = median_rho)) +
 # --- Panel (b): Median Top-10% Overlap Lift ---
 p_b <- ggplot(df_rank_fig, aes(x = metric_a, y = metric_b, fill = median_top_lift)) +
   geom_tile(color = "white", linewidth = 0.6) +
-  geom_text(aes(label = sprintf("%.1f", median_top_lift)), size = 2.7, family = "sans") +
+  geom_text(
+    aes(label = ifelse(is.na(median_top_lift), "", sprintf("%.1f", median_top_lift))),
+    size = 2.7,
+    family = "sans"
+  ) +
   scale_fill_gradient2(
     midpoint = 1.0,
     low = "#b2182b", mid = "#f5f5f5", high = "#438473",
@@ -434,24 +444,24 @@ p_b <- ggplot(df_rank_fig, aes(x = metric_a, y = metric_b, fill = median_top_lif
   theme_elsevier_heatmap +
   theme(axis.text.y = element_blank())
 
-# --- Composite Figure
-fig_consistency_3panel <- p_a + p_b +
-  plot_layout(ncol = 2, widths = c(1.15, 1, 1))
+# --- Composite Figure (Elsevier 2-panel width: 190 mm) ---
+fig_consistency_panel <- p_a + p_b +
+  plot_layout(ncol = 2, widths = c(1.15, 1))
 
 ggsave(
-  filename = file.path(output_dir, "figure_q2_metric_consistency_3panel.pdf"),
-  plot     = fig_consistency_3panel,
+  filename = file.path(output_dir, "figure_q2_metric_consistency.pdf"),
+  plot     = fig_consistency_panel,
   width    = 190,
-  height   = 75,
+  height   = 95,
   units    = "mm",
   device   = cairo_pdf
 )
 
 ggsave(
-  filename = file.path(output_dir, "figure_q2_metric_consistency_3panel.png"),
-  plot     = fig_consistency_3panel,
+  filename = file.path(output_dir, "figure_q2_metric_consistency.png"),
+  plot     = fig_consistency_panel,
   width    = 190,
-  height   = 75,
+  height   = 95,
   units    = "mm",
   dpi      = 500
 )
