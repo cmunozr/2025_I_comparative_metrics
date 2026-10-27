@@ -1,22 +1,29 @@
-# This script extracts, summarizes, and visualizes parameter estimates from the fitted 
-# Joint Species Distribution Models (J-SDMs) to evaluate species responses 
-# and variance partitioning.
-
-# INPUT:
-# 1. Configuration file: "code/config_model.R" (defines MCMC parameters and runs).
-# 2. Fitted Hmsc model objects (".rds" format) located in "models/[run_name]/".
-
-# OUTPUT:
-# Outputs are generated dynamically for each model run and stored in the 
-# respective directory: "models/[run_name]/parameter_estimates/".
-#
-# Generated files include:
-# - parameter_estimates.pdf: Visualizations of Variance Partitioning, species 
-#   niches (Beta), functional traits (Gamma), and species associations (Omega).
-# - parameter_estimates_log.txt: Text log detailing parameter extraction settings.
-# - parameter_estimates_VP*.csv: Numerical tables of variance partitioning results.
-# - parameter_estimates_[Beta/Gamma/Omega].xlsx: Tables containing posterior means and 
-#   statistical support probabilities for model parameters.
+#' Extract and Visualize Parameter Estimates and Variance Partitioning
+#'
+#' DESCRIPTION
+#' Extracts, summarizes, and plots parameter estimates and variance partitioning
+#' from fitted Joint Species Distribution Models (`Hmsc`) across configured MCMC runs.
+#'
+#'  METHODOLOGY:
+#' - Reads run configurations and iterates through fitted `Hmsc` model objects.
+#' - Maps model covariates to standardized domain classifications using a covariate dictionary.
+#' - Calculates explained and raw variance partitioning (VP) grouped by covariate domain, computing model fit metrics ($R^2$ / Tjur $R^2$).
+#' - Extracts posterior parameter estimates for species niches ($\beta$), writing structured tables and rendering heatmaps for selected domains (e.g., Intercept and forest structure).
+#' - Builds and exports covariate index lookup tables (CSV and HTML) corresponding to plot indices.
+#' - Optionally evaluates and plots trait effects ($\gamma$) and residual species-to-species associations ($\Omega$) across random levels.
+#'
+#' INPUTS:
+#' - `code/config_model.R`: Configuration script defining MCMC specifications and run names.
+#' - `models/[run_name]/fitted_[run_name].rds`: Fitted `Hmsc` model objects.
+#' - `data/covariates/mapping_covariate_functions.xlsx`: Covariate dictionary for variable grouping and labeling.
+#'
+#' OUTPUTS:
+#' - `models/[run_name]/parameter_estimates/parameter_estimates.pdf`: Visualizations for variance partitioning, $\beta$ parameters, and optional $\gamma$/$\Omega$ estimates.
+#' - `models/[run_name]/parameter_estimates/parameter_estimates_log.txt`: Extraction settings log and species ordering details.
+#' - `models/[run_name]/parameter_estimates/parameter_estimates_VP*.csv`: Variance partitioning matrices and trait-related $R^2$ tables.
+#' - `models/[run_name]/parameter_estimates/parameter_estimates_Beta.xlsx`: Posterior means and directional statistical support for $\beta$ parameters.
+#' - `models/[run_name]/parameter_estimates/covariate_key_table.[csv|html]`: Reference key linking plot covariate indices to model covariates and domains.
+#' - `models/[run_name]/parameter_estimates/parameter_estimates_Omega_*.xlsx`: (Optional) Posterior association matrices for each random level.
 
 # Source configuration
 source("code/config_model.R")
