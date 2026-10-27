@@ -1,3 +1,23 @@
+#' DESCRIPTION
+#' S02a_fit_models_gpu.R: Prepares unfitted HMSC models for GPU/HPC execution across
+#' MCMC parameter grid specifications and generates shell scripts to run.
+#'
+#' METHODOLOGY
+#' - Loads model configuration settings and GPU utility functions.
+#' - Reads the pre-constructed unfitted HMSC model object for the target model ID.
+#' - Iterates across MCMC parameter configurations (e.g., thin, samples).
+#' - Prepares the model for HPC/GPU computation via JSON-compatible RDS formatting.
+#' - Aggregates execution commands across single/multi-GPU modes and writes shell scripts (.sh).
+#'
+#' INPUTS
+#' - code/config_model.R: Central configuration parameters (model_id, mcmc grid, gpu, server paths).
+#' - code/_utilities_hmsc_gpu.R: HPC/GPU utility functions (prepare_hpc_model, save_prepared_model, generate_commands, write_commands_scripts).
+#' - models/unfitted_RData/unfitted_{model_id}.RData: Unfitted HMSC model RData object.
+#'
+#' OUTPUTS
+#' - models/{base_model_name}/{base_model_name}.rds: Prepared HMSC model saved as JSON-RDS.
+#' - Shell scripts (.sh) written to models/ for GPU job execution.
+
 # --- 1. Load Libraries and Utils ---
 library(Hmsc)
 library(here)
