@@ -2,25 +2,26 @@
 
 ## Context Behind the NFS Failure
 
-On compute nodes, the shared working directory `/scratch/lema` was not a direct mount to a local disk, but a virtual network mount running over **NFSv4**.
+On compute nodes, the shared working directory can be an indirect mount to a local disk (ex., `/scratch/lema`). Instead, it is a virtual network mount running over **NFSv4**.
 
 This setup suffered from two critical configuration vulnerabilities:
 
 * **Constrained I/O buffers (`wsize=8192`):** Every generated file is fragmented into 8 KB packets.
-* **Strict blocking semantics (`hard`):** The NFS client retries network requests indefinitely without allowing user-level interrupts.
+* **Strict blocking semantics (`hard`):** The NFS client retries network requests indefinitely without allowing user-level interrupts, it stucks until overload the server.
 
-Running parallel worker processes that simultaneously wrote Parquet files, competed to create identical subdirectory trees, and redirected standard logging into a single file on `$HOME` (also an NFS mount) overwhelmed the filesystem metadata layer and clogged the server's RPC queue. The Linux kernel transitioned these processes into **`D (disk sleep)`**—an uninterruptible sleep state where the operating system ignores all external signals (including `kill -9`). This deadlock stalled the entire filesystem, prevented resource cleanup, and ultimately rendered the node unresponsive.
+Running parallel worker processes that simultaneously wrote files (ex., Parquet files), aimed to create identical subdirectory trees, and redirected standard logging into a single file on `$HOME` (also an NFS mount) overwhelmed the filesystem metadata layer and clogged the server's RPC queue. The Linux kernel transitioned these processes into **`D (disk sleep)`**—an uninterruptible sleep state where the operating system ignores all external signals (including `kill -9`). This deadlock stuck the entire filesystem, prevented resource cleanup, and ultimately rendered the node unresponsive.
 
 ---
 
 ## Purpose of the Diagnostic Routine
 
-The audit routine was developed to prevent similar failures on other cluster nodes by meeting three operational objectives:
+This routine was developed to prevent similar failures on other cluster nodes by meeting three operational objectives:
 
 * **Unmask mount point abstractions:** Determine whether directories like `/scratch` map to genuine local disks (`ext4`/`xfs`) or network mounts (`autofs`/`nfs4`) that introduce latency.
-* **Pinpoint optimal physical storage:** Locate bare partitions on local solid-state hardware (such as `/export/scratch` backed by NVMe drives), allowing workloads to write at full PCIe bus speeds without touching the operating system's network stack.
+* **Pinpoint optimal physical storage:** Locate raw partitions on local HDD or SSD hardware (such as `/export/scratch` backed by NVMe drives). It allows workloads to write at full PCIe bus speeds without touching the operating system's network stack.
 * **Perform write permission validation:** Query disk capacity and verify write permissions.
 
+```bash
 echo "=== 1. Physical disks ==="
 lsblk -e7 -o NAME,ROTA,TYPE,TRAN,SIZE,FSTYPE,MOUNTPOINT
 
@@ -42,3 +43,4 @@ for candidate in "/export/scratch/tmp/$USER" "/tmp/$USER"; do
     break
   fi
 done
+```
