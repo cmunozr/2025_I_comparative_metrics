@@ -1,10 +1,12 @@
 #' DESCRIPTION:
 #' S10b: Evaluation of metric consistency across stand-level predictions
-#' restricted to within matched groups (strata).
+#' restricted to within matched groups.
 #' 
 #' METHODOLOGY:
 #' - Aggregates posterior draws across stand-level metric predictions within groups.
 #' - Spearman rank correlation and top 10% overlap evaluated within matched groups.
+#' - Evaluates bidirectional footprint-to-footprint and footprint-to-ecological comparisons.
+#' - Omits self-comparisons (metric_a != metric_b) prior to draw aggregation.
 #' - Posterior probability of opposite directional signals (discordance) per stand.
 #' - Group-level summaries and meta-aggregation across groups.
 #' 
@@ -12,7 +14,7 @@
 #' - Group Parquet files: results/metrics/[expected_type]/[run_mode]/metrics_group_*.parquet
 #' 
 #' OUTPUTS:
-#' - Within-Group Rank & Concordance Summaries: results/consistency/q2_within_stratum_*.csv
+#' - Within-Group Rank & Concordance Summaries: results/consistency/q2_within_group_*.csv
 #' - Stand-Level Discordance Summaries: results/consistency/q2_stand_discordance*.csv
 #' - Heatmaps: results/consistency/q2_*_heatmap.png / .pdf
 
@@ -79,15 +81,22 @@ wide <- ds_draws |>
 draws <- sort(unique(wide$posterior))
 required_draws <- ceiling(min_draw_fraction * length(draws))
 
-all_pairs <- as_tibble(t(combn(metrics, 2L))) |>
-  rename(metric_a = V1, metric_b = V2)
+# Footprint-vs-footprint pairs (both directions, omitting self-comparisons)
+footprint_pairs <- tidyr::crossing(metric_a = footprints, metric_b = footprints) |>
+  filter(metric_a != metric_b)
 
-comparison_pairs <- tidyr::crossing(metric_a = footprints, metric_b = ecological)
-footprint_pairs  <- as_tibble(t(combn(footprints, 2L))) |>
-  rename(metric_a = V1, metric_b = V2)
+# Bidirectional footprint-vs-ecological pairs
+comparison_pairs <- bind_rows(
+  tidyr::crossing(metric_a = footprints, metric_b = ecological),
+  tidyr::crossing(metric_a = ecological, metric_b = footprints)
+)
+
+# Combined targeted evaluation set (30 directed pairs)
+all_pairs <- bind_rows(footprint_pairs, comparison_pairs) |>
+  distinct()
 
 signed_pairs <- bind_rows(
-  comparison_pairs |> filter(metric_b != "E_BCD"),
+  comparison_pairs |> filter(metric_a != "E_BCD", metric_b != "E_BCD"),
   footprint_pairs
 ) |> 
   distinct()
@@ -152,7 +161,7 @@ group_rank_results <- purrr::pmap_dfr(all_pairs, function(metric_a, metric_b) {
     mutate(metric_a = metric_a, metric_b = metric_b)
 })
 
-readr::write_csv(group_rank_results, file.path(output_dir, "q2_within_stratum_by_draw.csv"))
+readr::write_csv(group_rank_results, file.path(output_dir, "q2_within_group_by_draw.csv"))
 
 # Summarize across posterior draws within each group
 group_summary <- group_rank_results |>
@@ -168,9 +177,9 @@ group_summary <- group_rank_results |>
     .groups               = "drop"
   )
 
-readr::write_csv(group_summary, file.path(output_dir, "q2_within_stratum_summary.csv"))
+readr::write_csv(group_summary, file.path(output_dir, "q2_within_group_summary.csv"))
 
-# Meta-aggregation across matched groups (without variable masking)
+# Meta-aggregation across matched groups
 overall_rank_summary <- group_summary |>
   filter(is.finite(group_median_rho)) |>
   group_by(metric_a, metric_b) |>
