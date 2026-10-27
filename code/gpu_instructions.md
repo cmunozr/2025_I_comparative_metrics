@@ -35,11 +35,12 @@ Available GPUs: [PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU'
 If not proceed to D and E otherwise go to F
 
 #### D. FIX: If TensorFlow fails to find the GPU (empty list) or throws "Cannot dlopen" errors:
+
 ```bash
 nano ~/Documents/hmsc-venv/bin/activate
 ```
 
-Scroll to the bottom and paste at the end the following dynamic path injector
+Scroll to the bottom and paste at the end the following
 
 
 ```nano
