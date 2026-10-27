@@ -1,3 +1,25 @@
+#' Calculate Minimum Training Presence (MTP) Alpha Thresholds
+#'
+#' Description
+#' Calculates species-specific Minimum Training Presence (MTP) alpha thresholds
+#' across posterior samples from a fitted presence-absence joint species
+#' distribution model (`Hmsc`).
+#'
+#' METHODOLOGY:
+#' - Loads a fitted presence-absence HMSC model from disk.
+#' - Extracts posterior predictive expected probabilities across sampled iterations.
+#' - Binarizes observed species response data to identify confirmed presence locations.
+#' - Determines the minimum predicted probability among confirmed presence sites (MTP threshold)
+#'   for each species and posterior sample.
+#' - Assembles threshold vectors into a species-by-sample alpha matrix and persists to disk.
+#'
+#' INPUTS:
+#' - `models/fbs_M016PA_thin_150_samples_1000_chains_4/fitted_fbs_M016PA_thin_150_samples_1000_chains_4.rds`:
+#'   Fitted `Hmsc` presence-absence model object containing response matrix `Y` and random level definitions.
+#'
+#' OUTPUTS:
+#' - `results/alfa_matrix.rds`: Numeric matrix [n_species x n_samples] of MTP alpha threshold values.
+
 # Calculate alfa
 # MTP version
 
