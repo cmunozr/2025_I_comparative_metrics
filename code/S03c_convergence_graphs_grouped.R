@@ -1,3 +1,28 @@
+#' DESCRIPTION
+#' S03c_convergence_graphs_grouped.R: Appends and aggregates median PSRF and ESS
+#' statistics across all available fbs_M models, manages summary tables, and
+#' generates multi-panel 2x2 comparison dot plots categorized by sampling
+#' schemes.
+#'
+#' METHODOLOGY
+#' - Identifies existing fbs_M model convergence directories.
+#' - Reads existing aggregated CSV summary files and filters for newly completed runs.
+#' - Reads parameter CSVs (Beta, Gamma, Rho, V, Omega random levels, Alpha) for new runs.
+#' - Computes summary statistics (median) per parameter and updates summary CSVs.
+#' - Encodes MCMC configuration classes (thin, samples, chains) into plotting symbol shapes.
+#' - Generates 4-panel dot plots (ESS full, ESS zoomed, PSRF full, PSRF zoomed) per parameter.
+#'
+#' INPUTS
+#' - models/{model_setup}/convergence/psrf_{param}.csv: PSRF CSVs per model run.
+#' - models/{model_setup}/convergence/ess_{param}.csv: ESS CSVs per model run.
+#' - models/fbs_Models_all_ess_summary.csv: (Optional) Existing cumulative ESS summary file.
+#' - models/fbs_Models_all_psrf_summary.csv: (Optional) Existing cumulative PSRF summary file.
+#'
+#' OUTPUTS
+#' - models/fbs_Models_all_ess_summary.csv: Updated summary of median ESS across all models.
+#' - models/fbs_Models_all_psrf_summary.csv: Updated summary of median PSRF across all models.
+#' - models/fbs_Models_all_psrf_ess.pdf: Multi-page 2x2 convergence comparison plots.
+
 # --- 1. Load Libraries and Configuration ---
 library(tidyverse)
 library(dplyr)

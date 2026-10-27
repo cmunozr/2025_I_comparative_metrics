@@ -1,9 +1,25 @@
-# This script automatically evaluates the MCMC convergence for EACH run defined
-# in the config_model.R grid. For each run, it creates a dedicated 'convergence'
-# sub-folder containing:
-#   1. A text report ('convergence_report.txt').
-#   2. A PDF of MCMC trace plots for key parameters ('trace_plots.pdf').
-#   3. Raw data CSVs for PSRF and ESS values, to be used by the S03b.
+#' DESCRIPTION
+#' S03a_convergence_evaluate.R: Evaluates MCMC convergence diagnostics for each
+#' fitted HMSC model across the configuration grid, generating diagnostic CSVs,
+#' trace plot PDFs, and summary text reports. Raw data CSVs are used by the S03b.
+#'
+#' METHODOLOGY
+#' - Iterates through each MCMC run configuration defined in config_model.R.
+#' - Loads fitted HMSC model RDS objects and converts posteriors to coda objects.
+#' - Computes Gelman-Rubin potential scale reduction factor (PSRF) and effective
+#'   sample size (ESS) for selected model parameters (Beta, Gamma, Rho, V, Omega, Alpha).
+#' - Summarizes convergence statistics and saves per-parameter metric CSVs.
+#' - Generates random sample trace plots for parameters to a run-specific PDF.
+#'
+#' INPUTS
+#' - code/config_model.R: Central configuration parameters (run_config, mcmc grid, generate_run_name).
+#' - models/{run_name}/fitted_{run_name}.rds: Fitted HMSC model RDS files for each run.
+#'
+#' OUTPUTS
+#' - models/{run_name}/convergence/convergence_report.txt: Text summary of PSRF and ESS distributions.
+#' - models/{run_name}/convergence/trace_plots.pdf: Sampled MCMC parameter trace plots.
+#' - models/{run_name}/convergence/psrf_{param}.csv: Point and upper CI PSRF values per parameter.
+#' - models/{run_name}/convergence/ess_{param}.csv: Effective sample size values per parameter.
 
 # --- 1. Load Libraries and Configuration ---
 library(Hmsc)
