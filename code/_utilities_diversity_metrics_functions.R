@@ -66,16 +66,15 @@ calculate_pairwise_metrics_fast <- function(metso_prep, bau_prep, num_posteriors
     }
     
     # Forced expected richness of BAU under METSO's present species
-    es_bau_forced <- sum(pmin(metso_prep$prob[p, m_metso], bau_prep$prob[p, m_metso]))
+    es_bau_forced <- sum(pmin(metso_prep$prob[p, m_metso],
+                              bau_prep$prob[p, m_metso] * bau_prep$mask[p, m_metso]))
     E_PDF_forced[p] <- 1 - (es_bau_forced / es_m)
     
     # MSA Loss
     e_m <- metso_prep$pred_mat[p, m_metso]
     e_b <- bau_prep$pred_mat[p, m_metso]
-    ep_m <- metso_prep$prob[p, m_metso]
-    
     ratio_abun <- e_b / e_m
-    E_MSA_loss[p] <- 1 - (sum(ep_m * pmin(ratio_abun, 1)) / es_m)
+    E_MSA_loss[p] <- 1 - mean(pmin(ratio_abun, 1))
     
     # EG Loss
     log_ratio <- log((e_b + xi) / (e_m + xi))
