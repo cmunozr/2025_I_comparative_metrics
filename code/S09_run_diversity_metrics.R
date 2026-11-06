@@ -119,7 +119,15 @@ if (!file.exists(tr_proc_file)) {
 }
 
 cum_var <- cumsum(TrData_processed$eigenvalues) / sum(TrData_processed$eigenvalues) * 100
-TrData_processed$traits.FRic <- TrData_processed$traits.FRic[, cum_var <= 95]
+
+#TrData_processed$traits.FRic <- TrData_processed$traits.FRic[, cum_var <= 95]
+# TrData_processed$traits.FDiv was defined as at least 95% of the variance explained,
+# last implementation takes under 95%. Now we take the number of axis when it reaches 
+# or gets above 95% of the variance explained, which is more consistent with the 
+# manuscript definition of FRic.
+n_axes <- which(cum_var >= 95)[1]
+TrData_processed$traits.FRic <- TrData_processed$traits.FRic[, seq_len(n_axes), drop = FALSE
+
 divmax <- ade4::divcmax(as.dist(TrData_processed$x.dist))$value
 
 

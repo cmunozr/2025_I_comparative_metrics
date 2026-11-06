@@ -2,8 +2,8 @@
 #' @description Computes single-stand richness, Rao's Quadratic Entropy, and Functional Richness
 #' across all posterior draws prior to pairwise comparisons.
 precalculate_stand_metrics <- function(pred_mat, prob_mat, traits, divmax) {
-  # pred_mat: [n_posteriors x n_species] hurdle expected abundance
-  # prob_mat: [n_posteriors x n_species] raw PA probability
+  # pred_mat: [n_posteriors x n_species] hurdle expected abundance, threshold-adjusted expected abundance (lambda^alpha)
+  # prob_mat: [n_posteriors x n_species] raw PA probability, raw occurrence probability (p)
   num_posteriors <- nrow(pred_mat)
   
   # prob = raw PA probability; mask = MTP-filtered presence encoded by hurdle > 0
@@ -38,6 +38,7 @@ calculate_pairwise_metrics_fast <- function(metso_prep, bau_prep, num_posteriors
   
   # 1. Scalar differences from pre-computed metrics
   E_PDF_unforced <- 1 - (bau_prep$es_unforced / metso_prep$es_unforced)
+  E_PDF_unforced[!is.finite(E_PDF_unforced)] <- NA_real_
   E_RaoQ_loss    <- 1 - (bau_prep$rao_q / metso_prep$rao_q) 
   
   # FRic loss
@@ -66,20 +67,27 @@ calculate_pairwise_metrics_fast <- function(metso_prep, bau_prep, num_posteriors
     }
     
     # Forced expected richness of BAU under METSO's present species
-    es_bau_forced <- sum(pmin(metso_prep$prob[p, m_metso], bau_prep$prob[p, m_metso]))
+    es_bau_forced <- sum(pmin(metso_prep$prob[p, m_metso],
+                         bau_prep$prob[p, m_metso] * bau_prep$mask[p, m_metso]))
     E_PDF_forced[p] <- 1 - (es_bau_forced / es_m)
     
     # MSA Loss
     e_m <- metso_prep$pred_mat[p, m_metso]
     e_b <- bau_prep$pred_mat[p, m_metso]
-    ep_m <- metso_prep$prob[p, m_metso]
+    # ep_m <- metso_prep$prob[p, m_metso]
     
     ratio_abun <- e_b / e_m
-    E_MSA_loss[p] <- 1 - (sum(ep_m * pmin(ratio_abun, 1)) / es_m)
+    # E_MSA_loss[p] <- 1 - (sum(ep_m * pmin(ratio_abun, 1)) / es_m)
+    E_MSA_loss[p] <- 1 - mean(pmin(ratio_abun, 1))
     
     # EG Loss
     log_ratio <- log((e_b + xi) / (e_m + xi))
-    EG_loss[p] <- 1 - exp(sum(log_ratio) / es_m)
+    #EG_loss[p] <- 1 - exp(sum(log_ratio) / es_m)
+    # dividing by the expected richness changes the original meaning of the metric as giving to the 
+    # species with low probability a lower weight, so we use the mean instead that is equivalent to 
+    # the sum divided by the number of species present in the reference community as e_b and e_m are 
+    # already filtered by the mask of the reference community
+    EG_loss[p] <- 1 - exp(mean(log_ratio))
   }
   
   data.frame(
