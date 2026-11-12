@@ -46,7 +46,7 @@ seed     <- 11072024
 set.seed(seed)
 
 # Comparison mode: "full" or "indomain_both" (The former for W0-W3 and the latter for W4 restricted pool)
-comparison_mode <- "indomain_both"
+comparison_mode <- "full"
 
 # Prevent running legacy 'mean' mode for production
 if (run_mode == "mean") {
@@ -126,7 +126,7 @@ cum_var <- cumsum(TrData_processed$eigenvalues) / sum(TrData_processed$eigenvalu
 # or gets above 95% of the variance explained, which is more consistent with the 
 # manuscript definition of FRic.
 n_axes <- which(cum_var >= 95)[1]
-TrData_processed$traits.FRic <- TrData_processed$traits.FRic[, seq_len(n_axes), drop = FALSE
+TrData_processed$traits.FRic <- TrData_processed$traits.FRic[, seq_len(n_axes), drop = FALSE]
 
 divmax <- ade4::divcmax(as.dist(TrData_processed$x.dist))$value
 
