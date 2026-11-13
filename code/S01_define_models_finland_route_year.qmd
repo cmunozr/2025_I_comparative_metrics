@@ -148,10 +148,10 @@ run_download_mactavish <- F
 run_get_finbif <- F
 run_itis_routes <- F
 run_itis_bakx <- F
-run_export_species_ranges <- T
+run_export_species_ranges <- F
 filter_rare_spp <- F
 run_polygon_buffers <- F
-run_calculate_XData <- F
+run_calculate_XData <- T
 run_new_var_XData <- F
 run_syn_for_mctavish <- F
 ```
@@ -427,7 +427,7 @@ occurr_sect_route <- occurr_sect_route |>
 ```{r}
 if (run_export_species_ranges) {
   # Exports all-time historical occurrences for spatial range M
-  
+  # not used at the end
   target_spp_vec <- harmonized_species |> 
     filter(in_bakx == TRUE, in_routes == TRUE) |> 
     pull(acceptedName)
@@ -1068,6 +1068,50 @@ if(run_polygon_buffers){
 
 From vakio+biotope+biotopeSpecifier to vakio+biotope. The former is too finer, see @tbl-data_loss_count
 
+#### Sum surveyed segment lengths by biotope
+
+```{r}
+biotope_lengths <- occurr_sect_route |>
+  group_by(vakio, year, biotopeStripId) |>
+  summarise(
+    biotope = if (n_distinct(biotope) == 1) first(biotope) else NA_character_,
+    meters = if (n_distinct(meters) == 1) first(meters) else NA_real_,
+    has_conflicting_records = n_distinct(biotope) != 1 | n_distinct(meters) != 1,
+    .groups = "drop"
+  ) |>
+  group_by(vakio, year, biotope) |>
+  summarise(
+    surveyed_meters = sum(meters, na.rm = TRUE),
+    n_segments = n(),
+    n_missing_or_conflicting = sum(is.na(meters) | has_conflicting_records),
+    .groups = "drop"
+  )
+
+spruce_dominance <- biotope_lengths |>
+  group_by(vakio, year) |>
+  summarise(
+    total_forest_meters = sum(surveyed_meters),
+    has_missing_or_conflicting = any(n_missing_or_conflicting > 0),
+    largest_category_meters = max(surveyed_meters),
+    has_spruce_category = any(biotope == "K"),
+    spruce_meters = sum(surveyed_meters[biotope == "K"]),
+    .groups = "drop"
+  ) |>
+  mutate(
+    spruce_dominant = if_else(
+      has_missing_or_conflicting,
+      NA,
+      has_spruce_category & spruce_meters == largest_category_meters
+    )
+  )
+# Good idea but!
+# FBS spruce dominance is based on habitat categories recorded by the
+# surveyor along route segments, whereas BAU/METSO main tree species comes
+# from stand-level forest-resource data. The classifications use
+# different sources and their criteria are probably not equivalent.
+# Instead we use coverage-weighted mean spruce volume for all routes and stands.
+```
+
 #### Dissolve poligons
 
 ```{r}
@@ -1261,6 +1305,10 @@ Now we are going to derive polygon-Level statistics from the raw values of the c
 
 folder_name <- file.path("data", "covariates") 
 
+spruce_data <- spruce_dominance |>
+  mutate(polygon_id = paste(vakio, year, sep = "_")) |>
+  dplyr::select(polygon_id, spr = spruce_dominant)
+
 construct_hmsc_XData(
   folder_name = folder_name,
   run_calc = run_calculate_XData,
@@ -1269,7 +1317,8 @@ construct_hmsc_XData(
   mapping_funcs = mapping_functions,
   ref_data = occurr_route_year,
   data_sufix = "coords",
-  nm_pre_process = "pre_processed"
+  nm_pre_process = "pre_processed",
+  spruce_data = spruce_data
 )
 
 XData_list <- readRDS(file.path("data", "covariates", paste0("XData_hmsc_coords_", run_config$model_id, ".rds")))
@@ -1299,12 +1348,11 @@ l2_xy <- lapply(X = l2_output_paths$path_L2, sf::read_sf) |>
 
 ```{r}
 
-vars_to_remove <- c("old_grow_indicator_ratio", "old_grow_indicator_agesum", "elevation_mean", "average_stand_length_gt250_mean", 
-                    "old_grow_indicator") # 
+vars_to_remove <- c("old_grow_indicator") 
 # the last is an aliased coefficient with average_stand_length_gt200_mean, VIF can't run with
 
 predictor_data <- XData|> 
-  dplyr::select(-all_of(vars_to_remove), -contains("precipitation"), -starts_with("min_t"), -starts_with("max_t"))
+  dplyr::select(-all_of(vars_to_remove))
 
 ```
 

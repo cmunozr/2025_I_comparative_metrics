@@ -760,8 +760,52 @@ bin <- function(x, aux, na.rm = TRUE) {
     x <- x[!is.na(x)]
   }
   if (length(x) == 0) return(NA)
-  # Check if ANY value meets the condition
   ifelse(any(x >= aux), 1, 0)
+}
+
+#----------------------
+
+# Binary indicator: coverage-weighted mean meets the threshold
+bin_avg <- function(x, w, aux, na.rm = TRUE) {
+  if (na.rm) {
+    complete_cases <- !is.na(x) & !is.na(w)
+    x <- x[complete_cases]
+    w <- w[complete_cases]
+  }
+  if (length(x) == 0) return(NA_integer_)
+  
+  mean_value <- weighted_mean(x, w, na.rm = na.rm)
+  if (is.na(mean_value)) return(NA_integer_)
+
+  as.integer(mean_value >= aux)
+}
+
+#---------------------
+# Binary indicator: at least one pixel meets the threshold
+bin_pix <- function(x, aux, na.rm = TRUE) {
+  if (na.rm) {
+    x <- x[!is.na(x)]
+  }
+  if (length(x) == 0) return(NA_integer_)
+
+  as.integer(any(x >= aux))
+}
+
+#---------------------
+# Binary indicator: spruce-dominated unit and mean spruce volume
+bin_spr <- function(x, w, spr, aux, na.rm = TRUE) {
+  if (length(spr) != 1 || is.na(spr)) return(NA_integer_)
+  if (!spr) return(0L)
+
+  bin_avg(x, w, aux, na.rm = na.rm)
+}
+
+#---------------------
+# Binary indicator: a polygon-level value meets the threshold
+bin_value <- function(x, aux) {
+  if (length(x) != 1 || is.na(x)) return(NA_integer_)
+
+  as.integer(x >= aux)
 }
 
 #----------------------
@@ -966,7 +1010,7 @@ get_process_plan <- function(output_rds_paths,
 #' @return A \code{tibble} containing the processed data for the specific variable, 
 #'   aggregated by polygon_id. Returns \code{NULL} if the file does not exist or has no mapping plan.
 #' @export
-compute_covariate <- function(var_name, file_path, mapping_functions) {
+compute_covariate <- function(var_name, file_path, mapping_functions, spruce_data = NULL) {
   
   if (!file.exists(file_path)) return(NULL)
   
@@ -1012,6 +1056,24 @@ compute_covariate <- function(var_name, file_path, mapping_functions) {
           } else {
             args$x <- current_group_data$value
           }
+        } else if (task$function_to == "bin_pix") {
+          args$x <- current_group_data$value
+        } else if (task$function_to == "bin_avg") {
+          args$x <- current_group_data$value
+          args$w <- current_group_data$coverage_fraction
+        } else if (task$function_to == "bin_value") {
+          args$x <- current_group_data$value
+        } else if (task$function_to == "bin_spr") {
+          if (is.null(spruce_data)) {
+            stop("spruce_data must be supplied for bin_spr.")
+          }
+          spruce_index <- match(
+            as.character(group_key$polygon_id),
+            as.character(spruce_data$polygon_id)
+          )
+          args$x <- current_group_data$value
+          args$w <- current_group_data$coverage_fraction
+          args$spr <- spruce_data$spr[spruce_index]
         }
         
         if (!is.na(task$aux_value)) {
@@ -1079,7 +1141,8 @@ construct_hmsc_XData <- function(folder_name,
                              ref_data,
                              data_sufix = "coords",
                              modelid = run_config$model_id,
-                             nm_pre_process = "pre_processed") {
+                             nm_pre_process = "pre_processed",
+                             spruce_data = NULL) {
   
   # 1. Validation and Setup
   if (!run_calc && !run_new) {
@@ -1093,10 +1156,12 @@ construct_hmsc_XData <- function(folder_name,
                                  recursive = TRUE, 
                                  full.names = TRUE)
   
+  mapping_funcs <- mapping_funcs |> 
+    dplyr::filter(considered == 1)
+  
   # 2. Identify what to process
   vars_to_process <- get_process_plan(output_rds_paths, folder_name, run_new, dict_covar, mapping_funcs, ds = data_sufix)
-  
-  
+
   # Map paths to var names for easy lookup
   str_to_replace <- paste0("_", data_sufix)
   unique_vars <- tools::file_path_sans_ext(basename(output_rds_paths)) |> str_replace(str_to_replace, "")
@@ -1107,14 +1172,15 @@ construct_hmsc_XData <- function(folder_name,
   all_results_list <- list()
   
   for (var_name in vars_to_process) {
-    # var_name <- "rr_cv"
+    # var_name <- "canopy_cover_whole_stand"
     if (!(var_name %in% mapping_funcs$var_pre_processed)) next
     
     # Call the worker function
     all_results_list[[var_name]] <- compute_covariate(
       var_name = var_name,
       file_path = output_rds_paths[var_name],
-      mapping_functions = mapping_funcs
+      mapping_functions = mapping_funcs,
+      spruce_data = spruce_data
     )
   }
   

@@ -57,6 +57,13 @@ if(sufix == "metso"){
   sp_df <- sp_df |> dplyr::filter(metso == 0) 
 }
 
+spruce_data <- sp_df |>
+  sf::st_drop_geometry() |>
+  dplyr::transmute(
+    polygon_id = as.character(standid),
+    spr = treespecies == "Spruce"
+  )
+
 # Call the function
 construct_hmsc_XData(
   folder_name = folder_name,
@@ -65,7 +72,8 @@ construct_hmsc_XData(
   dict_covar = dict_covar,
   mapping_funcs = mapping_functions, 
   ref_data = sp_df, 
-  data_sufix = sufix
+  data_sufix = sufix,
+  spruce_data = spruce_data
 )
 
 # 5. control/treated(metso) covariates need to be the same as the fitted model   
