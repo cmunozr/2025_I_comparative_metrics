@@ -1282,27 +1282,27 @@ construct_hmsc_XData <- function(folder_name,
 #' @keywords internal
 #' 
 build_manual_poly_matrix <- function(df, hM) {
-  
-  og1 <- poly(hM$XData$mean_temperature_yr_last, degree = 2)
-  og2 <- poly(hM$XData$mean_temperature_yr, degree = 2)
-  
-  
-  trans1 <- predict(og1, df$mean_temperature_yr_last)
-  trans2 <- predict(og2, df$mean_temperature_yr)
-  
-  mat_out <- data.frame(
-    "(Intercept)" = 1,
-    df,
-    trans1[, 1],
-    trans1[, 2],
-    trans2[, 1],
-    trans2[, 2],
-    check.names = FALSE
-  )
-  
-  colnames(mat_out) <- colnames(hM$X)
-  
-  return(mat_out)
+  term_labels <- attr(terms(hM$XFormula), "term.labels")
+  poly_terms <- paste0("poly(", c("mean_temperature_yr_last", "mean_temperature_yr"), ", degree = 2)")
+  active_poly <- poly_terms[poly_terms %in% term_labels]
+  required <- all.vars(hM$XFormula)
+  missing <- setdiff(required, names(df))
+  if (length(missing)) stop("Missing model predictors: ", paste(missing, collapse = ", "))
+
+  plain_terms <- setdiff(term_labels, active_poly)
+  plain_formula <- if (length(plain_terms)) reformulate(plain_terms) else ~ 1
+  mat_out <- model.matrix(plain_formula, data = df, na.action = na.fail)
+  for (term in active_poly) {
+    variable <- all.vars(as.formula(paste("~", term)))
+    basis <- poly(hM$XData[[variable]], degree = 2)
+    projected <- predict(basis, df[[variable]])
+    colnames(projected) <- paste0(term, seq_len(ncol(projected)))
+    mat_out <- cbind(mat_out, projected)
+  }
+  target <- colnames(hM$X)
+  missing_columns <- setdiff(target, colnames(mat_out))
+  if (length(missing_columns)) stop("Missing model design columns: ", paste(missing_columns, collapse = ", "))
+  as.data.frame(mat_out[, target, drop = FALSE], check.names = FALSE)
 }
 
 #' Prepare and Align Stand-Level Covariates for HMSC Prediction

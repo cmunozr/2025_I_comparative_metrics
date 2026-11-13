@@ -1348,11 +1348,7 @@ l2_xy <- lapply(X = l2_output_paths$path_L2, sf::read_sf) |>
 
 ```{r}
 
-vars_to_remove <- c("old_grow_indicator") 
-# the last is an aliased coefficient with average_stand_length_gt200_mean, VIF can't run with
-
-predictor_data <- XData|> 
-  dplyr::select(-all_of(vars_to_remove))
+predictor_data <- XData 
 
 ```
 
@@ -1362,17 +1358,41 @@ vif_removed_variables <- c()
 vif_history <- list() # List to store VIF values at each step
 iteration <- 1
 
+temperature_variables <- c("mean_temperature_yr_last", "mean_temperature_yr")
+make_formula <- function(variables) {
+  terms <- vapply(variables, function(variable) {
+    if (variable %in% temperature_variables) {
+      paste0("poly(", variable, ", degree = 2)")
+    } else {
+      variable
+    }
+  }, character(1))
+  reformulate(terms)
+}
+
 repeat {
   message(paste("iteration number", iteration))
-  if (ncol(predictor_data) < 2) {
-    print("Loop stopped: Not enough variables left to calculate VIF.")
-    break
+  if (anyNA(predictor_data)) {
+    stop("VIF screening requires complete predictor data.")
   }
-  
-  formula_str <- paste(names(predictor_data)[1], "~ .")
-  temp_model <- lm(as.formula(formula_str), data = predictor_data)
-  
-  vifs <- vif(temp_model)
+  if (any(vapply(predictor_data, function(x) length(unique(x)) < 2, logical(1)))) {
+    stop("VIF screening found constant predictors: ", paste(names(predictor_data)[vapply(predictor_data, function(x) length(unique(x)) < 2, logical(1))], collapse = ", "))
+  }
+
+  XFormula <- make_formula(names(predictor_data))
+  design <- model.matrix(XFormula, data = predictor_data, na.action = na.fail)
+  if (qr(design)$rank < ncol(design)) {
+    stop("VIF screening found exact or numerical dependencies in the model design; inspect the candidate predictors.")
+  }
+  term_index <- attr(design, "assign")[-1]
+  design <- design[, -1, drop = FALSE]
+  vifs <- vapply(seq_len(ncol(design)), function(i) {
+    if (ncol(design) == 1) return(1)
+    fit <- lm.fit(cbind(1, design[, -i, drop = FALSE]), design[, i])
+    total <- sum((design[, i] - mean(design[, i]))^2)
+    total / sum(fit$residuals^2)
+  }, numeric(1))
+  names(vifs) <- colnames(design)
   
   vif_history[[iteration]] <- as.data.frame(vifs)|>
     rownames_to_column("Variable")|>
@@ -1384,7 +1404,7 @@ repeat {
     vif_keep_variables <- names(predictor_data)
     break
   } else {
-    var_to_remove <- names(which.max(vifs))
+    var_to_remove <- names(predictor_data)[term_index[which.max(vifs)]]
     vif_removed_variables <- c(vif_removed_variables, var_to_remove)
     predictor_data <- predictor_data[, !(names(predictor_data) %in% var_to_remove)]
     
@@ -1422,8 +1442,9 @@ ggplot(vif_plot_data, aes(x = Variable, y = VIF)) +
 length(vif_keep_variables)
 
 XData <- XData |> 
-   dplyr::select(any_of(vif_keep_variables)) # |>
-#   cbind(l2_xy) # this chunk is to add the coordinates as a spatial covariate
+   dplyr::select(any_of(vif_keep_variables))
+
+# XData <- XData |> cbind(l2_xy) # this chunk is to add the coordinates as a spatial covariate
 
 to_exp <- file.path("miscelaneus", "exports")
 dir.create(to_exp, showWarnings = F)
@@ -1646,8 +1667,7 @@ rL.observer <- HmscRandomLevel(units = levels(studyDesign$observer_id))
 
 # XFormula <- average_stand_diameter_gt15_mean + average_stand_diameter_gt20_mean + average_stand_length_gt200_mean + average_stand_length_gt250_mean + old_grow_indicator + canopy_cover_whole_stand + canopy_cover_whole_stand_gt60_mean + canopy_cover_broadleaves + volume_spruce_gt150 + tree_extent + tree_height_mean + tree_height_stdev + tree_remove 
 
-XFormula <- paste0("~ ", paste(colnames(XData), collapse = " + "), " + poly(mean_temperature_yr_last, degree = 2) + poly(mean_temperature_yr, degree = 2)") |>
-  as.formula() 
+XFormula <- make_formula(colnames(XData))
 
 ```
 

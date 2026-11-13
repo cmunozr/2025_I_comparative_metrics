@@ -69,8 +69,12 @@ for (i in 1:nrow(run_config$mcmc)) {
     m <- readRDS(model_path)
     
     # Reconstruct the orthogonal polynomial bases from the original training data
-    poly_last <- poly(m$XData$mean_temperature_yr_last, degree = 2)
-    poly_yr <- poly(m$XData$mean_temperature_yr, degree = 2)
+    poly_variables <- c("mean_temperature_yr_last", "mean_temperature_yr")
+    poly_terms <- paste0("poly(", poly_variables, ", degree = 2)")
+    active_poly <- poly_terms %in% attr(terms(m$XFormula), "term.labels")
+    poly_variables <- poly_variables[active_poly]
+    poly_terms <- poly_terms[active_poly]
+    poly_bases <- lapply(poly_variables, function(variable) poly(m$XData[[variable]], degree = 2))
     
     # Create a temporary model object that bypasses internal formula evaluation
     m_temp <- m
@@ -113,13 +117,12 @@ for (i in 1:nrow(run_config$mcmc)) {
         
         # Inject the exact polynomial terms using the training basis
         inject_poly <- function(grad_data) {
-          p_last <- predict(poly_last, grad_data$mean_temperature_yr_last)
-          p_yr <- predict(poly_yr, grad_data$mean_temperature_yr)
-          
-          grad_data$`poly(mean_temperature_yr_last, degree = 2)1` <- p_last[, 1]
-          grad_data$`poly(mean_temperature_yr_last, degree = 2)2` <- p_last[, 2]
-          grad_data$`poly(mean_temperature_yr, degree = 2)1` <- p_yr[, 1]
-          grad_data$`poly(mean_temperature_yr, degree = 2)2` <- p_yr[, 2]
+          for (i in seq_along(poly_variables)) {
+            projected <- predict(poly_bases[[i]], grad_data[[poly_variables[[i]]]])
+            for (j in seq_len(ncol(projected))) {
+              grad_data[[paste0(poly_terms[[i]], j)]] <- projected[, j]
+            }
+          }
           
           return(grad_data)
         }
