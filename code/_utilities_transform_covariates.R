@@ -1142,7 +1142,8 @@ construct_hmsc_XData <- function(folder_name,
                              data_sufix = "coords",
                              modelid = run_config$model_id,
                              nm_pre_process = "pre_processed",
-                             spruce_data = NULL) {
+                             spruce_data = NULL,
+                             normalize_stand_ids = FALSE) {
   
   # 1. Validation and Setup
   if (!run_calc && !run_new) {
@@ -1182,6 +1183,14 @@ construct_hmsc_XData <- function(folder_name,
       mapping_functions = mapping_funcs,
       spruce_data = spruce_data
     )
+    if (normalize_stand_ids && !is.null(all_results_list[[var_name]])) {
+      all_results_list[[var_name]] <- all_results_list[[var_name]] |>
+        mutate(polygon_id = stringr::str_replace(as.character(polygon_id), "^([0-9]+_[0-9]{4})_[0-9]+$", "\\1")) |>
+        distinct()
+      if (anyDuplicated(all_results_list[[var_name]]$polygon_id)) {
+        stop("Conflicting covariates for stand IDs in ", var_name)
+      }
+    }
   }
   
   # 4. Merge Results
@@ -1362,6 +1371,7 @@ prepare_prediction_xdata <- function(stand_data, ref_vals, ref_template, hM) {
 #'   - "both": Re-runs if Parquet is missing OR an error log is detected.
 #' @param clean_error_logs logical. If TRUE, deletes the matching error text files
 #'   for selected retry tasks so workers start clean.
+#' @param additional_pred_dir Optional second output directory that must also contain the batch.
 #'
 #' @return A filtered sub-list of `tasks` requiring re-execution.
 filter_failed_tasks <- function(tasks,
@@ -1370,7 +1380,8 @@ filter_failed_tasks <- function(tasks,
                                 expected_string,
                                 sufix,
                                 mode = c("missing_output", "error_log", "both"),
-                                clean_error_logs = FALSE) {
+                                clean_error_logs = FALSE,
+                                additional_pred_dir = NULL) {
   
   mode <- match.arg(mode)
   tasks_to_retry <- list()
@@ -1406,6 +1417,13 @@ filter_failed_tasks <- function(tasks,
     
     # Evaluate status
     has_valid_parquet <- file.exists(parquet_target) && (file.info(parquet_target)$size > 0)
+    if (!is.null(additional_pred_dir)) {
+      additional_target <- file.path(additional_pred_dir, paste0("modelid=", modelid),
+                                     paste0("expected_type=", expected_string), paste0("year=", yr),
+                                     paste0("reg=", reg), paste0("trees=", tr),
+                                     paste0("scenario=", sufix), paste0("part_batch", b_num, ".parquet"))
+      has_valid_parquet <- has_valid_parquet && file.exists(additional_target) && file.info(additional_target)$size > 0
+    }
     has_error_log     <- file.exists(error_file_target)
     
     needs_retry <- switch(

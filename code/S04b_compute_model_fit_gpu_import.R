@@ -37,21 +37,31 @@ set.seed(11072024)
 message("    Start time: ", timestamp())
 
 # Define all strategies required for diagnosis (matches S04a)
-validation_strategies <- c("metso_holdout", "north_south", "route_blocked_cv") #, "random_cv")
+validation_strategies <- c("metso_holdout", "route_blocked_cv") #, "north_south", "random_cv")
+if (run_config$model_mode == "legacy") {
+  validation_strategies <- c("metso_holdout", "north_south", "route_blocked_cv")
+}
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")
 run_parallel <- TRUE
 
 # --- 3. Define MCMC Parameters ---
-mcmc_params <- run_config$mcmc
+components <- if (run_config$model_mode == "paired") names(run_config$component_mcmc) else ""
 
 # --- 4. Main Loop: Iterate Over MCMC config and Strategies ---
 message(paste0("--- Import for Model ID: ", run_config$model_id))
 
+for (component in components) {
+  component_config <- run_config
+  component_config$model_id <- paste0(run_config$model_id, component)
+  if (run_config$model_mode == "paired") {
+    component_config$mcmc <- run_config$component_mcmc[[component]]
+  }
+  mcmc_params <- component_config$mcmc
 for(i in 1:nrow(mcmc_params)){
   # i <- 1
-  run_name <- generate_run_name(run_config)[i]
+  run_name <- generate_run_name(component_config)[i]
   base_model_name <- run_name 
   mcmc_params_i <- mcmc_params[i, ]
   
@@ -67,7 +77,6 @@ for(i in 1:nrow(mcmc_params)){
   hM_full <- Hmsc::alignPosterior(hM_full)
   
   XData <- hM_full$XData
-  X <- build_manual_poly_matrix(XData, hM_full)
   
   dir_fit <- file.path(models_dir, base_model_name, "model_fit") 
   dir.create(dir_fit, showWarnings = FALSE, recursive = TRUE)
@@ -154,7 +163,7 @@ for(i in 1:nrow(mcmc_params)){
       
       res_path <- import_posterior(
         mcmc = run_config$cv$mcmc, 
-        config = run_config, 
+        config = component_config, 
         run_nm = base_model_name, 
         partition_number = parts[p], 
         label = label
@@ -183,7 +192,7 @@ for(i in 1:nrow(mcmc_params)){
       }
       
       
-      X_val <- as.matrix(X[val_idx, , drop = FALSE])
+      X_val <- as.matrix(build_manual_poly_matrix(XData[val_idx, , drop = FALSE], m_fold))
       dfPi_val <- droplevels(hM_full$dfPi[val_idx, , drop = FALSE])
       
       # Execution routing block for predictive processing
@@ -262,6 +271,7 @@ for(i in 1:nrow(mcmc_params)){
     if(exists("predY_auc")) rm(predY_auc)
     gc()
   }
+}
 }
 
 message("    End time: ", timestamp())

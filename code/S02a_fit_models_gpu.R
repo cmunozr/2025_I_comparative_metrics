@@ -4,7 +4,7 @@
 #'
 #' METHODOLOGY
 #' - Loads model configuration settings and GPU utility functions.
-#' - Reads the pre-constructed unfitted HMSC model object for the target model ID.
+#' - Reads the pre-constructed paired or legacy HMSC model objects for the target model ID.
 #' - Iterates across MCMC parameter configurations (e.g., thin, samples).
 #' - Prepares the model for HPC/GPU computation via JSON-compatible RDS formatting.
 #' - Aggregates execution commands across single/multi-GPU modes and writes shell scripts (.sh).
@@ -12,7 +12,7 @@
 #' INPUTS
 #' - code/config_model.R: Central configuration parameters (model_id, mcmc grid, gpu, server paths).
 #' - code/_utilities_hmsc_gpu.R: HPC/GPU utility functions (prepare_hpc_model, save_prepared_model, generate_commands, write_commands_scripts).
-#' - models/unfitted_RData/unfitted_{model_id}.RData: Unfitted HMSC model RData object.
+#' - models/unfitted_RData/unfitted_{model_id}.RData: Unfitted HMSC model for each selected ID.
 #'
 #' OUTPUTS
 #' - models/{base_model_name}/{base_model_name}.rds: Prepared HMSC model saved as JSON-RDS.
@@ -27,16 +27,7 @@ source("code/_utilities_hmsc_gpu.R")
 
 # --- 2. Configuration and Setup ---
 models_dir <- file.path(here::here(), "models")
-unfitted_models_file <- file.path(models_dir, "unfitted_RData", paste0("unfitted_", run_config$model_id, ".RData"))
-
 dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
-
-# --- 3. Load the Unfitted Model ---
-load(file = unfitted_models_file)
-unfitted_model <- models[[run_config$model_id]]
-
-# --- 4. Define MCMC Parameters ---
-mcmc_params <- run_config$mcmc
 
 # --- 5. Initialize Aggregator Lists ---
 # These will store ALL commands from ALL MCMC loops
@@ -44,9 +35,25 @@ all_commands_aggregated <- list()
 gpu_commands_aggregated <- rep(list(data.frame(command=character(), log_filename=character())), run_config$gpu$n_gpus_available)
 
 # --- 6. Loop and Generate Commands ---
-for(i in 1:nrow(mcmc_params)){
+if (!run_config$model_mode %in% c("paired", "legacy")) {
+  stop("model_mode must be 'paired' or 'legacy'.")
+}
+components <- if (run_config$model_mode == "paired") names(run_config$component_mcmc) else ""
+
+for (component in components) {
+  component_config <- run_config
+  component_config$model_id <- paste0(run_config$model_id, component)
+  if (run_config$model_mode == "paired") {
+    component_config$mcmc <- run_config$component_mcmc[[component]]
+  }
+  unfitted_models_file <- file.path(models_dir, "unfitted_RData", paste0("unfitted_", component_config$model_id, ".RData"))
+  load(file = unfitted_models_file)
+  unfitted_model <- models[[component_config$model_id]]
+  mcmc_params <- component_config$mcmc
+
+  for(i in 1:nrow(mcmc_params)){
   
-  run_name <- generate_run_name(run_config)[i]
+  run_name <- generate_run_name(component_config)[i]
   mcmc_params_i <- mcmc_params[i, ]
   message(paste0("\nProcessing config ", i, ": thin = ", mcmc_params_i$thin, ", samples = ", mcmc_params_i$samples))
   
@@ -68,7 +75,7 @@ for(i in 1:nrow(mcmc_params)){
       base_model_name = base_model_name, # Use the unique name
       run_specific_dir_server = run_specific_dir_server,
       mcmc_params = mcmc_params_i,
-      run_config = run_config
+      run_config = component_config
     )
     
     # Aggregate Mode 1 and 2 commands
@@ -81,6 +88,7 @@ for(i in 1:nrow(mcmc_params)){
         new_commands$gpu_commands[[gpu_i]]
       )
     }
+  }
   }
 }
 

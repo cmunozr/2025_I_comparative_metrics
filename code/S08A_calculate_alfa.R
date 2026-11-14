@@ -14,8 +14,8 @@
 #' - Assembles threshold vectors into a species-by-sample alpha matrix and persists to disk.
 #'
 #' INPUTS:
-#' - `models/fbs_M016PA_thin_150_samples_1000_chains_4/fitted_fbs_M016PA_thin_150_samples_1000_chains_4.rds`:
-#'   Fitted `Hmsc` presence-absence model object containing response matrix `Y` and random level definitions.
+#' - `code/config_model.R`: Selected presence-absence model run.
+#' - Fitted `Hmsc` presence-absence model object containing response matrix `Y` and random level definitions.
 #'
 #' OUTPUTS:
 #' - `results/alfa_matrix.rds`: Numeric matrix [n_species x n_samples] of MTP alpha threshold values.
@@ -23,8 +23,12 @@
 # Calculate alfa
 # MTP version
 
+library(Hmsc)
+source(file.path("code", "config_model.R"))
+
 # Load presence/abscence Model
-fitted_full_model_path_PA <- file.path("models/fbs_M016PA_thin_150_samples_1000_chains_4/fitted_fbs_M016PA_thin_150_samples_1000_chains_4.rds")
+model_run_PA <- selected_models$PA
+fitted_full_model_path_PA <- file.path("models", model_run_PA, paste0("fitted_", model_run_PA, ".rds"))
 hM_PA <- readRDS(fitted_full_model_path_PA)
 spatial_level_name_PA <- hM_PA$rLNames[1] 
 
@@ -54,4 +58,5 @@ for (j in seq_len(n_sp)) {
 }
 
 dir.create("results", showWarnings = F)
+attr(alfa_matrix, "model_run") <- model_run_PA
 saveRDS(alfa_matrix, file.path("results", "alfa_matrix.rds"))

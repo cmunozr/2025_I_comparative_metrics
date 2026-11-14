@@ -24,19 +24,31 @@ source("code/config_model.R")
 source("code/_utilities_hmsc_gpu.R")
 
 # --- 2. Main Loop: Iterate Over the MCMC configuration ---
-message(paste0("--- Import for Model ID: ", run_config$model_id))
+if (!run_config$model_mode %in% c("paired", "legacy")) {
+  stop("model_mode must be 'paired' or 'legacy'.")
+}
+components <- if (run_config$model_mode == "paired") names(run_config$component_mcmc) else ""
 
-for (i in 1:nrow(run_config$mcmc)) {
+for (component in components) {
+  component_config <- run_config
+  component_config$model_id <- paste0(run_config$model_id, component)
+  if (run_config$model_mode == "paired") {
+    component_config$mcmc <- run_config$component_mcmc[[component]]
+  }
+  message(paste0("--- Import for Model ID: ", component_config$model_id))
+
+  for (i in 1:nrow(component_config$mcmc)) {
   #i <- 1
-  run_name <- generate_run_name(run_config)[i]
+  run_name <- generate_run_name(component_config)[i]
   message(paste0("\n--- Processing Grid Row ", i, ": ", run_name, " ---"))
-  mcmc_i <- run_config$mcmc[i, ]
+  mcmc_i <- component_config$mcmc[i, ]
   
   # ---B import posterior ---
   import_posterior(
     mcmc = mcmc_i,
     run_nm = run_name,
-    config = run_config
+    config = component_config
   )
+  }
 }
 

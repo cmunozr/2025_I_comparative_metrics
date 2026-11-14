@@ -23,7 +23,7 @@
 #'
 #' INPUTS:
 #' - HMSC Models: Fitted model RDS files for PA ('hM_PA') and aCp ('hM_aCp').
-#' - Model Config: 'code/config_model.R' defining 'model_id'.
+#' - Model Config: 'code/config_model.R' defining 'model_id' and selected model runs.
 #' - Threshold Matrix: 'results/alfa_matrix.rds' (species x posterior thresholds).
 #' - Spatial Data: Stand polygons from 'data/metso/treatment_control_stand_v4.gpkg'.
 #' - Covariates: Extracted predictor RDS at 'data/covariates/XData_hmsc_[sufix]_[model_id].rds'.
@@ -112,16 +112,17 @@ if (os == "Windows") {
 
 # Set to FALSE for full runs
 retry_failed_only <- TRUE
+allow_legacy_batch_reuse <- FALSE
 
 # 1. Data loading
 
 # Load presence/abscence Model
-fitted_full_model_path_PA <- file.path("models/fbs_M016PA_thin_150_samples_1000_chains_4/fitted_fbs_M016PA_thin_150_samples_1000_chains_4.rds")
+fitted_full_model_path_PA <- file.path("models", selected_models$PA, paste0("fitted_", selected_models$PA, ".rds"))
 hM_PA <- readRDS(fitted_full_model_path_PA)
 spatial_level_name <- hM_PA$rLNames[1] 
 
 # Load abundance conditional on presence Model
-fitted_full_model_path_aCp <- file.path("models/fbs_M016_thin_250_samples_1000_chains_4/fitted_fbs_M016_thin_250_samples_1000_chains_4.rds")
+fitted_full_model_path_aCp <- file.path("models", selected_models$aCp, paste0("fitted_", selected_models$aCp, ".rds"))
 hM_aCp <- readRDS(fitted_full_model_path_aCp)
 
 if(is.null(wr_dir)){
@@ -228,20 +229,11 @@ sp_df <- sp_df |>
 coords <- st_coordinates(sp_df) |> 
   as.data.frame()
 
-# Save matches
-saveRDS(matches, file.path(wr_dir, paste0("matched_pairs_groups", "_", sufix, ".rds")))
-
-# Save IDs used for this run
-saveRDS(sp_df$standid, file = pred_id_file)
-
-# save geometries
-sp_df |> 
-  dplyr::select(standid) |> 
-  st_write_parquet(file.path(wr_dir, paste0("point_geometry_", sufix, ".parquet")))
-
 # complete XData, Define reference values from the training data hM_PA$XData
 XData_survey <- hM_PA$XData
-missing_cols <- setdiff(colnames(XData_survey), colnames(XData))
+survey_variables <- c("n_segments", "survey_doy_scaled", "start_decimal",
+                      "duration_hours", "log_linelength", "prop_route")
+missing_cols <- intersect(setdiff(colnames(XData_survey), colnames(XData)), survey_variables)
 
 ref_values <- list()
 for (col in missing_cols) {
@@ -316,6 +308,39 @@ cat(sprintf("Created %d tasks across %d groups.\n", length(tasks), length(unique
 
 # Retry!
 
+provenance_path <- file.path(wr_dir, paste0("prediction_provenance_", modelid, "_", sufix, expected_string, ".rds"))
+provenance <- list(
+  models = selected_models,
+  inputs = unname(tools::md5sum(c(fitted_full_model_path_PA, fitted_full_model_path_aCp,
+                                  file.path(wr_dir, "alfa_matrix.rds"), data_path,
+                                  here("data", "metso", "treatment_control_stand_v4.gpkg")))),
+  batch_size = batch_size, test = test, expected_val = expected_val,
+  tasks = lapply(tasks, function(task) list(group = task$group, year = task$year[1],
+                                            regional = task$regional[1], trees = task$trees[1],
+                                            stand_ids = task$sp_df_batch))
+)
+if (file.exists(provenance_path)) {
+  if (!identical(readRDS(provenance_path), provenance)) stop("Prediction inputs differ from the existing batch provenance.")
+} else {
+  missing_tasks <- filter_failed_tasks(tasks, pred_dir, modelid, expected_string, sufix,
+                                       mode = "missing_output", clean_error_logs = FALSE)
+  missing_pa_tasks <- filter_failed_tasks(tasks, pred_pa_dir, modelid, expected_string, sufix,
+                                          mode = "missing_output", clean_error_logs = FALSE)
+  existing_batches <- length(missing_tasks) < length(tasks) || length(missing_pa_tasks) < length(tasks)
+  if (existing_batches && !allow_legacy_batch_reuse) {
+    stop("Existing batches have no provenance. Verify them before enabling legacy batch reuse.")
+  }
+  if (existing_batches) warning("Reusing legacy batches without verified provenance.")
+  saveRDS(provenance, provenance_path)
+}
+
+# Save matches, IDs, and geometries
+saveRDS(matches, file.path(wr_dir, paste0("matched_pairs_groups", "_", sufix, ".rds")))
+saveRDS(sp_df$standid, file = pred_id_file)
+sp_df |>
+  dplyr::select(standid) |>
+  st_write_parquet(file.path(wr_dir, paste0("point_geometry_", sufix, ".parquet")))
+
 if (retry_failed_only) {
   tasks <- filter_failed_tasks(
     tasks            = tasks,
@@ -324,7 +349,8 @@ if (retry_failed_only) {
     expected_string  = expected_string,
     sufix            = sufix,
     mode             = "missing_output", 
-    clean_error_logs = TRUE              # Deletes old ERROR_*.txt for retried tasks
+    clean_error_logs = TRUE,             # Deletes old ERROR_*.txt for retried tasks
+    additional_pred_dir = pred_pa_dir
   )
 }
 

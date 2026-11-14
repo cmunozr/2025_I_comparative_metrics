@@ -41,10 +41,21 @@ showV <- TRUE
 num_trace_plots <- 5
 
 # --- 3. Main Loop: Iterate Over the MCMC Grid ---
-for (i in 1:nrow(run_config$mcmc)) {
+if (!run_config$model_mode %in% c("paired", "legacy")) {
+  stop("model_mode must be 'paired' or 'legacy'.")
+}
+components <- if (run_config$model_mode == "paired") names(run_config$component_mcmc) else ""
+
+for (component in components) {
+  component_config <- run_config
+  component_config$model_id <- paste0(run_config$model_id, component)
+  if (run_config$model_mode == "paired") {
+    component_config$mcmc <- run_config$component_mcmc[[component]]
+  }
+for (i in 1:nrow(component_config$mcmc)) {
   # i <- 1
   # --- A. Setup for the Current Run ---
-  run_name <- generate_run_name(run_config)[i]
+  run_name <- generate_run_name(component_config)[i]
   message(paste0("\n--- Processing Grid Row ", i, ": ", run_name, " ---"))
   
   fitted_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
@@ -61,13 +72,15 @@ for (i in 1:nrow(run_config$mcmc)) {
     message("Convergence report already exists. Skipping.")
     next
   }
+  final_report_file <- report_file
+  report_file <- paste0(final_report_file, ".incomplete")
   
   # --- C. Evaluation of convergence ---
   tryCatch({
     dir.create(evaluation_dir, recursive = TRUE, showWarnings = FALSE)
     fitted_model <- readRDS(fitted_model_path)
     
-    if(run_config$mcmc$n_chains[i] < 2) {
+    if(component_config$mcmc$n_chains[i] < 2) {
       warning("Convergence diagnostics require at least 2 chains. Skipping run.")
       next
     }
@@ -211,9 +224,11 @@ for (i in 1:nrow(run_config$mcmc)) {
     }
     
     dev.off()
+    if (!file.rename(report_file, final_report_file)) stop("Could not save convergence report.")
 
   }, error = function(e) {
     warning(paste("An error occurred while evaluating", run_name, ":", e$message))
     if(dev.cur() != 1) dev.off() # Ensure PDF device is closed on error
   })
+}
 }

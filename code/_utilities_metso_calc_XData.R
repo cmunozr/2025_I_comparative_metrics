@@ -1,6 +1,8 @@
 library(sf)
 library(openxlsx)
 library(dplyr)
+library(tidyr)
+library(purrr)
 library(here)
 library(stringr)
 
@@ -44,20 +46,22 @@ if(pre_process){
   })
 }
 
-# 4. each type of polygon needs to be run by itself
+# 4. Process METSO and control stands
 
-sufix <- "metso"
+for (sufix in c("metso", "control")) {
+
+stand_data <- sp_df
 
 if(sufix == "metso"){
 
-  sp_df <- sp_df |> dplyr::filter(metso == 1)  
+  stand_data <- stand_data |> dplyr::filter(metso == 1)  
 
 }else if(sufix == "control"){
   
-  sp_df <- sp_df |> dplyr::filter(metso == 0) 
+  stand_data <- stand_data |> dplyr::filter(metso == 0) 
 }
 
-spruce_data <- sp_df |>
+spruce_data <- stand_data |>
   sf::st_drop_geometry() |>
   dplyr::transmute(
     polygon_id = as.character(standid),
@@ -71,16 +75,17 @@ construct_hmsc_XData(
   run_new = run_new_var_XData,
   dict_covar = dict_covar,
   mapping_funcs = mapping_functions, 
-  ref_data = sp_df, 
+  ref_data = stand_data, 
   data_sufix = sufix,
-  spruce_data = spruce_data
+  spruce_data = spruce_data,
+  normalize_stand_ids = TRUE
 )
 
 # 5. control/treated(metso) covariates need to be the same as the fitted model   
 
 write_complete_covariates <- F
 
-run_name <- generate_run_name(run_config)
+run_name <- selected_models$PA
 fitted_full_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
 hM <- readRDS(fitted_full_model_path)
 
@@ -100,5 +105,7 @@ if(write_complete_covariates){
 }
 
 saveRDS(XData_, file = path_rds)
+
+}
 
 

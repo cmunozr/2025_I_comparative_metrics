@@ -4,7 +4,8 @@ run_config <- list(
   
   # A unique ID for the model's structure (data, formulas, random effects).
   # This should match an entry in experiments_log/model_definition_log.csv
-  model_id = "fbs_M016",
+  model_id = "fbs_M017",
+  model_mode = "paired", # "paired" or "legacy"
   
   # MCMC sampling parameters
   mcmc = data.frame(
@@ -13,6 +14,23 @@ run_config <- list(
     n_chains = 4,
     transient_proportion = 0.5, # following standard method on Hmsc course
     adapt_nf_proportion = 0.4 # following standard method on Hmsc course
+  ),
+
+  component_mcmc = list(
+    PA = data.frame(
+      samples = 1000,
+      thin = 150,
+      n_chains = 4,
+      transient_proportion = 0.5,
+      adapt_nf_proportion = 0.4
+    ),
+    aCp = data.frame(
+      samples = 1000,
+      thin = 250,
+      n_chains = 4,
+      transient_proportion = 0.5,
+      adapt_nf_proportion = 0.4
+    )
   ),
   
   # GPU parameters
@@ -44,6 +62,11 @@ run_config <- list(
   test = list(
     test_dir = file.path("data", "fbs", "route_distance_2km_metso_control.csv")
   ) 
+)
+
+selected_models <- list(
+  PA = "fbs_M017PA_thin_150_samples_1000_chains_4",
+  aCp = "fbs_M017aCp_thin_250_samples_1000_chains_4"
 )
 
 # Function to create the run name

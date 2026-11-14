@@ -8,12 +8,10 @@ source(file.path("code", "config_model.r"))
 
 model_nm <- run_config$model_id
 
-fbs_list <- readRDS(
-  file.path(
-    "data", "covariates",
-    paste0("XData_hmsc_coords_", model_nm, ".rds")
-  )
-)
+model_run <- selected_models$PA
+model <- readRDS(file.path("models", model_run, paste0("fitted_", model_run, ".rds")))
+fbs <- model$XData
+rm(model)
 
 control_list <- readRDS(
   file.path(
@@ -30,8 +28,6 @@ metso_list <- readRDS(
 )
 
 # 2. Load/extract datasets
-
-fbs <- fbs_list[["XData"]]
 
 control <- control_list[["XData"]]
 metso <- metso_list[["XData"]]
@@ -50,21 +46,10 @@ treat_control_poly_ids <- c(
 
 # 3. Define environmental covariates to use for MOP
 
-cov_names <- c(
-  "tree_extent",
-  "average_stand_diameter",
-  "canopy_cover_broadleaves",
-  "tree_remove",
-  "tree_height_stdev",
-  "mean_temperature_yr",
-  "stand_age",
-  "mean_temperature_yr_last",
-  "average_stand_diameter_gt15_mean",
-  "average_stand_diameter_gt20_mean",
-  "average_stand_length_gt200_mean",
-  "canopy_cover_whole_stand_gt60_mean",
-  "volume_spruce_gt150"
-)
+survey_variables <- c("n_segments", "survey_doy_scaled", "start_decimal",
+                      "duration_hours", "log_linelength", "prop_route")
+cov_names <- setdiff(colnames(fbs), survey_variables)
+message("MOP covariates: ", paste(cov_names, collapse = ", "))
 
 missing_fbs <- setdiff(cov_names, colnames(fbs))
 missing_projection <- setdiff(cov_names, colnames(treat_control))

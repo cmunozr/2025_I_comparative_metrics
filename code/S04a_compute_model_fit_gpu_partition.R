@@ -40,24 +40,41 @@ validation_strategies <- c("metso_holdout", "route_blocked_cv") # ("random_cv") 
 models_dir <- file.path(here::here(), "models")
 
 # --- 3. Define MCMC Parameters ---
-mcmc_params <- run_config$mcmc
+if (!run_config$model_mode %in% c("paired", "legacy")) {
+  stop("model_mode must be 'paired' or 'legacy'.")
+}
+components <- if (run_config$model_mode == "paired") names(run_config$component_mcmc) else ""
 
 # --- 4. Initialize Aggregators ---
 all_commands_aggregated <- list()
 gpu_commands_aggregated <- rep(list(data.frame(command=character(), log_filename=character())), run_config$gpu$n_gpus_available)
 validation_metadata <- list() # To track generated setups
+shared_partitions <- list()
+shared_row_ids <- NULL
 
 # --- 5. Loop and Generate partition Commands ---
+for (component in components) {
+  component_config <- run_config
+  component_config$model_id <- paste0(run_config$model_id, component)
+  if (run_config$model_mode == "paired") {
+    component_config$mcmc <- run_config$component_mcmc[[component]]
+  }
+  mcmc_params <- component_config$mcmc
 for(i in 1:nrow(mcmc_params)){
   # i <- 1
-  run_name <- generate_run_name(run_config)[i]
+  run_name <- generate_run_name(component_config)[i]
   mcmc_params_i <- mcmc_params[i, ]
   message(paste0("\nProcessing config ", i, ": thin = ", mcmc_params_i$thin, ", samples = ", mcmc_params_i$samples))
   
-  base_model_name <- run_name[i] 
+  base_model_name <- run_name 
   
   fitted_model_path <- file.path("models", run_name, paste0("fitted_", run_name, ".rds"))
   m <- readRDS(fitted_model_path)
+  row_ids <- paste(m$studyDesign$vakio, m$studyDesign$year, sep = "_")
+  if (run_config$model_mode == "paired") {
+    if (is.null(shared_row_ids)) shared_row_ids <- row_ids
+    if (!identical(row_ids, shared_row_ids)) stop("Model route-years do not match the shared validation partition: ", run_name)
+  }
   
   run_specific_dir_local <- file.path(models_dir, base_model_name)
   run_specific_dir_server <- file.path(run_config$server$server_models_dir, base_model_name)
@@ -81,19 +98,16 @@ for(i in 1:nrow(mcmc_params)){
         1, 2
       )
       parts <- 1
-      hM_ <- list(set_training_model(k = 2, hM = m, partition = partition))
       
     } else if (strategy == "route_blocked_cv") {
       label <- "cv_route"
       partition <- createPartition(m, nfolds = run_config$cv$k, column = "vakio")
       parts <- sort(unique(partition))
-      hM_ <- lapply(X = parts, FUN = function(X) set_training_model(k = X, hM = m, partition = partition))
       
     } else if (strategy == "random_cv") {
       label <- "cv_random"
       partition <- createPartition(m, nfolds = run_config$cv$k)
       parts <- sort(unique(partition))
-      hM_ <- lapply(X = parts, FUN = function(X) set_training_model(k = X, hM = m, partition = partition))
       
     } else if ( strategy == "north_south"){
       label <- "north_south"
@@ -123,25 +137,44 @@ for(i in 1:nrow(mcmc_params)){
         1, 2
       )
       parts <- 1
-      hM_ <- list(set_training_model(k = 2, hM = m, partition = partition))
       
     }
     
+    eval_dir <- file.path(run_specific_dir_local, label)
+    partition_path <- file.path(eval_dir, "partition.rds")
+    if (file.exists(partition_path)) {
+      partition <- readRDS(partition_path)
+    } else if (dir.exists(eval_dir) && length(list.files(eval_dir)) > 0) {
+      stop("Validation files exist without a saved partition: ", eval_dir)
+    } else if (run_config$model_mode == "paired" && !is.null(shared_partitions[[label]])) {
+      partition <- shared_partitions[[label]]
+    }
+    if (run_config$model_mode == "paired" && !is.null(shared_partitions[[label]]) && !identical(partition, shared_partitions[[label]])) {
+      stop("Saved validation partition differs between models: ", run_name, ": ", label)
+    }
+    if (run_config$model_mode == "paired") shared_partitions[[label]] <- partition
+    if (strategy %in% c("metso_holdout", "north_south")) {
+      parts <- 1
+      hM_ <- list(set_training_model(k = 2, hM = m, partition = partition))
+    } else {
+      parts <- sort(unique(partition))
+      hM_ <- lapply(parts, function(k) set_training_model(k = k, hM = m, partition = partition))
+    }
+
     # Save unfitted models
     dir.create(file.path("models", run_name, label), showWarnings = F, recursive = T)
+    if (!file.exists(partition_path)) saveRDS(partition, file = partition_path)
     for(idx in 1:length(parts)){
-      saveRDS(hM_[[idx]], file.path("models", run_name, label, paste0("unfitted_", run_name, "_", label, "_", parts[idx], ".rds")))
+      unfitted_path <- file.path("models", run_name, label, paste0("unfitted_", run_name, "_", label, "_", parts[idx], ".rds"))
+      if (!file.exists(unfitted_path)) saveRDS(hM_[[idx]], unfitted_path)
     }
     
     eval_dir <- file.path(run_specific_dir_local, label)
     dir.create(eval_dir, showWarnings = F)
     
-    # Save the partition vector once for the label
-    saveRDS(partition, file = file.path(eval_dir, "partition.rds"))
-    
     # Record metadata
     validation_metadata[[length(validation_metadata) + 1]] <- data.frame(
-      model_id = run_config$model_id,
+      model_id = component_config$model_id,
       run_name = base_model_name,
       mcmc_row = i,
       strategy = strategy,
@@ -173,6 +206,7 @@ for(i in 1:nrow(mcmc_params)){
       }
     } 
   }
+}
 }
 
 # --- 6. Write Command Scripts ---

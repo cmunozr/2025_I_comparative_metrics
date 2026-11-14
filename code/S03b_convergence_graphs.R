@@ -28,7 +28,17 @@ library(here)
 source("code/config_model.R")
 
 # --- 2. Setup Directories and Initialize Data Lists ---
-model_id <- run_config$model_id
+if (!run_config$model_mode %in% c("paired", "legacy")) {
+  stop("model_mode must be 'paired' or 'legacy'.")
+}
+components <- if (run_config$model_mode == "paired") names(run_config$component_mcmc) else ""
+for (component in components) {
+component_config <- run_config
+component_config$model_id <- paste0(run_config$model_id, component)
+if (run_config$model_mode == "paired") {
+  component_config$mcmc <- run_config$component_mcmc[[component]]
+}
+model_id <- component_config$model_id
 output_dir <- file.path(here::here(), "models", "convergence_graphs")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -44,8 +54,8 @@ psrf.alpha.all <- list(); ess.alpha.all <- list()
 
 # --- 3. Data Aggregation Loop ---
 # Loop through the grid to find and read the individual CSV reports.
-for (i in 1:nrow(run_config$mcmc)) {
-  run_name <- generate_run_name(run_config)[i]
+for (i in 1:nrow(component_config$mcmc)) {
+  run_name <- generate_run_name(component_config)[i]
   evaluation_dir <- file.path("models", run_name, "convergence")
   
   if (!dir.exists(evaluation_dir)) {
@@ -108,7 +118,8 @@ for (i in 1:nrow(run_config$mcmc)) {
 # --- 4. Plotting Section ---
 run_names_found <- names(psrf.beta.all) # Use the runs we actually found data for
 if(length(run_names_found) == 0) {
-  stop("No evaluation data found. Please run the S03 script first.")
+  message("No evaluation data found for ", model_id, ". Please run S03a first.")
+  next
 }
 model_colors <- rainbow_hcl(length(run_names_found))
 names(model_colors) <- run_names_found
@@ -165,6 +176,8 @@ plot_vioplot_section_ess(ess.V.all, "V", c(0, max(unlist(ess.V.all), na.rm = TRU
 plot_vioplot_section_ess(ess.omega.all, "Omega", c(0, max(unlist(ess.omega.all), na.rm = TRUE)), model_colors)
 plot_vioplot_section_ess(ess.alpha.all, "Alpha", c(0, max(unlist(ess.alpha.all), na.rm = TRUE)), model_colors)
 dev.off()
+
+}
 
 # library(Hmsc)
 # fitted_model <- readRDS("models/fbs_M007_thin_1000_samples_1000_chains_4/fitted_fbs_M007_thin_1000_samples_1000_chains_4.rds")

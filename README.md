@@ -95,18 +95,22 @@ The workflow is organized into sequential scripts (prefixed S01, S02, etc.) loca
 * **S01_define_models_finland_route_year.qmd**:
   * Loads Finnish Bird Survey (FBS) data, harmonizes taxonomy (FinBIF, ITIS), and filters by biotope.
   * Prepares covariates (Forest inventory, climate) and traits/phylogeny.
-  * Constructs the unfitted Hmsc model and saves it to `models/unfitted_RData/unfitted_[ID].RData`.
+  * Constructs the presence-absence (PA) and abundance conditional on presence (aCp) unfitted Hmsc models. These are saved separately in `models/unfitted_RData/`, adding `PA` or `aCp` to the model ID. For example, `fbs_M017` creates `unfitted_fbs_M017PA.RData` and `unfitted_fbs_M017aCp.RData`.
 
 ### 2. Model Fitting (GPU Accelerated)
 Fitting is performed using Python/TensorFlow for speed.
 
+The model ID and MCMC parameters are defined in `code/config_model.R`. Set `model_mode` to `"paired"` to run the PA and aCp models using their respective settings in `component_mcmc`. Set it to `"legacy"` to run a single model using the exact `model_id` and the settings in `mcmc`. For example, older abundance models may use an ID without the `aCp` suffix, such as `fbs_M016`. The settings in `cv$mcmc` are used separately for validation models.
+
 * **S02a_fit_models_gpu.R**: Reads the unfitted model and generates the necessary Python scripts (`.sh` files) and JSON configurations for the HPC/GPU environment.
-* **Execution**: Run the generated shell scripts on your GPU server (refer to `code/gpu_instructions.txt` for specific commands like `nohup ... &`).
+* **Execution**: Run the generated shell scripts on your GPU server (refer to `code/gpu_instructions.md` for specific commands like `nohup ... &`).
 * **S02b_fit_models_gpu_import_posterior.R**: Once MCMC sampling is complete, this script imports the posterior samples back into the R Hmsc object.
+
+S02a, S02b, S03a, S03b, S04a and S04b support both model modes. S03c compares the available model results across folders. S05 and later scripts have not yet been adapted to process both components automatically. The `selected_models` list in `config_model.R` records the PA and aCp runs selected for prediction, but the prediction scripts still use their existing model paths.
 
 ### 3. Diagnostics & Evaluation
 * **S03 Series**: Visualizes MCMC convergence (trace plots, effective sample size).
-* **S04 Series**: Calculates model fit indices (WAIC, AUC, Tjur's R2) using partition (CV) or internal evaluation.
+* **S04 Series**: Prepares route-blocked CV and METSO holdout models for GPU fitting, then imports their posteriors and calculates model fit indices (WAIC, AUC, Tjur's R2) using partition or internal evaluation.
 * **S05 Series**: Generates plots summarizing model explanatory power.
 
 ### 4. Ecological Inference
@@ -180,26 +184,28 @@ These files contain core mathematical functions, model definitions, and predicti
 * `_utilities_transform_covariates.R`
 
 ### 2. Data Preparation Tools (Run-Once)
-These are standalone scripts used to fetch raw data or construct specific datasets (e.g., the "Metso" conservation areas). Run these **only** if you are building the project data from scratch.
+These are standalone scripts used to fetch raw data, construct specific datasets (e.g., the "Metso" conservation areas), or prepare inputs for later analysis. Run them when their inputs need to be created or updated; some can overwrite existing files.
 
 #### Phase A: Initial Setup (Run before S01)
 * **Covariate Acquisition:**
-    * `_utilities_download_covariates.R`
-    * `_utilities_download_covariates_climatic.py`
-    * `_utilities_download_metsakeskus.R`
+    * `_utilities_download_covariates.R`: Downloads the forest and other spatial covariate datasets used for extraction.
+    * `_utilities_download_covariates_climatic.py`: Downloads the Nordic climate data used for the climatic covariates.
+    * `_utilities_download_metsakeskus.R`: Downloads Metsäkeskus forest stand datasets.
 * **Covariate Pre-processing:**
-    * `_utilities_preprocess_climatic_covariates.R`
+    * `_utilities_preprocess_climatic_covariates.R`: Prepares the downloaded climate data for covariate extraction.
 * **Study Design & Treatment Units (Metso):**
-    * `_utilities_metso_trt_control_setup.R`
-    * `_utilities_metso_merge_metsakeskus.R`
-    * `_utilities_metso_trt_control_labelbydist.R`
-* **Extracts values for Metso sites**
-    * `_utilities_fetch_covariates.R` 
+    * `_utilities_metso_trt_control_setup.R`: Prepares the selected treatment and control stand-year records.
+    * `_utilities_metso_merge_metsakeskus.R`: Joins the selected records with Metsäkeskus stand geometries.
+    * `_utilities_metso_trt_control_labelbydist.R`: Labels control stands according to their distance from METSO stands.
+    * `_utilities_metso_testset_distance_based.R`: Identifies FBS routes close to METSO stands and creates the route-level holdout input used by S04.
+* **Extract covariate values:**
+    * `_utilities_fetch_covariates.R`: Extracts and preprocesses covariates for FBS route buffers and METSO/control stands.
 
 #### Phase B: Scenario Construction (Run before S08)
 Before running the scenario predictions in `S08`, you must generate the predictive covariate matrices (`XData`) for the different management scenarios.
 
-* `_utilities_metso_calc_XData.R`
+* `_utilities_metso_calc_XData.R`: Calculates METSO and control stand covariates and keeps the environmental variables used by the selected PA model. Run after selecting the fitted model and when stand covariates need to be generated or updated.
+* `_utilities_metso_domains.R`: Compares the selected model's FBS environmental covariates with METSO/control stand covariates using MOP and writes extrapolation summaries and `results/mop/mop_diagnostics_mask.csv`. Run after the fitted model and stand covariate datasets are available and before using the MOP mask in S09 or the MOP distances in S10.
 
 #### Phase C: Diagnostics & Benchmarking (Optional)
 These scripts are useful for testing the prediction engine before committing to the full prediction in `S08`.
@@ -208,6 +214,8 @@ These scripts are useful for testing the prediction engine before committing to 
   * *Purpose:* Benchmark processing time using different batch sizes to optimize performance.
 * `_utilities_predict_scenarios_replicates.R`
   * *Purpose:* Ensure the replication and consistency of the prediction generation process.
+
+These scripts use earlier model and stand-data assumptions and should be reviewed before using them with a new model pair.
 
 #### Phase D: Paper figures (Run after S10)
 Scripts to create the publishing ready figures for the manuscript

@@ -1239,9 +1239,9 @@ write.csv(species_info_table, "data/species_info_table.csv", row.names = F)
 ```
 
 ```{r}
-#Y <- transform_Y_to_abunCpres(Y)
-Y <- transform_Y_to_presAbs(Y)
 Y <- Y[, order(colnames(Y))]
+Y_PA <- transform_Y_to_presAbs(Y)
+Y_aCp <- transform_Y_to_abunCpres(Y)
 ```
 
 ### Survey covariates
@@ -1684,17 +1684,28 @@ TrFormula <- ~ log(Mass) + Trophic.Niche + Primary.Lifestyle + Migration
 
 ```{r}
 
-m <- Hmsc(
-  Y = Y,
+m_PA <- Hmsc(
+  Y = Y_PA,
   XData = XData, 
   XFormula = XFormula,
   TrData = TrData, 
   TrFormula = TrFormula,
   phyloTree = phyloTree,
   distr = "probit",
-  #distr = "lognormal poisson", 
   studyDesign = studyDesign, 
   ranLevels = list("vakio" = rL.locality, "year" = rL.year)#, "observer_id" = rL.observer)
+)
+
+m_aCp <- Hmsc(
+  Y = Y_aCp,
+  XData = XData,
+  XFormula = XFormula,
+  TrData = TrData,
+  TrFormula = TrFormula,
+  phyloTree = phyloTree,
+  distr = "lognormal poisson",
+  studyDesign = studyDesign,
+  ranLevels = list("vakio" = rL.locality, "year" = rL.year)
 )
 ```
 
@@ -1714,12 +1725,18 @@ m <- Hmsc(
 
 ```{r}
 dir.create(file.path("models", "unfitted_RData"), showWarnings = F, recursive = T)
-models <-  list(m)
-names(models) <- run_config$model_id
-output_filename <- file.path("models","unfitted_RData", paste0("unfitted_", run_config$model_id, ".RData"))
-save(models, file = output_filename)
+model_ids <- paste0(run_config$model_id, c("PA", "aCp"))
+output_filenames <- file.path("models", "unfitted_RData", paste0("unfitted_", model_ids, ".RData"))
+if (any(file.exists(output_filenames))) {
+  stop("Unfitted model file already exists: ", paste(output_filenames[file.exists(output_filenames)], collapse = ", "))
+}
+model_pair <- list(m_PA, m_aCp)
+for (i in seq_along(model_ids)) {
+  models <- setNames(list(model_pair[[i]]), model_ids[[i]])
+  save(models, file = output_filenames[[i]])
+}
 ```
 
 ```{r}
-sampleMcmc(m, samples=2)
+lapply(model_pair, sampleMcmc, samples = 2)
 ```
