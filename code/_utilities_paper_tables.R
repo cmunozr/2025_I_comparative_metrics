@@ -13,6 +13,7 @@
 #' - Covariate keys: models/[selected_model]/parameter_estimates/covariate_key_table.csv
 #' - Covariate dictionary: data/covariates/mapping_covariate_functions.xlsx
 #' - Stand covariates: data/covariates/XData_hmsc_[metso/control]_[model_id].rds
+#' - Survey covariates: data/covariates/XData_hmsc_coords_[model_id].rds
 #'
 #' OUTPUTS:
 #' - data/covariates/summary_table.html
@@ -174,6 +175,34 @@ formatted_table <- combined_data |>
     all_stat_cols() ~ 
       "METSO − BAU is the difference in means for continuous variables and the difference in prevalence (percentage points) for binary variables."
   )
+
+# 4b. Add FBS route-year summaries
+fbs_list <- readRDS(file.path("data", "covariates", paste0("XData_hmsc_coords_", model_nm, ".rds")))
+missing_fbs_vars <- setdiff(is_for_summ_table, names(fbs_list$XData))
+if (length(missing_fbs_vars) > 0) {
+  stop("Missing table covariates in FBS: ", paste(missing_fbs_vars, collapse = ", "))
+}
+
+fbs_data <- fbs_list$XData |>
+  select(all_of(is_for_summ_table)) |>
+  mutate(across(any_of(is_binary), ~ factor(.x, levels = c(0, 1), labels = c("No", "Yes"))))
+
+fbs_summary <- fbs_data |>
+  tbl_summary(
+    type = list(all_continuous() ~ "continuous", any_of(is_binary) ~ "dichotomous"),
+    value = list(any_of(is_binary) ~ "Yes"),
+    statistic = list(all_continuous() ~ "{mean} ({sd})", all_categorical() ~ "{n} ({p}%)"),
+    digits = list(all_continuous() ~ c(3, 3), all_categorical() ~ c(0, 1))
+  )
+
+formatted_table <- formatted_table |>
+  modify_table_body(
+    ~ .x |>
+      left_join(select(fbs_summary$table_body, variable, row_type, stat_0), by = c("variable", "row_type")) |>
+      relocate(stat_0, .before = stat_1)
+  ) |>
+  modify_header(stat_0 ~ paste0("**FBS**  \nN = ", format(nrow(fbs_data), big.mark = ","))) |>
+  modify_column_unhide(columns = stat_0)
 
 # 5. Export to HTML and LaTeX (for Overleaf / elsarticle)
 gt_table <- formatted_table |> 
