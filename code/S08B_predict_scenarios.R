@@ -62,12 +62,8 @@ sf::sf_use_s2(FALSE)
 set.seed(11072024)
 
 # 0. Setup
-sufix <- "control" # or "control" (it should change to BAU in some point)
-if(sufix == "metso"){
-  val = 1
-}else{
-  val = 0
-}
+run_scenario <- function(sufix) {
+val <- if (sufix == "metso") 1 else 0
 
 # Execution mode flag: set to FALSE Set to FALSE for full run
 test <- FALSE
@@ -303,6 +299,7 @@ for(group in sort(unique_groups)) {
 }
 
 stopifnot(length(tasks) > 0)
+all_tasks <- tasks
 
 cat(sprintf("Created %d tasks across %d groups.\n", length(tasks), length(unique_groups)))
 
@@ -356,7 +353,8 @@ if (retry_failed_only) {
 
 # If all tasks already completed successfully, avoid spinning up the cluster
 if (length(tasks) == 0) {
-  stop("All batches have already been processed successfully. Exiting.")
+  message(sprintf("All %s batches have already been processed successfully. Skipping.", sufix))
+  return(invisible(NULL))
 }
 
 # 3. Parallel execution
@@ -366,7 +364,7 @@ Sys.setenv(TMPDIR = worker_tmp)
 
 cl <- makeCluster(n_cores, outfile = "")
 cat(sprintf("Initializing parallel cluster with %d cores...\n", n_cores))
-clusterExport(cl, "worker_tmp")
+clusterExport(cl, "worker_tmp", envir = environment())
 clusterEvalQ(cl, {
   if (!dir.exists(worker_tmp)) dir.create(worker_tmp, recursive = TRUE, showWarnings = FALSE)
   Sys.setenv(TMPDIR = worker_tmp)
@@ -575,4 +573,24 @@ foreach(task = tasks,
 
 stopCluster(cl)
 
+remaining_tasks <- filter_failed_tasks(
+  tasks            = all_tasks,
+  pred_dir         = pred_dir,
+  modelid          = modelid,
+  expected_string  = expected_string,
+  sufix            = sufix,
+  mode             = "missing_output",
+  clean_error_logs = FALSE,
+  additional_pred_dir = pred_pa_dir
+)
+if (length(remaining_tasks) > 0) {
+  stop(sprintf("%d %s prediction batches remain incomplete.", length(remaining_tasks), sufix))
+}
+
 message("    End time: ", Sys.time())
+}
+
+for (sufix in c("metso", "control")) {
+  message(sprintf("Starting %s predictions.", sufix))
+  run_scenario(sufix)
+}

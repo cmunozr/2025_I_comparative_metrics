@@ -98,13 +98,37 @@ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
 
 # 1. Load Species and Traits
-load(file.path("models", "unfitted_RData", paste0("unfitted_", run_config$model_id, ".RData")))
-name_spp <- colnames(models$fbs_M016$Y)
+fitted_pa_path <- file.path("models", selected_models$PA, paste0("fitted_", selected_models$PA, ".rds"))
+if (!file.exists(fitted_pa_path)) {
+  stop("Selected PA fitted model not found: ", fitted_pa_path)
+}
+hM_PA <- readRDS(fitted_pa_path)
+name_spp <- colnames(hM_PA$Y)
 
 tr_proc_file <- file.path(wr_dir, "metrics", "TrData_processed.rds")
-if (!file.exists(tr_proc_file)) {
+traits_file <- file.path("data", "traits", "TrData_complete.rds")
+TrData_processed <- NULL
+if (file.exists(tr_proc_file)) {
+  cached_traits <- readRDS(tr_proc_file)
+  if (identical(rownames(cached_traits$x.dist), name_spp)) {
+    TrData_processed <- cached_traits
+  }
+}
+
+if (is.null(TrData_processed)) {
+  if (!file.exists(traits_file)) {
+    stop("Trait input file not found: ", traits_file)
+  }
   cat("----- Calculating TrData processing...\n")
-  TrData <- readRDS(file.path("data", "traits", "TrData_complete.rds"))
+  TrData <- readRDS(traits_file)
+  if (!"scientificName" %in% names(TrData)) {
+    stop("Trait input must contain a scientificName column.")
+  }
+  trait_idx <- match(name_spp, as.character(TrData$scientificName))
+  if (anyNA(trait_idx)) {
+    stop("Trait input is missing species required by the selected PA model.")
+  }
+  TrData <- TrData[trait_idx, ]
   rownames(TrData) <- name_spp
   TrData_numeric <- TrData |> 
     select(where(is.numeric), -any_of(c("Total.individuals", "Female", "Male", "Unknown", "Complete.measures")))
@@ -114,8 +138,6 @@ if (!file.exists(tr_proc_file)) {
   
   TrData_processed <- dbFD_preprocess_traits(x = TrData_numeric, a = dummy_a)
   saveRDS(TrData_processed, tr_proc_file)
-} else {
-  TrData_processed <- readRDS(tr_proc_file)
 }
 
 cum_var <- cumsum(TrData_processed$eigenvalues) / sum(TrData_processed$eigenvalues) * 100

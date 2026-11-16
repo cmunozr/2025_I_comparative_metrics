@@ -1,22 +1,20 @@
 #' DESCRIPTION:
-#' S10b: Evaluation of metric consistency across stand-level predictions
-#' restricted to within matched groups.
+#' S10b: Evaluates rank consistency and top-priority overlap among biodiversity
+#' metrics across METSO stands within matched groups.
 #' 
 #' METHODOLOGY:
-#' - Aggregates posterior draws across stand-level metric predictions within groups.
-#' - Spearman rank correlation and top 10% overlap evaluated within matched groups.
-#' - Evaluates metrics comparisons.
-#' - Omits self-comparisons (metric_a != metric_b) prior to draw aggregation.
-#' - Posterior probability of opposite directional signals (discordance) per stand.
-#' - Group-level summaries and meta-aggregation across groups.
+#' - Calculates within-group Spearman rank correlations and top 10% priority
+#'   overlap for selected pairs of biodiversity metrics in each available draw.
+#' - Summarises these results across draws within groups and across groups.
+#' - Omits self-comparisons.
 #' 
 #' INPUTS:
-#' - Group Parquet files: results/metrics/[expected_type]/[run_mode]/metrics_group_*.parquet
+#' - Group metric files: results/metrics/[expected_type]/[run_mode]/metrics_group_*.parquet
 #' 
 #' OUTPUTS:
-#' - Within-Group Rank & Concordance Summaries: results/consistency/q2_within_group_*.csv
-#' - Stand-Level Discordance Summaries: results/consistency/q2_stand_discordance*.csv
-#' - Heatmaps: results/consistency/q2_*_heatmap.png / .pdf
+#' - results/consistency/q2_within_group_by_draw.csv
+#' - results/consistency/q2_within_group_summary.csv
+#' - results/consistency/q2_rank_summary.csv
 
 library(tidyverse)
 library(arrow)
@@ -58,7 +56,6 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 priority_fraction    <- 0.10
 support_threshold    <- 0.90
-min_draw_fraction    <- 0.80
 min_stands_per_group <- 100L
 
 footprints <- c("E_MSA_loss", "E_PDF_unforced", "E_PDF_forced")
@@ -79,7 +76,6 @@ wide <- ds_draws |>
   )
 
 draws <- sort(unique(wide$posterior))
-required_draws <- ceiling(min_draw_fraction * length(draws))
 
 # Footprint-vs-footprint pairs (both directions, omitting self-comparisons)
 footprint_pairs <- tidyr::crossing(metric_a = footprints, metric_b = footprints) |>
