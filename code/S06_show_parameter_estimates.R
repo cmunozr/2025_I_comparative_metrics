@@ -96,10 +96,18 @@ show_sp_names_omega <- NULL
 #show_sp_names_omega = c(TRUE,FALSE) #Default: species names shown in beta plot if there are at most 30 species
 
 
-# Iterate through each model configuration
-for (i in 1:nrow(run_config$mcmc)) {  
-  # i <- 1
-  run_name <- generate_run_name(run_config)[i]
+# Iterate through each selected model configuration
+if (!run_config$model_mode %in% c("paired", "legacy")) {
+  stop("model_mode must be 'paired' or 'legacy'.")
+}
+model_runs <- if (run_config$model_mode == "paired") {
+  unname(unlist(selected_models[c("PA", "aCp")]))
+} else {
+  generate_run_name(run_config)
+}
+
+for (i in seq_along(model_runs)) {
+  run_name <- model_runs[i]
   
   # Define paths
   model_dir <- file.path("models", run_name)

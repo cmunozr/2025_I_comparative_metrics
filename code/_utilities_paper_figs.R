@@ -1,3 +1,29 @@
+#' DESCRIPTION:
+#' Creates publication figures summarising variance partitioning, fixed-effect
+#' estimates, and consistency among biodiversity metrics for the selected hurdle
+#' model components.
+#'
+#' METHODOLOGY:
+#' - Plots species-level variance partitioning for presence-absence and
+#'   conditional abundance components.
+#' - Displays posterior support for forest-structure effects by species and
+#'   covariate.
+#' - Visualises rank concordance and top-10% overlap among biodiversity metrics.
+#'
+#' INPUTS:
+#' - Model selection: code/config_model.R (selected_models)
+#' - Parameter estimates: models/[selected_model]/parameter_estimates/
+#' - Species information: models/diagnostic_models_df.csv
+#' - Metric consistency summary: results/consistency/q2_rank_summary.csv
+#'
+#' OUTPUTS:
+#' - models/hurdle_summary_figures/figure_variance_partitioning_hurdle.pdf
+#' - models/hurdle_summary_figures/figure_variance_partitioning_hurdle.png
+#' - models/hurdle_summary_figures/figure_beta_estimates_hurdle.pdf
+#' - models/hurdle_summary_figures/figure_beta_estimates_hurdle.png
+#' - results/consistency/figure_q2_metric_consistency.pdf
+#' - results/consistency/figure_q2_metric_consistency.png
+
 library(tidyr)
 library(stringr)
 library(ggplot2)
@@ -5,6 +31,11 @@ library(patchwork)
 library(readxl)
 library(scales)
 library(dplyr)
+
+source(file.path("code", "config_model.R"))
+
+pa_parameter_dir <- file.path("models", selected_models$PA, "parameter_estimates")
+ab_parameter_dir <- file.path("models", selected_models$aCp, "parameter_estimates")
 
 # -------------------------------------------------------------------------
 # 1. Variance Partitioning
@@ -85,8 +116,8 @@ create_vp_boxplot_panel <- function(data_subset,
 }
 
 # File Paths
-pa_file <- "models/fbs_M016PA_thin_150_samples_1000_chains_4/parameter_estimates/parameter_estimates_VP.csv"
-ab_file <- "models/fbs_M016_thin_250_samples_1000_chains_4/parameter_estimates/parameter_estimates_VP.csv"
+pa_file <- file.path(pa_parameter_dir, "parameter_estimates_VP.csv")
+ab_file <- file.path(ab_parameter_dir, "parameter_estimates_VP.csv")
 
 df_pa <- format_vp_csv(pa_file, "Presence-Absence")
 df_ab <- format_vp_csv(ab_file, "Conditional Abundance")
@@ -125,11 +156,11 @@ ggsave(
 # 2. Beta figure
 # -------------------------------------------------------------------------
 
-pa_file <- "models/fbs_M016PA_thin_150_samples_1000_chains_4/parameter_estimates/parameter_estimates_Beta.xlsx"
-pa_cov_keys <- "models/fbs_M016PA_thin_150_samples_1000_chains_4/parameter_estimates/covariate_key_table.csv"
+pa_file <- file.path(pa_parameter_dir, "parameter_estimates_Beta.xlsx")
+pa_cov_keys <- file.path(pa_parameter_dir, "covariate_key_table.csv")
 
-ab_file <- "models/fbs_M016_thin_250_samples_1000_chains_4/parameter_estimates/parameter_estimates_Beta.xlsx"
-ab_cov_keys <- "models/fbs_M016_thin_250_samples_1000_chains_4/parameter_estimates/covariate_key_table.csv"
+ab_file <- file.path(ab_parameter_dir, "parameter_estimates_Beta.xlsx")
+ab_cov_keys <- file.path(ab_parameter_dir, "covariate_key_table.csv")
 
 spp_data <- "models/diagnostic_models_df.csv"
 
@@ -339,7 +370,6 @@ ecological <- c("EG_loss", "E_FRic_loss", "E_RaoQ_loss", "E_BCD")
 metrics    <- c(footprints, ecological)
 
 overall_rank_summary <- read.csv(file.path("results", "consistency", "q2_rank_summary.csv"))
-stand_summary        <- read.csv(file.path("results", "consistency", "q2_stand_discordance_summary.csv"))
 
 output_dir <- file.path("results", "consistency")
 
