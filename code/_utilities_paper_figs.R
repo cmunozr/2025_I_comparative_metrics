@@ -9,12 +9,14 @@
 #' - Displays posterior support for forest-structure effects by species and
 #'   covariate.
 #' - Visualises rank concordance and top-10% overlap among biodiversity metrics.
+#' - Displays W1 national and regional marginal estimates across posterior draws.
 #'
 #' INPUTS:
 #' - Model selection: code/config_model.R (selected_models)
 #' - Parameter estimates: models/[selected_model]/parameter_estimates/
 #' - Species information: models/diagnostic_models_df.csv
 #' - Metric consistency summary: results/consistency/q2_rank_summary.csv
+#' - S10a national and regional draws: results/causal_analysis/all_schemes_*_draws.csv
 #'
 #' OUTPUTS:
 #' - models/hurdle_summary_figures/figure_variance_partitioning_hurdle.pdf
@@ -23,6 +25,7 @@
 #' - models/hurdle_summary_figures/figure_beta_estimates_hurdle.png
 #' - results/consistency/figure_q2_metric_consistency.pdf
 #' - results/consistency/figure_q2_metric_consistency.png
+#' - results/causal_analysis/figure_q1_w1_draws.pdf and .png
 
 library(tidyr)
 library(stringr)
@@ -201,6 +204,10 @@ ordered_levels <- df_spp_traits %>%
 prepare_beta_data <- function(beta_path, key_path, part_label, spp_lookup, factor_levels) {
   df_beta <- readxl::read_excel(beta_path)
   df_keys <- read.csv(key_path, stringsAsFactors = FALSE)
+  covariate_mapping <- readxl::read_excel(
+    "data/covariates/mapping_covariate_functions.xlsx",
+    sheet = "covariates_mapping_functions"
+  )
   
   cov_col <- intersect(c("Original_Covariate", "Model_Covariate", "model_cov"), colnames(df_keys))[1]
   idx_col <- intersect(c("Plot_Index", "index", "Index"), colnames(df_keys))[1]
@@ -223,25 +230,31 @@ prepare_beta_data <- function(beta_path, key_path, part_label, spp_lookup, facto
       mutate(Inline_Label = Plot_Index)
   }
   
-  # Define conceptual covariate categories and ordering
-  cov_group_levels <- c("G1", "G2", "G3", "G4")
+  # Order related covariates together
+  covariate_order <- c(
+    "stand_age", "average_stand_diameter", "average_stand_diameter_gt15_mean",
+    "average_stand_diameter_gt20_mean", "canopy_cover_broadleaves", "volume_spruce_mean",
+    "average_stand_length_gt200_mean", "canopy_cover_whole_stand_gt60_mean",
+    "tree_height_stdev", "tree_extent", "tree_remove"
+  )
   
   df_keys <- df_keys %>%
     filter(Original_Covariate != "(Intercept)") %>%
+    left_join(
+      covariate_mapping %>% select(var_target, Inline_Abbreviated),
+      by = c("Original_Covariate" = "var_target")
+    ) %>%
     mutate(
-      Covariate_Group = case_when(
-        str_detect(Original_Covariate, "diameter|stand_age") ~ "G1",
-        str_detect(Original_Covariate, "broadleaves|volume_spruce") ~ "G2",
-        str_detect(Original_Covariate, "canopy_cover_whole|height|tree_extent|stand_length") ~ "G3",
-        str_detect(Original_Covariate, "tree_remove") ~ "G4",
-        TRUE ~ "Other"
-      ),
-      Covariate_Group = factor(Covariate_Group, levels = cov_group_levels)
+      Inline_Label = coalesce(Inline_Abbreviated, Inline_Label)
     )
+
+  if (anyNA(df_keys$Inline_Abbreviated)) {
+    stop(paste("Missing workbook label for covariates in:", key_path))
+  }
   
   # Determine ordered factor levels for the x-axis
   ordered_cov_labels <- df_keys %>%
-    arrange(Covariate_Group, as.numeric(str_extract(Plot_Index, "\\d+"))) %>%
+    arrange(match(Original_Covariate, covariate_order), as.numeric(str_extract(Plot_Index, "\\d+"))) %>%
     pull(Inline_Label) %>%
     unique()
   
@@ -305,8 +318,8 @@ p_pa <- ggplot(df_pa, aes(x = Inline_Label, y = species_short, fill = support_ca
   geom_tile(color = "gray92", linewidth = 0.15, width = 1, height = 1) +
   scale_x_discrete(expand = c(0, 0)) +
   scale_y_discrete(expand = c(0, 0)) +
-  facet_grid(Specialist_group ~ Covariate_Group, scales = "free", space = "free", switch = "y") +
-  scale_fill_manual(values = support_palette, drop = FALSE, name = "Forest-structure\neffect") +
+  facet_grid(Specialist_group ~ ., scales = "free_y", space = "free_y", switch = "y") +
+  scale_fill_manual(values = support_palette, drop = FALSE, name = "Posterior\nSupport") +
   labs(title = "(a) Presence-Absence", x = NULL, y = NULL) +
   theme_elsevier_beta +
   theme(
@@ -318,7 +331,7 @@ p_ab <- ggplot(df_ab, aes(x = Inline_Label, y = species_short, fill = support_ca
   geom_tile(color = "gray92", linewidth = 0.15, width = 1, height = 1) +
   scale_x_discrete(expand = c(0, 0)) +
   scale_y_discrete(expand = c(0, 0)) +
-  facet_grid(Specialist_group ~ Covariate_Group, scales = "free", space = "free") +
+  facet_grid(Specialist_group ~ ., scales = "free_y", space = "free_y") +
   scale_fill_manual(values = support_palette, drop = FALSE, name = "Posterior\nSupport") +
   labs(title = "(b) Conditional Abundance", x = NULL, y = NULL) +
   theme_elsevier_beta +
@@ -495,3 +508,66 @@ ggsave(
   units    = "mm",
   dpi      = 500
 )
+
+# -------------------------------------------------------------------------
+# 4. National and Regional W1 Estimates Across Posterior Draws
+# -------------------------------------------------------------------------
+
+causal_dir <- file.path("results", "causal_analysis")
+national_draws <- read.csv(file.path(causal_dir, "all_schemes_national_draws.csv")) |>
+  filter(scheme_code == "W1") |>
+  transmute(metric, posterior, estimate, panel = "National")
+regional_draws <- read.csv(file.path(causal_dir, "all_schemes_regional_draws.csv")) |>
+  filter(scheme_code == "W1") |>
+  transmute(metric, posterior, estimate = marginal_mean, panel = paste("Region", reg))
+
+metric_order <- c("EG_loss", "E_MSA_loss", "E_PDF_forced", "E_BCD",
+                  "E_FRic_loss", "E_PDF_unforced", "E_RaoQ_loss")
+metric_labels <- c(EG_loss = "EG-loss", E_MSA_loss = "EMSA-loss",
+                   E_PDF_forced = "EPDF-Forced", E_BCD = "EBCD",
+                   E_FRic_loss = "EFRic-loss", E_PDF_unforced = "EPDF-Unforced",
+                   E_RaoQ_loss = "ERaoQ-loss")
+panel_order <- c("National", paste("Region", c("I", "II", "III", "IV", "V")))
+panel_titles <- c("National", "Region I (South)", "Region II (Central and East)",
+                  "Region III (North)", "Region IV (South-central)",
+                  "Region V (West-central)")
+names(panel_titles) <- panel_order
+q1_draws <- bind_rows(national_draws, regional_draws) |>
+  filter(metric %in% metric_order, is.finite(estimate)) |>
+  mutate(metric = factor(metric, levels = rev(metric_order)),
+         panel = factor(panel, levels = panel_order))
+
+q1_support <- national_draws |>
+  group_by(metric) |>
+  summarise(prob_positive = mean(estimate > 0), .groups = "drop")
+national_labels <- metric_labels
+national_labels[q1_support$metric] <- sprintf("%s  (%.2f)",
+  metric_labels[q1_support$metric], q1_support$prob_positive)
+
+q1_panels <- lapply(panel_order, function(panel_name) {
+  panel_data <- filter(q1_draws, panel == panel_name)
+  ggplot(panel_data, aes(x = estimate, y = metric)) +
+    geom_vline(xintercept = 0, colour = "grey55", linetype = "dashed", linewidth = 0.3) +
+    geom_violin(orientation = "y", fill = "#386cb0", colour = "#222222",
+                linewidth = 0.3, scale = "width", trim = TRUE) +
+    stat_summary(fun = median, geom = "point", size = 1.2, colour = "black") +
+    scale_y_discrete(labels = if (panel_name == "National") national_labels else metric_labels,
+                     drop = FALSE) +
+    labs(title = panel_titles[[panel_name]],
+         subtitle = if (panel_name == "National") "Values in parentheses: Pr(estimate > 0)" else NULL,
+         x = "Marginal estimate", y = NULL) +
+    theme_classic(base_size = 8, base_family = "sans") +
+    theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.4),
+          plot.title = element_text(face = "bold", size = 8.5, margin = margin(b = 4)),
+          plot.subtitle = element_text(size = 7, colour = "gray25", margin = margin(b = 4)),
+          axis.text.y = element_text(size = 7, colour = "black"),
+          axis.text.x = element_text(size = 7, colour = "black"),
+          axis.title.x = element_text(size = 8),
+          plot.margin = margin(t = 6, r = 4, b = 6, l = 4))
+})
+
+fig_q1_w1 <- wrap_plots(q1_panels, ncol = 2)
+ggsave(file.path(causal_dir, "figure_q1_w1_draws.pdf"), fig_q1_w1,
+       width = 190, height = 220, units = "mm", device = cairo_pdf)
+ggsave(file.path(causal_dir, "figure_q1_w1_draws.png"), fig_q1_w1,
+       width = 190, height = 220, units = "mm", dpi = 500)
