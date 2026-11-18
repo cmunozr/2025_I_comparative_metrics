@@ -33,19 +33,17 @@ library(openxlsx)
 library(shiny)
 library(ggplot2)
 library(plotly)
+source(file.path("code", "config_model.R"))
 
 # --- 1. Paths & Configurations ---
 base_dir          <- "models"
 species_info_path <- "data/species_info_table.csv"
 master_fit_path   <- file.path(base_dir, "model_fit_master_all_metrics.csv")
 
-pa_model_dir  <- file.path(base_dir, "fbs_M016PA_thin_150_samples_1000_chains_4")
-acp_model_dir <- file.path(base_dir, "fbs_M016_thin_250_samples_1000_chains_4")
+pa_model_dir  <- file.path(base_dir, selected_models$PA)
+acp_model_dir <- file.path(base_dir, selected_models$aCp)
 
 output_csv <- file.path(base_dir, "diagnostic_models_df.csv")
-
-# Target focal model identifier
-focal_model_id <- "fbs_M016"
 
 # Mapping strategy identifiers to clean column suffixes
 strategy_code_map <- c(
@@ -65,15 +63,21 @@ if (!file.exists(master_fit_path)) {
 }
 
 master_fit <- read_csv(master_fit_path, show_col_types = FALSE)
+if (!"Run_Name" %in% names(master_fit)) {
+  stop("The master fit CSV does not include run names. Run S05b first.")
+}
+if (!all(unlist(selected_models) %in% master_fit$Run_Name)) {
+  stop("Selected model fit results are missing from the master fit CSV. Run S04 and S05b first.")
+}
 
 # Standardize strategy labels
 master_fit_clean <- master_fit %>%
-  filter(Model == focal_model_id) %>%
+  filter(Run_Name %in% unlist(selected_models)) %>%
   mutate(Strat_Code = recode(as.character(Strategy), !!!strategy_code_map, .default = as.character(Strategy)))
 
 # A. Presence-Absence (PA) across all strategies
 df_PA_all_strat <- master_fit_clean %>%
-  filter(Model_Type == "Presence-Absence") %>%
+  filter(Run_Name == selected_models$PA, Model_Type == "Presence-Absence") %>%
   select(Species, Strat_Code, any_of(c("AUC", "Brier", "Prevalence_ratio", "Calib_slope", "Mean_CI_width"))) %>%
   pivot_wider(
     names_from = Strat_Code,
@@ -84,7 +88,7 @@ df_PA_all_strat <- master_fit_clean %>%
 
 # B. Conditional Abundance (aCp) across all strategies
 df_aCp_all_strat <- master_fit_clean %>%
-  filter(Model_Type == "Continuous Abundance") %>%
+  filter(Run_Name == selected_models$aCp, Model_Type == "Continuous Abundance") %>%
   select(Species, Strat_Code, any_of(c("SR2", "MAE", "Mean_ratio", "Mean_CI_width", "IQR_ratio"))) %>%
   pivot_wider(
     names_from = Strat_Code,

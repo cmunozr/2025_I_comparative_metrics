@@ -4,7 +4,7 @@
 #' standardized 4-panel comparison PDFs for Presence-Absence and Continuous models.
 #'
 #' METHODOLOGY
-#' - Extracts species names and metadata from fitted HMSC reference models.
+#' - Extracts species names and metadata from each fitted HMSC model.
 #' - Matches model directories and extracts explanatory metrics (mf_*.rds), predictive
 #'   metrics (mfeval_*.rds), and information criteria (waic_*.rds).
 #' - Standardizes discrimination, accuracy, calibration, and precision metrics across validation schemes.
@@ -17,7 +17,7 @@
 #' - models/fbs_M*/model_fit/waic_*.rds: Model information criteria files.
 #' - models/fbs_M*/model_fit/mf_*.rds: Full-model explanatory fit evaluations.
 #' - models/fbs_M*/model_fit/mfeval_*_*.rds: Strategy-specific predictive fit evaluations.
-#' - models/{reference_model}/fitted_*.rds: Fitted Hmsc reference object for species names.
+#' - models/{run_name}/fitted_*.rds: Fitted Hmsc object for species names.
 #'
 #' OUTPUTS
 #' - models/model_fit_PA_comparison.csv: Presence-Absence metric data table.
@@ -32,21 +32,12 @@ library(colorspace)
 library(tidyverse) 
 library(gridExtra) 
 library(Hmsc)
+source(file.path("code", "config_model.R"))
 
 # --- 2. Configuration ---
 base_dir <- "models"
 ensure_dir <- file.path(base_dir)
 dir.create(ensure_dir, recursive = TRUE, showWarnings = FALSE)
-
-# Extract species names directly from a reference fitted Hmsc object
-reference_fitted_model <- file.path(
-  base_dir, 
-  "fbs_M016PA_thin_150_samples_1000_chains_4", 
-  "fitted_fbs_M016PA_thin_150_samples_1000_chains_4.rds"
-)
-
-hm_ref <- readRDS(reference_fitted_model)
-species_names <- colnames(hm_ref$Y)
 
 # Define cross-validation / hold-out strategies to inspect
 validation_strategies <- c("route_blocked_cv", "metso_holdout", "north_south") 
@@ -58,7 +49,7 @@ strategy_map <- c(
 )
 
 # --- 3. Folder Processing Function ---
-process_model_folder_by_strategy <- function(folder_path, strategies, strat_map, spp_vec = NULL) {
+process_model_folder_by_strategy <- function(folder_path, strategies, strat_map) {
   run_name <- basename(folder_path)
   fit_dir  <- file.path(folder_path, "model_fit")
   
@@ -76,7 +67,7 @@ process_model_folder_by_strategy <- function(folder_path, strategies, strat_map,
   meta_chains      <- str_extract(run_name, "chains_[0-9]+")
   model_class      <- paste(meta_thin, meta_samples, meta_chains, sep = "_")
   
-  model_response_type <- if (str_detect(run_name, "PA")) "Presence-Absence" else "Continuous Abundance"
+  model_response_type <- if (run_name == selected_models$PA || str_detect(run_name, "PA")) "Presence-Absence" else "Continuous Abundance"
   
   waic_val <- read_rds(path_waic) %>% unlist() %>% as.numeric()
   mf_raw   <- tryCatch(read_rds(path_mf), error = function(e) NULL)
@@ -87,7 +78,7 @@ process_model_folder_by_strategy <- function(folder_path, strategies, strat_map,
     hm_local <- readRDS(local_fitted)
     spp_local <- colnames(hm_local$Y)
   } else {
-    spp_local <- spp_vec
+    spp_local <- NULL
   }
   
   df_mf <- NULL
@@ -99,6 +90,7 @@ process_model_folder_by_strategy <- function(folder_path, strategies, strat_map,
       as.data.frame() %>%
       mutate(
         Model        = short_model_name,
+        Run_Name     = run_name,
         Model_Type   = model_response_type,
         WAIC         = waic_val,
         Class        = model_class,
@@ -125,6 +117,7 @@ process_model_folder_by_strategy <- function(folder_path, strategies, strat_map,
           as.data.frame() %>%
           mutate(
             Model        = short_model_name,
+            Run_Name     = run_name,
             Model_Type   = model_response_type,
             WAIC         = waic_val,
             Class        = model_class,
@@ -145,7 +138,7 @@ process_model_folder_by_strategy <- function(folder_path, strategies, strat_map,
 message("--- Starting Strategy-Aware Data Aggregation ---")
 
 model_dirs  <- list.dirs(base_dir, recursive = FALSE) %>% str_subset("fbs_M")
-all_results <- purrr::map(model_dirs, ~process_model_folder_by_strategy(.x, validation_strategies, strategy_map, species_names)) %>% compact()
+all_results <- purrr::map(model_dirs, ~process_model_folder_by_strategy(.x, validation_strategies, strategy_map)) %>% compact()
 
 mf_df     <- purrr::map(all_results, "mf") %>% compact() %>% bind_rows()
 mfeval_df <- purrr::map(all_results, "mfeval") %>% compact() %>% bind_rows()
@@ -169,7 +162,7 @@ if (nrow(master_df) > 0) {
   write_csv(master_df, file.path(base_dir, "model_fit_master_all_metrics.csv"))
   
   summary_metrics_table <- master_df %>%
-    group_by(Model, Model_Type, Strategy, Type) %>%
+    group_by(Model, Run_Name, Model_Type, Strategy, Type) %>%
     summarise(
       WAIC = mean(WAIC, na.rm = TRUE),
       across(
@@ -212,7 +205,7 @@ build_metric_panel <- function(data_subset = pa_master, metric_column = "AUC", s
     TRUE                                ~ strategy_name
   )
   
-  p <- ggplot(strat_data, aes(x = WAIC_Label, y = .data[[metric_column]], fill = Model)) +
+  p <- ggplot(strat_data, aes(x = WAIC_Label, y = .data[[metric_column]], fill = Run_Name)) +
     geom_boxplot(width = 0.4, alpha = 0.6, outlier.size = 0.6) +
     stat_summary(
       fun = mean, geom = "text", 
@@ -236,7 +229,7 @@ build_metric_panel <- function(data_subset = pa_master, metric_column = "AUC", s
 }
 
 get_shared_legend <- function(data_subset) {
-  p_leg <- ggplot(data_subset, aes(x = WAIC_Label, y = Species_Idx, fill = Model)) + 
+  p_leg <- ggplot(data_subset, aes(x = WAIC_Label, y = Species_Idx, fill = Run_Name)) + 
     geom_boxplot() + 
     theme_minimal() + 
     theme(legend.position = "bottom", legend.title = element_text(size = 9), legend.text = element_text(size = 8))

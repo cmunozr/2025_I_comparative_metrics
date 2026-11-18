@@ -1,5 +1,5 @@
 #' DESCRIPTION
-#' S05a_show_model_fit.R: Iterates through the MCMC configuration grid,
+#' S05a_show_model_fit.R: Iterates through the selected model runs,
 #' compares full-model explanatory power metrics against cross-validation and
 #' holdout predictive metrics, and generates scatter plots.
 #'
@@ -14,8 +14,7 @@
 #' - Plots explanatory vs. predictive scatter plots with 1:1 reference lines.
 #'
 #' INPUTS
-#' - code/config_model.R: Central configuration parameters (run_config, mcmc grid, model_id).
-#' - code/_utilities_hmsc_gpu.R: GPU helper functions (generate_run_name).
+#' - code/config_model.R: Central configuration parameters and selected models.
 #' - models/{run_name}/model_fit/mf_{run_name}.rds: Baseline full-model explanatory metrics.
 #' - models/{run_name}/model_fit/mfeval_{run_name}_{label}_.rds: Cross-validation / holdout predictive metrics.
 #'
@@ -27,7 +26,6 @@ library(jsonify)
 library(here)
 library(dplyr)
 source(file.path("code", "config_model.R"))
-source(file.path("code", "_utilities_hmsc_gpu.R"))
 set.seed(110724)
 
 # Define vector of strategies to plot
@@ -41,13 +39,12 @@ pdf(file = pdf_output_path, width = 8, height = 8)
 
 message(paste0("--- Generating Performance Plots for Model ID: ", run_config$model_id))
 
-# --- 3. Main Loop: Iterate Over MCMC Configurations ---
-for (i in 1:nrow(run_config$mcmc)) {
-  run_name <- generate_run_name(run_config)[i]
+# --- 3. Main Loop: Iterate Over Selected Models ---
+for (run_name in unique(unlist(selected_models))) {
   base_model_name <- run_name 
   dir_fit <- file.path(models_dir, base_model_name, "model_fit")
   
-  message(paste0("\n--- Processing Grid Row ", i, ": ", run_name, " ---"))
+  message(paste0("\n--- Processing ", run_name, " ---"))
   
   # Load the explanatory performance file (Full Model)
   expl_output_path <- file.path(dir_fit, paste0("mf_", base_model_name, ".rds"))
