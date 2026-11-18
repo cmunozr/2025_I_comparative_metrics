@@ -151,7 +151,7 @@ run_itis_bakx <- F
 run_export_species_ranges <- F
 filter_rare_spp <- F
 run_polygon_buffers <- F
-run_calculate_XData <- T
+run_calculate_XData <- F
 run_new_var_XData <- F
 run_syn_for_mctavish <- F
 ```
@@ -1411,6 +1411,16 @@ repeat {
     iteration <- iteration + 1
   }
 }
+
+vif <- data.frame(
+  variable = c(vif_removed_variables, vif_keep_variables),
+  status = rep(
+    c("removed", "keep"), 
+    times = c(length(vif_removed_variables), length(vif_keep_variables))
+  )
+)
+
+write.csv(vif, "data/covariates/vif_results.csv", row.names = F)
 ```
 
 ```{r}
