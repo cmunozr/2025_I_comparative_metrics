@@ -1,5 +1,20 @@
-# Some control stands are far away from metso sites, take them as it could be a
-# bias positively the change
+#' DESCRIPTION:
+#' Labels control stands by their distance from METSO stands to support the
+#' treatment/control comparison.
+#'
+#' METHODOLOGY:
+#' - Loads the combined treatment and control stand geometries.
+#' - Creates a buffer around METSO stands and assigns distance-based labels to
+#'   control stands.
+#' - Saves the updated spatial dataset.
+#'
+#' INPUTS:
+#' - `data/metso/treatment_control_stand_v4.gpkg`.
+#'
+#' OUTPUTS:
+#' - `data/metso/metso_stands_buf.gpkg` and
+#'   `data/metso/treatment_control_stand_V4.gpkg`.
+#'
 
 library(sf)
 library(ggplot2)

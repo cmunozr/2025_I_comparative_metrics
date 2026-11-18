@@ -1,3 +1,26 @@
+#' DESCRIPTION:
+#' Extracts raster covariates for FBS route sections and/or METSO and control
+#' stands, then aggregates the extracted values using the project mappings.
+#'
+#' METHODOLOGY:
+#' - Sets the local storage location and selects which polygon groups to process.
+#' - Reads raster tiles, polygon boundaries, and covariate mapping files.
+#' - Extracts raster values by tile, aggregates them by polygon, and saves the
+#'   resulting pre-processed covariate files.
+#'
+#' INPUTS:
+#' - `data/covariates/dictionary_covariates.csv` and
+#'   `data/covariates/mapping_covariate_functions.xlsx`.
+#' - Raster downloads in the configured storage folders.
+#' - `data/utm35_zones/TM35_karttalehtijako.gpkg` and, depending on the selected
+#'   extraction options, FBS route or METSO stand spatial data.
+#'
+#' OUTPUTS:
+#' - Intermediate tile-level and aggregated extraction files under the
+#'   configured storage location.
+#' - Pre-processed covariate `.rds` files in `data/covariates/pre_processed`.
+#' - Temporary master covariate CSV files when the corresponding option is enabled.
+#'
 library(terra)
 library(sf)
 library(exactextractr)

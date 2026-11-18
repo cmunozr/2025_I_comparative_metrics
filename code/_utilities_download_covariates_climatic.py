@@ -1,3 +1,12 @@
+"""Download Nordic climate data from the Copernicus Climate Data Store.
+
+The request selects precipitation and temperature variables for the Nordic
+region for 2008–2021. The ZIP archive is saved under ``D:/nordic_climate``.
+
+Input: CDS API credentials configured for ``cdsapi``.
+Output: ``D:/nordic_climate/may_to_aug_2008-2021.zip``.
+"""
+
 import cdsapi
 import os 
 

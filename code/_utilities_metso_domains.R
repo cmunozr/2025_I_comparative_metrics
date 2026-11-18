@@ -1,3 +1,22 @@
+#' DESCRIPTION:
+#' Checks how METSO and control stand covariates compare with the environmental
+#' covariate range represented in the selected Hmsc model's FBS data.
+#'
+#' METHODOLOGY:
+#' - Loads the selected fitted model and the METSO and control `XData` objects.
+#' - Compares stand covariates with the model reference data using MOP and
+#'   predictor-range summaries.
+#' - Summarises extrapolation by stand group and covariate.
+#'
+#' INPUTS:
+#' - `code/config_model.R` and the selected fitted model under `models/`.
+#' - `data/covariates/XData_hmsc_control_[model_id].rds` and
+#'   `data/covariates/XData_hmsc_metso_[model_id].rds`.
+#'
+#' OUTPUTS:
+#' - CSV diagnostics in `results/mop/`, including the stand mask,
+#'   extrapolation summaries, and MOP distance comparisons.
+#'
 library(tidyverse)
 library(modEvA)
 library(mop)

@@ -1,3 +1,17 @@
+#' DESCRIPTION:
+#' Downloads available Metsäkeskus forest stand GeoPackages from its regional
+#' data page.
+#'
+#' METHODOLOGY:
+#' - Reads the regional download links from the Metsäkeskus page.
+#' - Selects ZIP files and downloads them to the local data folder.
+#'
+#' INPUTS:
+#' - Metsäkeskus regional data page at `avoin.metsakeskus.fi`.
+#'
+#' OUTPUTS:
+#' - ZIP downloads in `data/metsakeskus/metsavarakuviot`.
+#'
 library(rvest)
 library(dplyr)
 library(stringr)

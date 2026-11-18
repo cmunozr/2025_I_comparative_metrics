@@ -1,3 +1,20 @@
+#' DESCRIPTION:
+#' Prepares downloaded Nordic climate rasters for extraction over the project's
+#' spatial polygons.
+#'
+#' METHODOLOGY:
+#' - Locates the downloaded climate archive and study-area grid.
+#' - Reads the ZIP contents, groups files by variable and year, and processes
+#'   each group for extraction over the study area.
+#'
+#' INPUTS:
+#' - Climate ZIP archive in the configured local climate data folder.
+#' - `data/utm35_zones/TM35_karttalehtijako.gpkg` (layer `utm200LR`).
+#' - `code/_utilities_transform_covariates.R`.
+#'
+#' OUTPUTS:
+#' - Processed climate raster files in the configured climate data folders.
+#'
 library(terra)
 library(purrr)
 library(tidyr)

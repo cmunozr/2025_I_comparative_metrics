@@ -1,5 +1,22 @@
-# it replicates n times the prediction over a handful of standids, to check how vary the data in different circunstances
-# of creation, it works with the n-dimensional array
+#' DESCRIPTION:
+#' Repeats predictions for a small set of stands to check whether repeated
+#' scenario prediction runs return consistent results.
+#'
+#' METHODOLOGY:
+#' - Loads the selected model, stand covariates, and matched stand pairs.
+#' - Selects the configured stands and runs predictions repeatedly in batches.
+#' - Saves each prediction result for later comparison.
+#'
+#' INPUTS:
+#' - `code/config_model.R` and the selected fitted model under `models/`.
+#' - METSO/control stand geometries, matched pairs, and the corresponding
+#'   `XData` object under `data/`.
+#'
+#' OUTPUTS:
+#' - Replicate prediction files and selected stand IDs under
+#'   `results/predictions_expected_true_replicates/` (or the configured
+#'   equivalent).
+#'
 
 cat("-----------START--------------\n")
 library(Hmsc)

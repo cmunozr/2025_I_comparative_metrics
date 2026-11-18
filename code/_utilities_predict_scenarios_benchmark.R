@@ -1,3 +1,19 @@
+#' DESCRIPTION:
+#' Benchmarks Hmsc scenario prediction time across different batch sizes.
+#'
+#' METHODOLOGY:
+#' - Loads the selected model, stand covariates, and matched stand pairs.
+#' - Predicts for the configured batch sizes using parallel workers.
+#' - Records elapsed time and prediction dimensions for each batch size.
+#'
+#' INPUTS:
+#' - `code/config_model.R` and the selected fitted model under `models/`.
+#' - METSO/control stand geometries, matched pairs, and the corresponding
+#'   `XData` object under `data/`.
+#'
+#' OUTPUTS:
+#' - Benchmark results in `results/benchmark_parallel_results.csv`.
+#'
 cat("-----------START PARALLEL BENCHMARKING--------------\n")
 library(Hmsc)
 library(sf)

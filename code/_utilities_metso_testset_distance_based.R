@@ -1,3 +1,20 @@
+#' DESCRIPTION:
+#' Identifies FBS routes near METSO and control stands for a distance-based
+#' holdout dataset.
+#'
+#' METHODOLOGY:
+#' - Splits the stand dataset into METSO and control groups.
+#' - Finds route geometries within the configured distance buffer of those stands.
+#' - Saves the route distance results for use in model evaluation.
+#'
+#' INPUTS:
+#' - `data/metso/treatment_control_stand_v4.gpkg`.
+#' - `data/fbs/vakiolinja/Vakiolinjat_routes.geojson`.
+#'
+#' OUTPUTS:
+#' - Route distance CSV and GeoPackage in `data/fbs/`, named for the configured
+#'   distance buffer.
+#'
 library(sf)
 library(ggplot2)
 library(units)

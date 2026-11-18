@@ -1,3 +1,22 @@
+#' DESCRIPTION:
+#' Downloads forest, elevation, and other spatial covariate rasters from the
+#' sources listed or configured in the script.
+#'
+#' METHODOLOGY:
+#' - Reads the covariate dictionary and uses it to select Luke datasets.
+#' - Checks available disk space before large downloads and skips files that
+#'   already exist where the script checks for them.
+#' - Downloads tree-height, forest, and elevation data to the configured drives
+#'   and folders.
+#'
+#' INPUTS:
+#' - `data/covariates/dictionary_covariates.csv`.
+#' - Public download pages and file URLs defined in this script.
+#'
+#' OUTPUTS:
+#' - Raster downloads in the configured local folders, including `tree_high_Europe`,
+#'   `latvus`, Luke year folders, and `C:/DEM_Finland`.
+#'
 library(rvest)
 library(dplyr)
 library(stringr)

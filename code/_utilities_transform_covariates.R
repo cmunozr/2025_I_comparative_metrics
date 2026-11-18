@@ -1,3 +1,26 @@
+#' DESCRIPTION:
+#' Provides helpers for cropping and transforming covariate rasters, extracting
+#' raster values for polygons, and building Hmsc covariate datasets.
+#'
+#' METHODOLOGY:
+#' - Crops rasters to a vector mask and provides helpers for plotting and
+#'   organizing raster data.
+#' - Extracts raster values by polygon and tile, then saves intermediate data.
+#' - Aggregates extracted values using the configured covariate mappings and
+#'   builds aligned Hmsc `XData` objects.
+#' - Includes helpers for aligning prediction covariates with a fitted Hmsc
+#'   design matrix and identifying prediction batches to retry.
+#'
+#' INPUTS:
+#' - Raster files, polygon features, covariate mapping tables, and reference data
+#'   passed to the functions.
+#' - Hmsc models and prediction batch metadata passed to the relevant helpers.
+#'
+#' OUTPUTS:
+#' - Cropped rasters, intermediate extraction files, and Hmsc `XData` files at
+#'   paths supplied to the functions.
+#' - Processed covariate matrices and retry task lists returned by the helpers.
+#'
 #' Crop multiple rasters based on a vector mask
 #'
 #' This function scans a source directory for raster files, crops each one using

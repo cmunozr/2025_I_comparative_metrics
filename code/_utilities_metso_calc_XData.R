@@ -1,3 +1,29 @@
+#' DESCRIPTION:
+#' Builds Hmsc covariate datasets for METSO and control stands using the
+#' covariate extraction and model configuration utilities.
+#'
+#' METHODOLOGY:
+#' - Loads the selected model configuration, covariate dictionary, mapping rules,
+#'   and METSO/control stand data.
+#' - Separates pre-processed covariates into treatment and control datasets.
+#' - Aggregates covariates into Hmsc `XData` and aligns them with the selected
+#'   fitted model's predictors.
+#' - Saves the resulting stand-level covariate objects.
+#'
+#' INPUTS:
+#' - `code/config_model.R` and `code/_utilities_transform_covariates.R`.
+#' - `data/covariates/dictionary_covariates.csv`,
+#'   `data/covariates/mapping_covariate_functions.xlsx`, and files under
+#'   `data/covariates/pre_processed`.
+#' - `data/metso/treatment_control_stand_v4.gpkg` and
+#'   `data/metso/treatment_control_standid.csv`.
+#' - The fitted model selected by the project configuration.
+#'
+#' OUTPUTS:
+#' - `data/covariates/XData_hmsc_metso_[model_id].rds` and
+#'   `data/covariates/XData_hmsc_control_[model_id].rds` (with optional complete
+#'   covariate variants controlled in the script).
+#'
 library(sf)
 library(openxlsx)
 library(dplyr)

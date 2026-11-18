@@ -1,4 +1,23 @@
-# A set of functions to prepare and generate run scripts for Hmsc-HPC (GPU)
+#' DESCRIPTION:
+#' Provides helpers for preparing Hmsc models for HPC sampling, writing GPU run
+#' scripts, importing posterior chains, and evaluating model fit.
+#'
+#' METHODOLOGY:
+#' - Prepares Hmsc model objects using the requested MCMC settings.
+#' - Writes Python commands and shell scripts for single or multiple GPU chains.
+#' - Builds validation models and imports sampled chains into fitted Hmsc objects.
+#' - Provides a robust model-fit evaluation helper for prediction arrays.
+#'
+#' INPUTS:
+#' - Hmsc model objects, model configuration, MCMC settings, and posterior chain
+#'   files supplied to the functions.
+#' - Model and chain files under `models/` when using the import helpers.
+#'
+#' OUTPUTS:
+#' - Prepared model files, command text files, and GPU shell scripts at paths
+#'   supplied to the functions.
+#' - Imported fitted Hmsc model files under `models/` when using the import helper.
+#' - Model-fit summaries returned by `evaluateModelFitRobust()`.
 
 #' 1. Prepare the Hmsc Model Object for HPC
 #'

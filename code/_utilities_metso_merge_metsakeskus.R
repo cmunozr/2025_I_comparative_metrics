@@ -1,3 +1,19 @@
+#' DESCRIPTION:
+#' Combines downloaded Metsäkeskus stand geometries with the selected METSO and
+#' control stand identifiers.
+#'
+#' METHODOLOGY:
+#' - Reads GeoPackages from `data/metso/raw2/` and the treatment/control ID table.
+#' - Transforms geometries to EPSG:3067 and joins them to the selected stands.
+#' - Writes the combined stand dataset.
+#'
+#' INPUTS:
+#' - GeoPackages in `data/metso/raw2/`.
+#' - `data/metso/treatment_control_standid.csv`.
+#'
+#' OUTPUTS:
+#' - `data/metso/treatment_control_stand_v4.gpkg`.
+#'
 library(sf)
 library(dplyr)
 library(stringr)

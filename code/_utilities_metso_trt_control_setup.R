@@ -1,3 +1,21 @@
+#' DESCRIPTION:
+#' Prepares stand-year records for the METSO treatment and control groups from
+#' the source treatment data.
+#'
+#' METHODOLOGY:
+#' - Loads treatment records, matched units, and the stacked panel dataset.
+#' - Selects eligible treatment cohorts with five- or six-year follow-up periods.
+#' - Selects and summarises treatment and control stand-year observations for the
+#'   METSO comparison.
+#'
+#' INPUTS:
+#' - `data/metso/raw2/treatment_long.RData`.
+#' - `data/metso/raw2/matched_units.parquet` and
+#'   `data/metso/raw2/stacked_panel.parquet`.
+#'
+#' OUTPUTS:
+#' - `data/metso/treatment_control_standid.csv`.
+#'
 library(data.table)
 library(dplyr)
 library(arrow)

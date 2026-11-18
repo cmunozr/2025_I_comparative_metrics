@@ -1,3 +1,26 @@
+#' DESCRIPTION:
+#' Provides functions for calculating taxonomic and functional biodiversity
+#' metrics from predicted communities and preparing trait data for those metrics.
+#'
+#' METHODOLOGY:
+#' - Pre-calculates stand-level richness, Rao's Quadratic Entropy, and Functional
+#'   Richness where needed.
+#' - Compares baseline and scenario predictions using richness, abundance,
+#'   functional diversity, and community dissimilarity measures.
+#' - Provides helper functions for trait preprocessing, functional richness,
+#'   Rao's Quadratic Entropy, and related calculations.
+#'
+#' INPUTS:
+#' - Prediction matrices or arrays, trait data, and metric settings supplied to
+#'   the functions.
+#' - Some helpers expect processed trait objects prepared by
+#'   `dbFD_preprocess_traits()`.
+#'
+#' OUTPUTS:
+#' - Metric values and processed trait objects returned by the functions.
+#' - `select_test_stands()` also reads a METSO stand GeoPackage and saves the
+#'   selected stand data to `results/test_group_stands.rds` by default.
+
 #' @title Pre-compute Stand-Level Intrinsic Metrics
 #' @description Computes single-stand richness, Rao's Quadratic Entropy, and Functional Richness
 #' across all posterior draws prior to pairwise comparisons.
